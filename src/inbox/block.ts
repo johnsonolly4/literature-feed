@@ -2,7 +2,7 @@
 // for another note. Built with createEl only. It redraws when the note it reads is modified, so ticking a box updates it.
 import { MarkdownRenderChild, TFile, type App, type MarkdownPostProcessorContext, type Plugin } from "obsidian";
 import type { Settings } from "../settings/data";
-import { NOTE_NAME_PATTERN, parseInbox } from "./write";
+import { NOTE_NAME_PATTERN, parseInbox, waitingByTier } from "./write";
 
 export interface BlockHost {
   app: App;
@@ -35,8 +35,8 @@ class StatusBlock extends MarkdownRenderChild {
   private async render(): Promise<void> {
     const note = this.findNote();
     const parsed = note ? parseInbox(await this.host.app.vault.cachedRead(note)) : null;
-    const waiting = (parsed?.papers ?? []).filter((p) => !p.ticked);
-    const count = (tier: string): number => waiting.filter((p) => p.tier === tier).length;
+    const waiting = waitingByTier(parsed?.papers ?? []);
+    const total = waiting.priority + waiting.strong + waiting.possible + waiting.unchecked;
 
     const el = this.containerEl;
     el.empty();
@@ -46,7 +46,7 @@ class StatusBlock extends MarkdownRenderChild {
     box.createDiv({
       cls: "literature-feed-status-line",
       text: parsed
-        ? `${waiting.length} waiting: ${count("priority")} priority, ${count("strong")} strong, ${count("possible")} possible, ${count("unchecked")} without abstract. Last scan: ${last}.`
+        ? `${total} waiting: ${waiting.priority} priority, ${waiting.strong} strong, ${waiting.possible} possible, ${waiting.unchecked} without abstract. Last scan: ${last}.`
         : `No inbox note yet. Last scan: ${last}.`,
     });
 

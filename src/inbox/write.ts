@@ -244,6 +244,22 @@ export function parseInbox(text: string): ParsedNote {
   return { scanned, papers };
 }
 
+/**
+ * Papers still waiting per tier. A paper found by two feeds is on two lines but counts once, at its best tier, and
+ * waits as long as one of its lines is unticked.
+ */
+export function waitingByTier(papers: readonly ParsedPaper[]): Record<ListedTier, number> {
+  const best = new Map<string, ListedTier>();
+  for (const p of papers) {
+    if (p.ticked) continue;
+    const current = best.get(p.openalexId);
+    if (current === undefined || RANK.indexOf(p.tier) < RANK.indexOf(current)) best.set(p.openalexId, p.tier);
+  }
+  const counts: Record<ListedTier, number> = { priority: 0, strong: 0, possible: 0, unchecked: 0 };
+  for (const tier of best.values()) counts[tier]++;
+  return counts;
+}
+
 // ---- adding to an existing note -----------------------------------------------------------------------------------------
 
 /** Indexes [start, end) of the callout whose header carries `marker` (the "> " lines that follow the header). */

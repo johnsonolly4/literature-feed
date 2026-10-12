@@ -3,7 +3,7 @@ import type { Candidate } from "../src/openalex/client";
 import type { FeedConfig } from "../src/settings/data";
 import {
   buildNote, buildPapers, doiUrl, escapeMd, isoWeek, mergeIntoNote, noteName, parseInbox, renderNote, shortOpenAlexId, weekLabel,
-  NOTE_NAME_PATTERN, type FeedSection, type InboxPaper, type NoteInput,
+  NOTE_NAME_PATTERN, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
 } from "../src/inbox/write";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
 import { priorityFlow, strongComonomer, possible, droppedNoLipoic, withSentence } from "./fixtures/lipoic-papers";
@@ -190,6 +190,22 @@ describe("parseInbox", () => {
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
     expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true }]);
+  });
+});
+
+describe("waitingByTier", () => {
+  const line = (id: string, feedId: string, tier: InboxPaper["tier"], ticked = false) => ({ openalexId: id, feedId, tier, ticked });
+
+  it("counts papers still waiting per tier and leaves out ticked ones", () => {
+    expect(waitingByTier([line("W1", "a", "priority"), line("W2", "a", "strong", true), line("W3", "a", "possible"), line("W4", "a", "unchecked")]))
+      .toEqual({ priority: 1, strong: 0, possible: 1, unchecked: 1 });
+    expect(waitingByTier([])).toEqual({ priority: 0, strong: 0, possible: 0, unchecked: 0 });
+  });
+
+  it("counts a paper found by two feeds once, at its best tier, while any of its lines is unticked", () => {
+    expect(waitingByTier([line("W1", "a", "possible"), line("W1", "b", "strong")])).toEqual({ priority: 0, strong: 1, possible: 0, unchecked: 0 });
+    expect(waitingByTier([line("W1", "a", "possible", true), line("W1", "b", "strong")])).toEqual({ priority: 0, strong: 1, possible: 0, unchecked: 0 });
+    expect(waitingByTier([line("W1", "a", "possible", true), line("W1", "b", "strong", true)])).toEqual({ priority: 0, strong: 0, possible: 0, unchecked: 0 });
   });
 });
 

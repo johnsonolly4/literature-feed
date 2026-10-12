@@ -66,14 +66,28 @@
   margin-bottom: var(--size-4-2);
 }
 
-/* Status line and Home card made by the literature-feed code block */
+/* Status line and Home card made by the literature-feed code block.
+   Fill, border and corners use Lab Kit's theme variables when that theme is on, and Obsidian's own otherwise. */
 .literature-feed-status,
 .literature-feed-card {
   margin: var(--size-4-2) 0;
   padding: var(--size-4-2) var(--size-4-3);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  background-color: var(--background-secondary);
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+  background-color: var(--vt-card-bg, var(--background-secondary));
+}
+
+/* Inside a callout (for example a column of the Home note) the callout is already the card: no second box,
+   and no second title, because the callout title names it. */
+.callout-content .literature-feed-card {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.callout-content .literature-feed-card-title {
+  display: none;
 }
 
 .literature-feed-card-title {

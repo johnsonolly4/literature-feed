@@ -21,7 +21,7 @@ Run the command **Scan now** (command palette). It searches OpenAlex for every f
 - Papers with no abstract and no required term in the title are in a separate collapsed list per feed, "No abstract returned, matched by OpenAlex".
 - A paper judged on its title alone because no abstract came back carries "title only".
 - Ticking a box changes only that line; scanning again keeps your ticks.
-- The block `` ```literature-feed `` with the line `show: home` gives a small card (papers waiting, last scan, buttons) for another note, such as a home page.
+- The block `` ```literature-feed `` with the line `show: home` gives a small card (papers waiting, last scan, buttons) for another note, such as a home page. Put it inside a callout (for example a column of a Home note) and it drops its own box and title. It counts the unticked papers of the latest inbox note, each paper once even if two feeds found it; older weeks are not counted.
 - Titles and names come from OpenAlex and are written as plain text with markdown characters escaped; links are rebuilt from the DOI.
 
 ## Settings

@@ -9,7 +9,7 @@ Phase 1 (matching engine, pure) done 2026-10-12 on `feat/matching-engine`, pushe
 Phase 2 (OpenAlex client) **code done, real run done, a few checks open** 2026-10-12 on `feat/openalex-client` (cut from `feat/matching-engine`, committed, not pushed): `src/openalex/client.ts`, 21 new tests (78 in all), lint and build pass. Real run done by the owner (4 topics; 30 days: 14 works, one year: 153 listings, 114 unique, $0.004 per run): the scoped query form works; details and what is still open: BACKLOG. Test responses are hand-written to the documented shape, not recorded. Docs differ from the plan in 3 points (query form, date filter, key header): `docs/decisions.md`.
 
 ## Next (ordered: top item is the next session; plan: `docs/plans/literature-feed.md`)
-1. Phase 2 finish: the open checks in BACKLOG (a known paper found, a second run a week later; decide how to treat the 38 of 114 papers with no abstract), recorded fixtures (script has `--days N` and `--out run.json` since the owner asked)
+1. Phase 2 finish: the open checks in BACKLOG (a known paper found, a second run a week later; then the no-abstract rule in `score.ts`, BACKLOG), recorded fixtures (script has `--days N` and `--out run.json` since the owner asked)
 2. Phase 3: settings tab
 3. Phase 4: weekly dashboard note
 4. Phase 5: Zotero sync (one real sync of one paper)

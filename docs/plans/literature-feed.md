@@ -40,6 +40,8 @@ flowchart LR
 | Possible | every **required** group only |
 | Dropped | a required group missing, or a **drop** term matched |
 
+A paper with **no abstract** is matched on its title alone and can rank at most Possible (decided 2026-10-12; `docs/decisions.md`). The cap applies before lower terms.
+
 A **lower** term (per feed) moves a paper down one tier (Priority → Strong → Possible → Dropped). Use **drop** for clearly off-topic meanings, **lower** for on-topic-but-less-wanted work.
 
 ## Phases

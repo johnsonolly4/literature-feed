@@ -63,6 +63,7 @@ function lowerBy(tier: Tier, steps: number): Tier {
 /**
  * Tier for one paper (rules: "Tiers" in docs/plans/literature-feed.md).
  * Title and abstract are matched separately, so a phrase never spans the two.
+ * A paper with no abstract is matched on its title alone and can rank at most Possible (docs/decisions.md).
  */
 export function scorePaper(paper: Paper, feed: Feed): Score {
   const fields = [pad(paper.title), pad(paper.abstract ?? "")];
@@ -85,6 +86,7 @@ export function scorePaper(paper: Paper, feed: Feed): Score {
 
   const has = (role: "priority" | "boost"): boolean => groups.some((g) => g.role === role);
   let tier: Tier = has("priority") ? "priority" : has("boost") ? "strong" : "possible";
+  if (!paper.abstract?.trim()) tier = "possible";
   if (lowerTerms.length > 0) tier = lowerBy(tier, 1);
   return result(tier);
 }

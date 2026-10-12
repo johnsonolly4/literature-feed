@@ -147,6 +147,37 @@ describe("normalising and matching", () => {
   });
 });
 
+describe("papers with no abstract", () => {
+  // Title alone would be Priority (lipoic acid, polymerisation, flow) and, with an abstract, is.
+  const title = "Flow polymerisation of lipoic acid with acrylamide";
+
+  it("caps a title that matches a Priority group at Possible", () => {
+    expect(scorePaper({ title, abstract: "Made in a flow reactor." }, lipoicFeed).tier).toBe("priority");
+    for (const abstract of [undefined, null, "", "   "]) {
+      expect(scorePaper({ title, abstract }, lipoicFeed).tier).toBe("possible");
+    }
+  });
+
+  it("caps a title that matches a boost group at Possible", () => {
+    const paper = { title: "Lipoic acid-acrylamide copolymers" };
+    expect(scorePaper({ ...paper, abstract: "Radical polymerisation." }, lipoicFeed).tier).toBe("strong");
+    expect(scorePaper(paper, lipoicFeed).tier).toBe("possible");
+  });
+
+  it("still reports the groups the title matched", () => {
+    expect(scorePaper({ title }, lipoicFeed).groups.map((g) => g.name)).toContain("Flow or optimisation");
+  });
+
+  it("still drops on a drop term or a missing required group in the title", () => {
+    expect(scorePaper({ title: `${title} on gold nanoparticles` }, lipoicFeed).tier).toBe("dropped");
+    expect(scorePaper({ title: "Flow synthesis of acrylamide copolymers" }, lipoicFeed).tier).toBe("dropped");
+  });
+
+  it("still applies lower terms after the cap", () => {
+    expect(scorePaper({ title: `${title}: self-healing networks` }, lipoicFeed).tier).toBe("dropped");
+  });
+});
+
 describe("feeds without every role", () => {
   const polymers = { name: "polymers", role: "required", terms: ["polymer"] } as const;
 
@@ -158,7 +189,7 @@ describe("feeds without every role", () => {
 
   it("a priority group alone, with the required group met, is Priority (no boost needed)", () => {
     const feed: Feed = { name: "t", groups: [polymers, { name: "p", role: "priority", terms: ["flow"] }], drop: [], lower: [] };
-    expect(scorePaper({ title: "Polymer flow" }, feed).tier).toBe("priority");
+    expect(scorePaper({ title: "Polymer flow", abstract: "A study." }, feed).tier).toBe("priority");
   });
 
   it("priority outranks boost when both match", () => {
@@ -168,7 +199,7 @@ describe("feeds without every role", () => {
       drop: [],
       lower: [],
     };
-    expect(scorePaper({ title: "Polymer acrylate flow" }, feed).tier).toBe("priority");
+    expect(scorePaper({ title: "Polymer acrylate flow", abstract: "A study." }, feed).tier).toBe("priority");
   });
 
   it("every required group is needed", () => {

@@ -13,6 +13,10 @@ Phase 1 took these where the plan was silent (approved in plan mode 2026-10-12 a
 - [ ] Dedupe merges any two papers with the same normalised title, even if both are journal articles with different DOIs (`src/match/dedupe.ts`). Fine for this feed; revisit if generic titles appear.
 - [ ] Matching is whole-word with a plural `s`/`es` on the last word and -ise/-ize, -yse/-yze spellings only; no other stemming (`polymerised` does not match `polymerisation`). List such forms as terms.
 
+- [ ] OpenAlex client details I chose (`src/openalex/client.ts`): retries only on 429 (not 5xx), 4 tries with 1 s doubling wait, no `Retry-After` (not documented); works without a title are skipped (`toCandidate`); the plan said `runScan`, it is the method `OpenAlexClient.scan`. Confirm or change.
+- [ ] Phase 2 not verified: (a) `search.title_and_abstract` vs `title_and_abstract.search` form, (b) AND / OR / quoted phrases, (c) cost per topic, (d) `from_publication_date` enough (late-indexed papers), (e) `abstract_inverted_index` present with this `select=`. All settled by `scripts/openalex-run.mjs --form scoped|filter` with a key. Record results here.
+- [ ] Phase 2 wrapper still to write (Phase 3 or 7): the `Requester` over Obsidian's `requestUrl({ throw: false })` must catch the `json` getter throwing on a non-JSON body and return `json: null`; `sleep` must use `window.setTimeout` (lint rule). `src/openalex/client.ts:25`.
+
 ## Bugs
 
 ## Quick changes

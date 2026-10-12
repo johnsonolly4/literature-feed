@@ -1,14 +1,15 @@
 # Status
-_Updated: 2026-10-12 (Phase 0 session). Cap 40 lines. History lives in git and `docs/changelog.md`, not here._
+_Updated: 2026-10-12 (Phase 2 session). Cap 40 lines. History lives in git and `docs/changelog.md`, not here._
 
 **Version:** 0.0.1 (moves only at `/release`; TypeScript in `src/`)
 
 ## Now
 Phase 0 (repo scaffold) done 2026-10-12: `npm run build`, `npm test` (2 tests) and `npm run lint` pass with 0 errors, 0 warnings; `npm run dev` writes the plugin into `test-vault/.obsidian/plugins/literature-feed/`. Not seen in Obsidian: loading the plugin in `test-vault` is still to be done by the owner (see Waiting on owner). Nothing run against OpenAlex or Zotero.
 Phase 1 (matching engine, pure) done 2026-10-12 on `feat/matching-engine`, pushed, PR johnsonolly4/literature-feed#1 open: `src/match/` (feed, score, dedupe), 55 new tests (57 in all), lint and build pass. Pure code: nothing to see in Obsidian. Rules I chose where the plan was silent: BACKLOG → Decisions needed.
+Phase 2 (OpenAlex client) **code done, not finished** 2026-10-12 on `feat/openalex-client` (cut from `feat/matching-engine`, committed, not pushed): `src/openalex/client.ts`, 21 new tests (78 in all), lint and build pass. Not run against OpenAlex with a real key: only a made-up key was sent, which got the expected 401 (shows the Bearer header and bundling work). Test responses are hand-written to the documented shape, not recorded. Docs differ from the plan in 3 points (query form, date filter, key header): `docs/decisions.md`.
 
 ## Next (ordered: top item is the next session; plan: `docs/plans/literature-feed.md`)
-1. Phase 2: OpenAlex client (one real run with the owner's key)
+1. Phase 2 finish: the real run (`scripts/openalex-run.mjs`, needs the key in `OPENALEX_API_KEY`); record count and cost per topic in BACKLOG, fix the query form if it fails, replace the hand-written fixtures with recorded ones
 2. Phase 3: settings tab
 3. Phase 4: weekly dashboard note
 4. Phase 5: Zotero sync (one real sync of one paper)
@@ -22,7 +23,8 @@ Phase 1 (matching engine, pure) done 2026-10-12 on `feat/matching-engine`, pushe
 ## Waiting on owner (needs a human)
 - [ ] Review PR #1 (johnsonolly4/literature-feed) and the five rules in BACKLOG → Decisions needed; merge when happy
 - [ ] Turn on the plugin in `test-vault`: `npm run dev`, open `test-vault` in Obsidian, enable Literature Feed (then BACKLOG "Not yet tested": plugin loads)
-- [ ] Before Phase 2: free OpenAlex account, copy the API key from `openalex.org/settings/api`
+- [ ] For the Phase 2 real run: free OpenAlex account, copy the API key from `openalex.org/settings/api`, put it in `OPENALEX_API_KEY` in your own terminal (do not paste it in chat)
+- [ ] Push `feat/openalex-client` and open its PR when you want it (not pushed; it sits on top of PR #1)
 - [ ] Before Phase 5: Zotero API key with write access to My Library, and the user ID (API keys part of the zotero.org account settings)
 - [ ] Keys go into the plugin's settings in `test-vault` only
 

@@ -21,6 +21,7 @@ Phase 1 (matching engine, pure) done 2026-10-12 on `feat/matching-engine`, not p
 ## Running: none
 
 ## Waiting on owner (needs a human)
+- [ ] Say "push" to push `feat/matching-engine` and open a PR; confirm or change the five rules in BACKLOG → Decisions needed
 - [ ] Turn on the plugin in `test-vault`: `npm run dev`, open `test-vault` in Obsidian, enable Literature Feed (then BACKLOG "Not yet tested": plugin loads)
 - [ ] Before Phase 2: free OpenAlex account, copy the API key from `openalex.org/settings/api`
 - [ ] Before Phase 5: Zotero API key with write access to My Library, and the user ID (API keys part of the zotero.org account settings)

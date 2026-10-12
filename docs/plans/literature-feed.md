@@ -53,7 +53,7 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 ### Phase 1 — Matching engine (pure)
 - Files: `src/match/feed.ts` (types), `src/match/score.ts` (normalise text, both spellings, phrase match, groups → tier, drop and lower terms), `src/match/dedupe.ts` (DOI, then normalised title; preprint + journal version → one, journal preferred), `tests/score.test.ts`, `tests/dedupe.test.ts`, `tests/fixtures/` (hand-written title + abstract cases).
 - Done when: tests cover each tier, each drop term and each lower term for the lipoic acid feed below; no Obsidian imports in `src/match/`.
-- **Done 2026-10-12** (`feat/matching-engine`, not pushed). Open points: BACKLOG → Decisions needed.
+- **Done 2026-10-12** (`feat/matching-engine`, PR #1). Open points: BACKLOG → Decisions needed.
 
 ### Phase 2 — OpenAlex client
 - Depends on: Phase 1

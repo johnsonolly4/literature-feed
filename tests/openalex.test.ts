@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { scorePaper } from "../src/match/score";
 import {
   OpenAlexClient, OpenAlexError, buildSearchUrl, rebuildAbstract, toCandidate,
-  type RequestOptions, type Requester,
+  type Candidate, type OpenAlexWork, type RequestOptions, type Requester,
 } from "../src/openalex/client";
+import { lipoicFeed } from "./fixtures/lipoic-feed";
 import { journalWork, page, preprintWork, sparseWork, untitledWork } from "./fixtures/openalex-responses";
 
 /** A requester that answers from a queue and remembers what it was asked. */
@@ -211,5 +214,45 @@ describe("OpenAlexClient.scan", () => {
     expect(scan.costUsd).toBeCloseTo(0.0005, 10);
     // The preprint and the journal article share a title: one paper, the journal version.
     expect(scan.papers.map((p) => p.openalexId)).toEqual([journalWork.id, sparseWork.id]);
+  });
+});
+
+describe("a recorded OpenAlex response", () => {
+  // One real work from a one-year run (2026-10-12), authors replaced by "Author n": tests/fixtures/openalex-recorded.json.
+  const recorded: unknown = JSON.parse(readFileSync(new URL("./fixtures/openalex-recorded.json", import.meta.url), "utf8"));
+
+  it("is read by the client as one titled paper with an abstract", async () => {
+    const { request } = fakeRequester([{ status: 200, json: recorded }]);
+    const result = await new OpenAlexClient({ request, sleep: noSleep }).searchTopic("x");
+    expect(result.count).toBe(1);
+    expect(result.papers).toHaveLength(1);
+    expect(result.papers[0]).toMatchObject({
+      openalexId: "https://openalex.org/W7160516760",
+      doi: "https://doi.org/10.1021/jacs.6c02848",
+      title: "Biodegradability of Acrylate-Lipoic Acid Copolymers",
+      year: 2026,
+      publicationDate: "2026-05-08",
+      venue: "Journal of the American Chemical Society",
+      isPreprint: false,
+    });
+    expect(result.papers[0].authors).toHaveLength(7);
+  });
+
+  it("rebuilds the whole abstract in order from the inverted index", () => {
+    const index = (recorded as { results: OpenAlexWork[] }).results[0].abstract_inverted_index ?? {};
+    const abstract = rebuildAbstract(index) ?? "";
+    expect(abstract.split(" ")).toHaveLength(Object.values(index).flat().length);
+    expect(abstract.startsWith("Lipoic acid has attracted a great deal of attention")).toBe(true);
+    expect(abstract.endsWith("a route toward fully biodegradable polyacrylates.")).toBe(true);
+  });
+
+  it("scores Priority for the lipoic acid feed ('high-throughput' is in the abstract only)", () => {
+    const work = (recorded as { results: OpenAlexWork[] }).results[0];
+    const paper = toCandidate(work);
+    expect(paper).not.toBeNull();
+    const score = scorePaper(paper as Candidate, lipoicFeed);
+    expect(score.tier).toBe("priority");
+    expect(score.dropTerms).toEqual([]);
+    expect(scorePaper({ ...(paper as Candidate), abstract: null }, lipoicFeed).tier).toBe("possible");
   });
 });

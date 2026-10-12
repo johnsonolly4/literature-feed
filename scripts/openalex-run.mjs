@@ -1,11 +1,13 @@
 // One real run of the OpenAlex client (Phase 2 "done when"). Not part of the plugin; writes a file only with --out.
 //
-//   OPENALEX_API_KEY=… node scripts/openalex-run.mjs [--days N | --from YYYY-MM-DD] [--form scoped|filter] [--out run.json]
+//   OPENALEX_API_KEY=… node scripts/openalex-run.mjs [--days N | --from YYYY-MM-DD] [--form scoped|filter] [--out run.json] [--sample sample.json]
 //   PowerShell: $env:OPENALEX_API_KEY="…"; node scripts/openalex-run.mjs --days 365 --out run.json
 //
 // --days N      window = the last N days (default 30); --from YYYY-MM-DD sets the start day exactly and wins over --days
 // --out FILE    write a run record (JSON): the criteria to repeat the search and the results (counts, cost, ids, DOIs,
 //               titles, whether an abstract came back; abstract text is not saved)
+// --sample FILE write one real work that has an abstract, as a one-page response, for tests/fixtures/ (author names are
+//               replaced by "Author 1", "Author 2", …; no key, no address). Look at it before you commit it.
 // Prints, per topic, the count OpenAlex reports, the cost, the request address (no key) and the first titles.
 // The key is read from the environment only, sent as a Bearer header, and never printed or saved.
 import { build } from "esbuild";
@@ -49,6 +51,7 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
   process.exit(1);
 }
 const outFile = arg("out", "");
+const sampleFile = arg("sample", "");
 
 // Bundle the TypeScript client into a temp file so the script uses exactly the code the plugin will.
 const dir = mkdtempSync(join(tmpdir(), "literature-feed-"));
@@ -56,10 +59,12 @@ const outfile = join(dir, "client.mjs");
 await build({ entryPoints: ["src/openalex/client.ts"], bundle: true, format: "esm", platform: "node", outfile, logLevel: "error" });
 const { OpenAlexClient, buildSearchUrl } = await import(pathToFileURL(outfile).href);
 
+const rawWorks = [];
 const request = async ({ url, headers }) => {
   const res = await fetch(url, { headers });
   let json = null;
   try { json = await res.json(); } catch { /* not JSON: the client reports it */ }
+  if (sampleFile && Array.isArray(json?.results)) rawWorks.push(...json.results);
   return { status: res.status, json };
 };
 
@@ -105,4 +110,15 @@ if (outFile) {
   record.totalCostUsd = total;
   writeFileSync(outFile, JSON.stringify(record, null, 2) + "\n", "utf8");
   console.log(`Run record written to ${outFile}`);
+}
+if (sampleFile) {
+  const work = rawWorks.find((w) => w.abstract_inverted_index && w.title);
+  if (!work) {
+    console.log("No work with an abstract came back, so no sample was written.");
+  } else {
+    const authorships = (work.authorships ?? []).map((_, i) => ({ author: { display_name: `Author ${i + 1}` } }));
+    const sample = { meta: { count: 1, page: 1, per_page: 100 }, results: [{ ...work, authorships }] };
+    writeFileSync(sampleFile, JSON.stringify(sample, null, 2) + "\n", "utf8");
+    console.log(`Sample written to ${sampleFile}: "${work.title}" (${work.doi ?? "no DOI"}). Check it before committing.`);
+  }
 }

@@ -12,7 +12,7 @@ test-vault/.obsidian/plugins/
 CLAUDE.local.md
 .claude/settings.local.json
 # run records from scripts/openalex-run.mjs --out
-run.json
+run*.json
 
 # secrets and other OSes
 .env

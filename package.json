@@ -1,0 +1,27 @@
+{
+  "name": "literature-feed",
+  "version": "0.0.1",
+  "description": "Weekly paper feeds from OpenAlex into an Obsidian reading inbox, synced to Zotero.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "vitest run --reporter=dot",
+    "lint": "eslint src"
+  },
+  "author": "johnsonolly4",
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@eslint/json": "^0.14.0",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
+    "obsidian": "1.13.1",
+    "tslib": "^2.6.0",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^2.0.0"
+  }
+}

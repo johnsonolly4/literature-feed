@@ -1,0 +1,17 @@
+node_modules/
+main.js
+*.js.map
+dist/
+# plugin settings: API keys live here
+data.json
+.DS_Store
+# dev vault: only Welcome.md is tracked; test notes, Obsidian's state and the built plugin stay local
+test-vault/*
+!test-vault/Welcome.md
+test-vault/.obsidian/plugins/
+CLAUDE.local.md
+.claude/settings.local.json
+# secrets and other OSes
+.env
+*.key
+Thumbs.db

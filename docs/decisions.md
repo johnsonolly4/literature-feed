@@ -1,0 +1,20 @@
+# Decisions
+
+One line each, newest first. Answers "when did we decide that, and why?"
+Format: `date — decision — why — (who / source)`
+
+All lines below come from the agreed plan (`docs/plans/literature-feed.md`); never invent a past decision or its reason.
+
+- 2026-10-12 — Off-topic terms come in two kinds, **drop** (paper removed) and **lower** (moves down one tier) — drop is for clearly off-topic meanings, lower for on-topic but less wanted work — (user, chat 2026-10-12; plan "Decided" 3)
+- 2026-10-12 — Finished weekly inbox notes move to the archive folder automatically (setting, on by default); unticked papers count as dismissed after 4 weeks (setting); literature notes still come from ZotLit in `ZotLit Imports` — (user, chat 2026-10-12; plan "Decided" 2)
+- 2026-10-12 — First feed's project is `Projects/Lipoic acid copolymerisation` — (user, chat 2026-10-12; plan "Decided" 1)
+- 2026-10-12 — Terms marked **lower** (self-healing, adhesive, ionic elastomer, end group, end-functional, anchoring group) move a paper down one tier in the lipoic acid feed — (user, chat 2026-10-12; plan "First feed")
+- 2026-10-12 — Notes get `kind: reading-inbox` — Lab Kit's literature lists and Tidy rules then leave them alone — (user, chat 2026-10-12; plan)
+- 2026-10-12 — Inbox folder starts as `04 Literature/Suggested` in the user's vault, but the repo default is empty (a setting, as in Lab Kit) — keeps personal values out of a public repo — (user, chat 2026-10-12; plan)
+- 2026-10-12 — Two separate jobs: a weekly OpenAlex scan; Zotero sync when the button is pressed and once a day on start-up (no OpenAlex cost) — (user, chat 2026-10-12; plan)
+- 2026-10-12 — Triage first: only ticked papers go to Zotero — keeps the Zotero library clean — (user, chat 2026-10-12; plan)
+- 2026-10-12 — One weekly dashboard note with a collapsible section per feed, styled with Lab Kit's classes when present, plain Obsidian look otherwise — (user, chat 2026-10-12; plan)
+- 2026-10-12 — Feeds are defined in the settings tab (name, topics, concept groups with roles, exclusions, years from, Zotero collection, optional project) — (user, chat 2026-10-12; plan)
+- 2026-10-12 — Native button (own code block, ribbon icon, command, no default hotkey); Meta Bind button rejected — it adds a dependency and a static label — (user, chat 2026-10-12; plan)
+- 2026-10-12 — Native TypeScript with no other plugins needed; network through Obsidian's `requestUrl` — works on Windows, macOS and probably mobile — (user, chat 2026-10-12; plan)
+- 2026-10-12 — Separate plugin with id `literature-feed`, linked to Lab Kit by note conventions only — Lab Kit is store-listed with no network use, this plugin needs OpenAlex and Zotero calls and its own store review; rejected: a module inside Lab Kit, and a Python script run through Templater / Shell commands (Python on every machine, desktop only) — (user, chat 2026-10-12; plan)

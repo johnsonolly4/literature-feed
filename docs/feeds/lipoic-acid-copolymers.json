@@ -1,0 +1,25 @@
+{
+  "name": "Lipoic acid copolymers",
+  "topics": [
+    "(\"lipoic acid\" OR \"thioctic acid\" OR lipoate) AND (copolymer OR copolymerization OR copolymerisation)",
+    "(\"lipoic acid\" OR \"thioctic acid\") AND (acrylate OR acrylamide OR methacrylate)",
+    "(\"lipoic acid\" OR \"thioctic acid\" OR dithiolane) AND (\"radical ring-opening\" OR \"ring-opening polymerization\" OR \"ring-opening polymerisation\")",
+    "(\"lipoic acid\" OR \"thioctic acid\") AND polymer AND (flow OR Bayesian OR \"high-throughput\" OR \"machine learning\")"
+  ],
+  "groups": [
+    { "name": "Lipoic acid", "role": "required", "terms": ["lipoic acid", "thioctic acid", "lipoate", "dithiolane"] },
+    {
+      "name": "Polymerisation",
+      "role": "required",
+      "terms": ["polymer", "copolymer", "polymerisation", "copolymerisation", "radical ring-opening", "ring-opening polymerisation"]
+    },
+    { "name": "Comonomer class", "role": "boost", "terms": ["acrylate", "acrylamide", "methacrylate"] },
+    { "name": "Responsive or degradable", "role": "boost", "terms": ["responsive", "degradable", "depolymerisation"] },
+    { "name": "Flow or optimisation", "role": "priority", "terms": ["flow", "bayesian", "high-throughput", "machine learning", "optimisation"] }
+  ],
+  "drop": ["gold nanoparticle", "AuNP", "quantum dot", "self-assembled monolayer", "supplementation", "clinical trial", "diabetic neuropathy"],
+  "lower": ["self-healing", "adhesive", "ionic elastomer", "end group", "end-functional", "anchoring group"],
+  "yearsFrom": null,
+  "zoteroCollection": "Inbox/Lipoic acid copolymers",
+  "project": "Projects/Lipoic acid copolymerisation"
+}

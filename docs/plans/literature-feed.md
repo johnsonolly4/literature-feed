@@ -69,6 +69,7 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 - Files: `src/settings/data.ts`, `src/settings/tab.ts`, `src/settings/feed-modal.ts`.
 - Contents: global (OpenAlex key, Zotero key + user ID, inbox folder, archive folder, scan day); feed list (add, duplicate, delete, on / off, export / import as `.json`); per feed (topics, concept groups with role required / boost / priority, drop terms, lower terms, years from, Zotero collection, project); **Test** button = matches + estimated cost, nothing written.
 - Done when: settings survive a reload and an external `data.json` change; sentence case, no inline styles (Lab Kit's plugin rules).
+- Built 2026-10-12 (not yet seen in Obsidian): also `src/settings/test-feed.ts` and `src/openalex/request.ts`; the tab uses the declarative settings API; **Test** is a real one-year scan after a confirmation; export goes to the inbox folder; a feed with no required group gets a warning. See `docs/decisions.md`.
 
 ### Phase 4 — Weekly dashboard note
 - Depends on: Phase 3

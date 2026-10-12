@@ -8,8 +8,8 @@ When an item is chosen, move it to `STATUS.md` → Next.
 ## Decisions needed
 Phase 1 took these where the plan was silent (approved in plan mode 2026-10-12 as part of the Phase 1 plan; confirm or change):
 - [ ] A **lower** term counts once per paper, however many match (`src/match/score.ts`, `scorePaper`).
-- [ ] A feed with **no required group** scores every non-dropped paper Possible (same function). Phase 3 may want to refuse such a feed.
-- [ ] Group term lists of the lipoic acid feed are my reading of the plan, test data only (`tests/fixtures/lipoic-feed.ts`). The real importable feed JSON in `docs/feeds/` is still to be written; check its terms then.
+- [x] A feed with **no required group** scores every non-dropped paper Possible (same function). Phase 3 handles it with an editor warning, not a refusal (`checkFeed`, `src/settings/data.ts`); say if you would rather block saving such a feed.
+- [ ] Group term lists of the lipoic acid feed are my reading of the plan (`tests/fixtures/lipoic-feed.ts`). They are now also the real importable feed `docs/feeds/lipoic-acid-copolymers.json` (a test keeps the two equal): check the terms there before you rely on the feed.
 - [ ] Dedupe merges any two papers with the same normalised title, even if both are journal articles with different DOIs (`src/match/dedupe.ts`). Fine for this feed; revisit if generic titles appear.
 - [ ] Matching is whole-word with a plural `s`/`es` on the last word and -ise/-ize, -yse/-yze spellings only; no other stemming (`polymerised` does not match `polymerisation`). List such forms as terms.
 
@@ -37,6 +37,12 @@ Phase 1 took these where the plan was silent (approved in plan mode 2026-10-12 a
 
 ## Not yet tested by the user
 - [ ] Phase 0: the plugin loads and unloads in `test-vault` (`npm run dev`, enable Literature Feed). Only the build, the unit test and lint were run.
+- [ ] Phase 3 (settings tab, 2026-10-12): none of it has been seen in Obsidian. Only the data layer is unit-tested (`tests/settings.test.ts`); the UI (`src/settings/tab.ts`, `feed-modal.ts`) built and linted clean but never ran. In `test-vault`, check: the tab opens and the sections show; text, folder and scan-day fields keep their values after closing and reopening Obsidian; the API key fields are masked; **Add feed** / edit / duplicate / delete / on-off switch; import the file `docs/feeds/lipoic-acid-copolymers.json` (paste and file picker), then export it (a `.feed.json` appears in the inbox folder or vault root); the editor's group rows, warnings and **Test** (with your key, about $0.004; the confirm window shows first); edit `data.json` outside Obsidian while the tab is open and see the tab update; look in light and dark; the settings search finds the fields.
+- [ ] The declarative settings API (`getSettingDefinitions`, 1.13+) was chosen from the type definitions only, without running it. If a row does not render as intended (the feed rows use `render`; the list's delete button comes from `onDelete`), that is the first suspect.
+
+## Quick changes (Phase 3 findings)
+- [ ] API keys sit in `data.json` as plain text (plan and CLAUDE.md rule). Obsidian 1.11.4+ has a secret storage (`app.secretStorage`: `setSecret`, `getSecret`) that keeps them out of the vault and out of vault sync. Worth a decision before release: it would change the README "Network use" note and the settings rows (`secretRow` in `src/settings/tab.ts`). Not done: outside Phase 3's plan.
+- [ ] The feed editor does not check that a Zotero collection name exists (that is Phase 5), nor that a search topic is valid OpenAlex syntax (only brackets and quotes are balanced; **Test** is the real check).
 
 ## Future features
 - [ ] Feed assistant (after Phase 3; idea from chat 2026-10-12). The plugin calls no LLM and sends nothing; the user does the pasting.

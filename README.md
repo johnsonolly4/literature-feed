@@ -2,7 +2,7 @@
 
 An Obsidian plugin that finds new papers on your topics each week, lists them in a reading-inbox note, and sends the ones you tick to Zotero.
 
-> **Status: under development.** This is the repo scaffold (Phase 0 of [the plan](docs/plans/literature-feed.md)): the plugin loads and does nothing else yet. Everything below describes what it is being built to do, and it is not in the Obsidian community plugin store.
+> **Status: under development.** So far (Phase 3 of [the plan](docs/plans/literature-feed.md)) the plugin has a settings tab with feeds and a **Test** search; the weekly scan, the inbox note and the Zotero sync are not built yet. Everything below describes what it is being built to do, and it is not in the Obsidian community plugin store.
 
 ## What it does
 
@@ -12,6 +12,20 @@ An Obsidian plugin that finds new papers on your topics each week, lists them in
 4. From there your usual Zotero → ZotLit → Obsidian reading workflow takes over. Making literature notes is not this plugin's job.
 
 Feeds are set up in the plugin's settings. The scan is lexical (word and phrase matching); it does not use an AI model.
+
+## Settings
+
+Open **Settings → Literature Feed**. Needs Obsidian 1.14 or later.
+
+- **Accounts:** OpenAlex API key, Zotero API key and Zotero user ID. The keys are masked in the settings and stored in the plugin's data file (see Network use).
+- **Folders:** inbox folder (weekly notes) and archive folder (finished notes).
+- **Schedule:** the weekday of the weekly scan.
+- **Feeds:** one row per feed with an on / off switch, edit, duplicate and export; **Add feed** and **Import feed** below. A feed has search topics (one OpenAlex search per line), concept groups, drop terms, lower terms, a start year, a Zotero collection and an optional project.
+  - A concept group has a role. **Required:** a paper without a match is dropped. **Boost:** a match raises it to Strong. **Priority:** a match raises it to Priority. A paper counts as matching a group when any of the group's terms is in its title or abstract.
+  - **Drop** terms remove a paper. **Lower** terms move it down one tier.
+  - A paper with no abstract is judged on its title alone and ranks at most Possible; if its title does not show the required terms it goes to an Unchecked list instead of being dropped.
+  - **Test** in the feed editor runs a real OpenAlex search (the last year) and shows how many papers fall into each tier and what the search cost. It asks first and writes nothing to your vault. Each request costs about $0.001.
+  - **Export** writes `<feed>.feed.json` into the inbox folder (the vault root if none is set); **Import** reads such a file or pasted JSON and adds the feed switched off. Exports contain no keys. An example is in [`docs/feeds/`](docs/feeds/lipoic-acid-copolymers.json).
 
 ## Network use
 

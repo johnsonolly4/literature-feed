@@ -1,1 +1,48 @@
-/* Literature Feed: styles come with the reading inbox (Phase 4). Class names start with .literature-feed- */
+/* Literature Feed. Class names start with .literature-feed-; colours come from Obsidian's variables. */
+
+/* Feed editor and import window */
+.literature-feed-modal {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* A setting whose control is a wide text box: label on top, box below at full width */
+.literature-feed-stacked.setting-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--size-4-2);
+}
+
+.literature-feed-stacked .setting-item-control {
+  width: 100%;
+}
+
+.literature-feed-stacked textarea {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-group {
+  margin-bottom: var(--size-4-3);
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+
+.literature-feed-import {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-warning {
+  margin: var(--size-4-1) 0;
+  color: var(--text-warning);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-result {
+  margin: var(--size-4-2) 0;
+  font-size: var(--font-ui-small);
+}

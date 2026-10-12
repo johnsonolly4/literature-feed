@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, inboxPath, localDay, runScan, seenKey, updatedSeen, windowStart, type ScanDeps } from "../src/inbox/scan";
+import { addDays, describeCounts, inboxPath, localDay, runScan, scanCounts, seenKey, updatedSeen, windowStart, type ScanDeps } from "../src/inbox/scan";
 import type { Candidate, ScanResult } from "../src/openalex/client";
 import { SEEN_CAP, defaultSettings, type FeedConfig, type Settings } from "../src/settings/data";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
@@ -133,6 +133,25 @@ describe("runScan", () => {
     expect(first.note?.input.sections[0].papers).toHaveLength(2);
     const again = await runScan(settings({ seen: updatedSeen([], first.seenAdd), lastScan: first.lastScan }), { client, now: new Date(2026, 9, 14) });
     expect(again.note).toBeNull();
+  });
+});
+
+describe("last scan counts", () => {
+  it("turns an outcome into the stored counts, with the failed feeds counted", async () => {
+    const { client } = fakeClient((_t, _f, call) => (call === 0 ? new Error("HTTP 500") : scanResult([cand(priorityFlow, 1), cand(possible, 2), cand(droppedNoLipoic, 3)])));
+    const out = await runScan(settings({ feeds: [feed("a"), feed("b")] }), { client, now: NOW });
+    expect(scanCounts(out, "2026-10-12")).toEqual({ at: "2026-10-12", priority: 1, strong: 0, possible: 1, unchecked: 0, dropped: 1, failed: 1 });
+  });
+
+  it("says in one sentence what the last scan found", () => {
+    expect(describeCounts({ at: "2026-10-12", priority: 0, strong: 2, possible: 1, unchecked: 0, dropped: 11, failed: 0 }))
+      .toBe("Last scan 2026-10-12: 3 new (0 priority, 2 strong, 1 possible, 0 without abstract), 11 dropped by the feed rules.");
+    expect(describeCounts({ at: "2026-10-19", priority: 0, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 0 }))
+      .toBe("Last scan 2026-10-19: no new papers, 0 dropped by the feed rules.");
+    expect(describeCounts({ at: "2026-10-19", priority: 1, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 2 }))
+      .toContain(", 2 feeds failed.");
+    expect(describeCounts({ at: "2026-10-19", priority: 0, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 1 }))
+      .toContain(", 1 feed failed.");
   });
 });
 

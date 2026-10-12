@@ -33,6 +33,22 @@ export interface Settings {
   lastScan: string;
   /** `<feed id>/<OpenAlex id>` of papers already listed in an inbox note, newest last, so a rescan does not list them again. */
   seen: string[];
+  /** Result of the most recent scan; null before the first one. */
+  lastScanResult: ScanCounts | null;
+}
+
+/** What the most recent scan found; shown on the status block and the Home card. Papers are counted once per feed. */
+export interface ScanCounts {
+  /** Day of that scan, `YYYY-MM-DD`. */
+  at: string;
+  priority: number;
+  strong: number;
+  possible: number;
+  unchecked: number;
+  /** Candidates the feeds' rules removed. */
+  dropped: number;
+  /** Feeds that failed in that scan. */
+  failed: number;
 }
 
 /** The seen list keeps at most this many ids (the oldest go first). */
@@ -41,7 +57,7 @@ export const SEEN_CAP = 5000;
 export function defaultSettings(): Settings {
   return {
     openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
-    lastScan: "", seen: [],
+    lastScan: "", seen: [], lastScanResult: null,
   };
 }
 
@@ -155,6 +171,7 @@ export function normaliseSettings(raw: unknown): Settings {
   }
   out.lastScan = typeof raw.lastScan === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastScan) ? raw.lastScan : "";
   out.seen = textList(raw.seen).slice(-SEEN_CAP);
+  out.lastScanResult = normaliseScanCounts(raw.lastScanResult);
   const taken = new Set<string>();
   if (Array.isArray(raw.feeds)) {
     for (const entry of raw.feeds) {
@@ -163,6 +180,18 @@ export function normaliseSettings(raw: unknown): Settings {
     }
   }
   return out;
+}
+
+function count(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function normaliseScanCounts(raw: unknown): ScanCounts | null {
+  if (!isRecord(raw) || typeof raw.at !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw.at)) return null;
+  const [priority, strong, possible, unchecked, dropped, failed] =
+    ["priority", "strong", "possible", "unchecked", "dropped", "failed"].map((k) => count(raw[k]));
+  if ([priority, strong, possible, unchecked, dropped, failed].some((n) => n === null)) return null;
+  return { at: raw.at, priority: priority!, strong: strong!, possible: possible!, unchecked: unchecked!, dropped: dropped!, failed: failed! };
 }
 
 /** A secret id as Obsidian allows it: lower-case letters, digits and dashes. Anything else is no id. */

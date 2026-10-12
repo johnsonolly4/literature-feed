@@ -1,7 +1,7 @@
 // One scan: every enabled feed, scored, turned into what goes into this week's note. No Obsidian here: the client is
 // passed in, and the result says what to write and what to remember. The caller does the writing.
 import type { OpenAlexClient } from "../openalex/client";
-import { SEEN_CAP, type Settings } from "../settings/data";
+import { SEEN_CAP, type ScanCounts, type Settings } from "../settings/data";
 import { buildPapers, noteName, shortOpenAlexId, weekLabel, type FeedSection, type ListedTier, type NoteInput } from "./write";
 
 /** The window starts this many days before the last scan, so papers OpenAlex indexed late are still caught. */
@@ -102,4 +102,19 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
 /** The `seen` list after a scan: new keys added at the end, the oldest dropped beyond the cap. */
 export function updatedSeen(seen: readonly string[], add: readonly string[]): string[] {
   return [...new Set([...seen, ...add])].slice(-SEEN_CAP);
+}
+
+export function scanCounts(outcome: ScanOutcome, at: string): ScanCounts {
+  const { perTier } = outcome;
+  return { at, ...perTier, dropped: outcome.dropped, failed: outcome.failures.length };
+}
+
+/** One sentence for the status block: what the latest scan found. */
+export function describeCounts(c: ScanCounts): string {
+  const total = c.priority + c.strong + c.possible + c.unchecked;
+  const found = total === 0
+    ? "no new papers"
+    : `${total} new (${c.priority} priority, ${c.strong} strong, ${c.possible} possible, ${c.unchecked} without abstract)`;
+  const failed = c.failed > 0 ? `, ${c.failed} ${c.failed === 1 ? "feed" : "feeds"} failed` : "";
+  return `Last scan ${c.at}: ${found}, ${c.dropped} dropped by the feed rules${failed}.`;
 }

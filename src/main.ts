@@ -1,6 +1,6 @@
 import { Notice, Plugin, normalizePath } from "obsidian";
 import { registerInboxBlock } from "./inbox/block";
-import { runScan, updatedSeen, type ScanOutcome } from "./inbox/scan";
+import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { mergeIntoNote, renderNote } from "./inbox/write";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
@@ -12,6 +12,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
+  /** Open status blocks and cards; they redraw after a scan. */
+  readonly scanListeners = new Set<() => void>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -75,11 +77,14 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         apiKey: this.getSecret("openAlexKey") || undefined,
         sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
       });
-      const outcome = await runScan(this.settings, { client, now: new Date() });
+      const now = new Date();
+      const outcome = await runScan(this.settings, { client, now });
       const path = outcome.note ? await this.writeNote(outcome.note) : null;
       this.settings.lastScan = outcome.lastScan;
       this.settings.seen = updatedSeen(this.settings.seen, outcome.seenAdd);
+      this.settings.lastScanResult = scanCounts(outcome, localDay(now));
       await this.saveSettings();
+      for (const redraw of this.scanListeners) redraw();
       new Notice(describeOutcome(outcome), outcome.failures.length > 0 ? 10_000 : 6_000);
       if (path) await this.app.workspace.openLinkText(path, "", "tab");
     } catch (e) {

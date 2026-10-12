@@ -106,3 +106,24 @@
   gap: var(--size-4-2);
   margin-top: var(--size-4-2);
 }
+
+/* Outlined pills like Lab Kit's card buttons (.vt-card-actions button); its variables when present, Obsidian's otherwise */
+.literature-feed-buttons button {
+  height: auto;
+  padding: 6px 14px;
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.literature-feed-buttons button:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+}
+
+.literature-feed-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

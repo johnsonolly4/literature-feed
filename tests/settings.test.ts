@@ -26,7 +26,7 @@ describe("normaliseSettings", () => {
 
   it("defaults hold no secrets, no paths and no feeds", () => {
     expect(defaultSettings()).toEqual({
-      openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [], lastScan: "", seen: [],
+      openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [], lastScan: "", seen: [], lastScanResult: null,
     });
   });
 
@@ -45,6 +45,14 @@ describe("normaliseSettings", () => {
     const seen = normaliseSettings({ seen: many }).seen;
     expect(seen).toHaveLength(SEEN_CAP);
     expect(seen[seen.length - 1]).toBe(`f/W${SEEN_CAP + 9}`);
+  });
+
+  it("reads the result of the last scan and ignores a damaged one", () => {
+    const good = { at: "2026-10-12", priority: 0, strong: 2, possible: 1, unchecked: 0, dropped: 11, failed: 0 };
+    expect(normaliseSettings({ lastScanResult: good }).lastScanResult).toEqual(good);
+    for (const bad of [null, "x", {}, { ...good, at: "today" }, { ...good, strong: -1 }, { ...good, dropped: 1.5 }, { ...good, failed: "0" }]) {
+      expect(normaliseSettings({ lastScanResult: bad }).lastScanResult, JSON.stringify(bad)).toBeNull();
+    }
   });
 
   it("stores the vault root as an empty folder", () => {

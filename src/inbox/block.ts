@@ -2,12 +2,15 @@
 // for another note. Built with createEl only. It redraws when the note it reads is modified, so ticking a box updates it.
 import { MarkdownRenderChild, TFile, type App, type MarkdownPostProcessorContext, type Plugin } from "obsidian";
 import type { Settings } from "../settings/data";
+import { describeCounts } from "./scan";
 import { NOTE_NAME_PATTERN, parseInbox, waitingByTier } from "./write";
 
 export interface BlockHost {
   app: App;
   settings: Settings;
   scanNow(): Promise<void>;
+  /** Called after every scan, so open blocks redraw even when the note itself did not change. */
+  scanListeners: Set<() => void>;
 }
 
 class StatusBlock extends MarkdownRenderChild {
@@ -17,6 +20,9 @@ class StatusBlock extends MarkdownRenderChild {
 
   onload(): void {
     void this.render();
+    const redraw = (): void => { void this.render(); };
+    this.host.scanListeners.add(redraw);
+    this.register(() => this.host.scanListeners.delete(redraw));
     this.registerEvent(this.host.app.vault.on("modify", (file) => {
       if (file instanceof TFile && NOTE_NAME_PATTERN.test(file.name)) void this.render();
     }));
@@ -49,6 +55,9 @@ class StatusBlock extends MarkdownRenderChild {
         ? `${total} waiting: ${waiting.priority} priority, ${waiting.strong} strong, ${waiting.possible} possible, ${waiting.unchecked} without abstract. Last scan: ${last}.`
         : `No inbox note yet. Last scan: ${last}.`,
     });
+
+    const result = this.host.settings.lastScanResult;
+    if (result) box.createDiv({ cls: "literature-feed-status-line", text: describeCounts(result) });
 
     const buttons = box.createDiv({ cls: "literature-feed-buttons" });
     const scan = buttons.createEl("button", { text: "Scan now" });

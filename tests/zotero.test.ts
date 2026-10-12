@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ZoteroClient, ZoteroError, pathParts, planCollection, titleKey,
+  ZoteroClient, ZoteroError, describeCollections, pathParts, planCollection, titleKey,
   type HttpRequest, type HttpResponse, type ZoteroCollection, type ZoteroFound,
 } from "../src/zotero/client";
 
@@ -94,6 +94,40 @@ describe("requests", () => {
   it("reports a rejected collection with Zotero's reason", async () => {
     const { client } = fake([res(200, { successful: {}, failed: { "0": { code: 400, message: "Collection name too long" } } })]);
     await expect(client.createCollection("x", null)).rejects.toThrow("Collection name too long");
+  });
+});
+
+describe("trashed collections and reading an item back", () => {
+  it("leaves collections that Zotero marks deleted out of the usable list, but shows them in the raw list", async () => {
+    const trashed = { key: "OLD00001", version: 3, data: { key: "OLD00001", name: "Gone", parentCollection: false, deleted: true } };
+    const asNumber = { key: "OLD00002", version: 3, data: { key: "OLD00002", name: "Gone too", parentCollection: false, deleted: 1 } };
+    const rows = [row("LIVE0001", "Live"), trashed, asNumber];
+    const raw = await fake([res(200, rows)]).client.listCollectionsRaw();
+    expect(raw.map((r) => [r.name, r.deleted])).toEqual([["Live", false], ["Gone", true], ["Gone too", true]]);
+    expect(await fake([res(200, rows)]).client.listCollections()).toEqual([{ key: "LIVE0001", name: "Live", parent: null }]);
+  });
+
+  it("describes the collections as paths with their keys, and marks the ones in the trash", () => {
+    expect(describeCollections([
+      { key: "A0000001", name: "Inbox", parent: null, deleted: false },
+      { key: "B0000002", name: "Feed", parent: "A0000001", deleted: true },
+      { key: "C0000003", name: "Projects", parent: null, deleted: false },
+    ])).toEqual(["Inbox  ·  key A0000001", "Inbox/Feed  ·  key B0000002  ·  IN TRASH", "Projects  ·  key C0000003"]);
+  });
+
+  it("reads an item back by its key, with its collections and whether it is in the trash", async () => {
+    const { client, calls } = fake([
+      res(200, { key: "ITEM0001", version: 9, data: { itemType: "journalArticle", collections: ["C1", "C2"], tags: [{ tag: "feed/a" }] } }),
+      res(200, { key: "ITEM0002", version: 4, data: { itemType: "journalArticle", deleted: 1 } }),
+    ]);
+    expect(await client.getItem("ITEM0001")).toEqual({ key: "ITEM0001", version: 9, collections: ["C1", "C2"], tags: [{ tag: "feed/a" }], deleted: false });
+    expect((await client.getItem("ITEM0002"))?.deleted).toBe(true);
+    expect(calls[0].url).toBe("https://api.zotero.org/users/123456/items/ITEM0001");
+  });
+
+  it("says there is no such item on a 404, and fails on other errors", async () => {
+    expect(await fake([res(404)]).client.getItem("NOPE0000")).toBeNull();
+    await expect(fake([res(500)]).client.getItem("ITEM0001")).rejects.toThrow("while trying to read the item back (HTTP 500)");
   });
 });
 

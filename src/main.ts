@@ -1,14 +1,15 @@
-import { Notice, Plugin, TFile, normalizePath } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
-import { NOTE_NAME_PATTERN, markSynced, mergeIntoNote, renderNote } from "./inbox/write";
+import { NOTE_NAME_PATTERN, markSynced, mergeIntoNote, renderNote, tidySynced } from "./inbox/write";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
 import type { SettingsHost } from "./settings/feed-modal";
 import { LiteratureFeedSettingTab } from "./settings/tab";
-import { ZoteroClient } from "./zotero/client";
+import { ZoteroClient, describeCollections } from "./zotero/client";
+import { CollectionsModal } from "./zotero/collections-modal";
 import { zoteroRequester } from "./zotero/request";
 
 export default class LiteratureFeedPlugin extends Plugin implements SettingsHost {
@@ -26,6 +27,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
     this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
+    this.addCommand({ id: "show-zotero-collections", name: "Show Zotero collections", callback: () => void this.showCollections() });
     // The weekly schedule, the ribbon icon and the Zotero sync come in later phases (see docs/plans/literature-feed.md).
   }
 
@@ -113,7 +115,16 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         new Notice("Add your Zotero API key and user ID in the settings first.");
         return;
       }
+      await this.saveOpenInboxNotes();
       const notes = await this.readInboxNotes();
+      for (const note of notes) {
+        // Papers linked before the "In Zotero" list existed are moved into it.
+        const tidy = tidySynced(note.text);
+        if (tidy !== note.text) {
+          await this.app.vault.process(note.file, tidySynced);
+          note.text = tidy;
+        }
+      }
       const pending = findPending(notes.map((n) => ({ path: n.file.path, text: n.text })));
       if (pending.length === 0) {
         new Notice("Nothing to sync: tick the papers you want first.");
@@ -138,6 +149,31 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     }
   }
 
+  /** Lists the collections Zotero's server reports (a diagnostic: compare it with what Zotero shows). */
+  async showCollections(): Promise<void> {
+    const apiKey = this.getSecret("zoteroKey");
+    const userId = this.settings.zoteroUserId;
+    if (apiKey === "" || userId === "") {
+      new Notice("Add your Zotero API key and user ID in the settings first.");
+      return;
+    }
+    try {
+      const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
+      const rows = await new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep }).listCollectionsRaw();
+      new CollectionsModal(this.app, describeCollections(rows)).open();
+    } catch (e) {
+      new Notice(`Could not read your Zotero collections: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    }
+  }
+
+  /** Writes an open, edited inbox note to disk first. Obsidian saves edits a moment late, and Sync reads from disk. */
+  private async saveOpenInboxNotes(): Promise<void> {
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const view = leaf.view;
+      if (view instanceof MarkdownView && view.file && NOTE_NAME_PATTERN.test(view.file.name)) await view.save();
+    }
+  }
+
   /** The inbox notes (by their file name) in the inbox folder, with their text. */
   private async readInboxNotes(): Promise<{ file: TFile; text: string }[]> {
     const { vault } = this.app;
@@ -152,7 +188,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     const path = normalizePath(note.path);
     const existing = vault.getFileByPath(path);
     if (existing) {
-      await vault.process(existing, (current) => mergeIntoNote(current, note.input));
+      await vault.process(existing, (current) => mergeIntoNote(tidySynced(current), note.input));
       return path;
     }
     const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";

@@ -38,6 +38,11 @@ export interface ZoteroCollection {
   parent: string | null;
 }
 
+/** A collection as the API returns it, with whether Zotero marks it deleted (in its Trash). */
+export interface ZoteroCollectionRow extends ZoteroCollection {
+  deleted: boolean;
+}
+
 export interface ZoteroTag {
   tag: string;
   type?: number;
@@ -49,6 +54,33 @@ export interface ZoteroFound {
   version: number;
   collections: string[];
   tags: ZoteroTag[];
+}
+
+/** An item read back by its key; `deleted` is true when it is in Zotero's Trash. */
+export interface ZoteroStored extends ZoteroFound {
+  deleted: boolean;
+}
+
+function isTrue(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || value === "true";
+}
+
+/** The collections as paths, for the diagnostic window: "Inbox / Name  ·  key ABCD1234" and, if it is in the Trash, "IN TRASH". */
+export function describeCollections(rows: readonly ZoteroCollectionRow[]): string[] {
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const pathOf = (row: ZoteroCollectionRow): string => {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    for (let r: ZoteroCollectionRow | undefined = row; r && !seen.has(r.key); r = r.parent ? byKey.get(r.parent) : undefined) {
+      seen.add(r.key);
+      names.unshift(r.name);
+    }
+    return names.join("/");
+  };
+  return rows
+    .map((r) => ({ path: pathOf(r), r }))
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map(({ path, r }) => `${path}  ·  key ${r.key}${r.deleted ? "  ·  IN TRASH" : ""}`);
 }
 
 export interface ClientOptions {
@@ -165,21 +197,29 @@ export class ZoteroClient {
     }
   }
 
-  /** Every collection of the library (all pages). */
-  async listCollections(): Promise<ZoteroCollection[]> {
-    const out: ZoteroCollection[] = [];
+  /** Every collection the API returns (all pages), including any Zotero marks as deleted. */
+  async listCollectionsRaw(): Promise<ZoteroCollectionRow[]> {
+    const out: ZoteroCollectionRow[] = [];
     for (let start = 0; ; start += PAGE) {
       const res = await this.send("GET", "list your collections", `/collections?limit=${PAGE}&start=${start}`);
       const rows = Array.isArray(res.json) ? res.json : [];
       for (const row of rows) {
         if (!isRecord(row) || typeof row.key !== "string" || !isRecord(row.data) || typeof row.data.name !== "string") continue;
         const parent = row.data.parentCollection;
-        out.push({ key: row.key, name: row.data.name, parent: typeof parent === "string" && parent !== "" ? parent : null });
+        out.push({
+          key: row.key, name: row.data.name, parent: typeof parent === "string" && parent !== "" ? parent : null,
+          deleted: isTrue(row.data.deleted) || isTrue(row.deleted),
+        });
       }
       const total = Number(res.headers["total-results"]);
       if (rows.length === 0 || (total > 0 ? out.length >= total && start + PAGE >= total : rows.length < PAGE)) break;
     }
     return out;
+  }
+
+  /** The collections that exist: those in Zotero's Trash are left out, so a trashed collection counts as missing. */
+  async listCollections(): Promise<ZoteroCollection[]> {
+    return (await this.listCollectionsRaw()).filter((c) => !c.deleted).map(({ key, name, parent }) => ({ key, name, parent }));
   }
 
   /** Creates one collection (a top-level one when `parentKey` is null) and returns its key. */
@@ -238,6 +278,21 @@ export class ZoteroClient {
     if (wanted === "") return null;
     const hit = (await this.search(title, false)).find((r) => r !== null && titleKey(r.title) === wanted);
     return hit?.found ?? null;
+  }
+
+  /** Reads one item back by its key; null when Zotero has no such item. Used to check that a write really landed. */
+  async getItem(key: string): Promise<ZoteroStored | null> {
+    let res: HttpResponse;
+    try {
+      res = await this.send("GET", "read the item back", `/items/${encodeURIComponent(key)}`);
+    } catch (e) {
+      if (e instanceof ZoteroError && e.status === 404) return null;
+      throw e;
+    }
+    const parsed = this.toFound(res.json);
+    if (!parsed) return null;
+    const data = isRecord(res.json) && isRecord(res.json.data) ? res.json.data : {};
+    return { ...parsed.found, deleted: isTrue(data.deleted) };
   }
 
   /** Creates one item and returns what was made (so a second feed that finds the same paper can add to it). */

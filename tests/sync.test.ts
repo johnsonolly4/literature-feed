@@ -29,17 +29,31 @@ describe("findPending", () => {
     ]);
   });
 
+  it("also lists an unticked paper in the In Zotero list (a request to send it again), but not a ticked one", () => {
+    const synced = markSynced(tick(tick(note([{ feedId: "a", papers: [paper(1), paper(2), paper(3)] }]), 1), 2), [
+      { feedId: "a", openalexId: "W1", key: "ABCD2345" }, { feedId: "a", openalexId: "W2", key: "EFGH6789" },
+    ]);
+    expect(findPending([{ path: "n.md", text: synced }])).toEqual([]);
+    const resync = synced.replace("> - [x] **Paper 2**", "> - [ ] **Paper 2**");
+    expect(findPending([{ path: "n.md", text: resync }])).toEqual([{ path: "n.md", feedId: "a", openalexId: "W2" }]);
+  });
+
   it("finds nothing when nothing is ticked", () => {
     expect(findPending([{ path: "n.md", text: note([{ feedId: "a", papers: [paper(1)] }]) }])).toEqual([]);
   });
 });
 
 /** Fakes for both clients that remember what they were asked. */
-function fakes(opts: { collections?: ZoteroCollection[]; existing?: Record<string, ZoteroFound>; failWork?: string[]; failCreate?: string[]; confirm?: boolean } = {}) {
+function fakes(opts: {
+  collections?: ZoteroCollection[]; existing?: Record<string, ZoteroFound>; failWork?: string[]; failCreate?: string[];
+  /** getItem answers without these collection keys (as if Zotero did not file the item there). */
+  dropCollections?: string[]; /** getItem says the item is in the Trash. */ trashed?: boolean; /** getItem finds nothing. */ vanished?: boolean;
+} = {}) {
   const log: string[] = [];
   const collections: ZoteroCollection[] = [...(opts.collections ?? [])];
   let n = 0;
   const items = new Map<string, ZoteroFound>(Object.entries(opts.existing ?? {}));
+  const byKey = new Map<string, ZoteroFound>([...items.values()].map((i) => [i.key, i]));
   const deps: SyncDeps = {
     zotero: {
       listCollections: async () => collections.map((c) => ({ ...c })),
@@ -49,6 +63,12 @@ function fakes(opts: { collections?: ZoteroCollection[]; existing?: Record<strin
         collections.push({ key, name, parent });
         return key;
       },
+      getItem: async (key) => {
+        log.push(`get:${key}`);
+        const item = byKey.get(key);
+        if (!item || opts.vanished) return null;
+        return { ...item, collections: item.collections.filter((c) => !opts.dropCollections?.includes(c)), deleted: opts.trashed === true };
+      },
       findByDoi: async (doi) => { log.push(`find:${doi}`); return items.get(doi) ?? null; },
       findByTitle: async (title) => { log.push(`findTitle:${title}`); return null; },
       createItem: async (item) => {
@@ -56,11 +76,13 @@ function fakes(opts: { collections?: ZoteroCollection[]; existing?: Record<strin
         if (opts.failCreate?.includes(String(item.DOI))) throw new Error("Zotero rejected the item: bad field");
         const made: ZoteroFound = { key: `ITM${String(++n).padStart(5, "0")}`, version: 1, collections: item.collections as string[], tags: item.tags as { tag: string }[] };
         items.set(String(item.DOI), made);
+        byKey.set(made.key, made);
         return made;
       },
       addToCollectionsAndTag: async (found, cols, tags) => {
         log.push(`add:${found.key}:${cols.join("+")}:${tags.join("+")}`);
         const next: ZoteroFound = { ...found, collections: [...new Set([...found.collections, ...cols])], tags: [...found.tags, ...tags.map((tag) => ({ tag }))] };
+        byKey.set(next.key, next);
         return { item: next, changed: true };
       },
     },
@@ -189,16 +211,44 @@ describe("runSync: papers", () => {
   });
 });
 
+describe("runSync: checking the result in Zotero", () => {
+  it("reports the collections the papers were filed in, and which of them this run made", async () => {
+    const { deps } = fakes({ collections: PARENTS });
+    const result = await runSync([feedA], pending(["a", "W1"]), deps, ALL);
+    expect(result.collections).toEqual([{ path: "Inbox/Feed A", created: true }, { path: "Projects/Proj", created: true }]);
+    const again = fakes({ collections: EXISTING });
+    expect((await runSync([feedA], pending(["a", "W1"]), again.deps, NONE)).collections).toEqual([{ path: "Inbox/Feed A", created: false }, { path: "Projects/Proj", created: false }]);
+  });
+
+  it("reads each item back, and does not count a paper as synced if Zotero did not file it where it should", async () => {
+    const { deps, log } = fakes({ collections: EXISTING, dropCollections: ["FEEDA001"] });
+    const result = await runSync([feedA], pending(["a", "W1"]), deps, NONE);
+    expect(log.some((l) => l.startsWith("get:"))).toBe(true);
+    expect(result.synced).toEqual([]);
+    expect(result.failed[0].message).toBe("Zotero accepted the item but it is not in the collection Inbox/Feed A");
+  });
+
+  it("does not count an item that is in the Trash, or that cannot be found, as synced", async () => {
+    for (const [extra, text] of [[{ trashed: true }, "may be in the Trash"], [{ vanished: true }, "not in the library afterwards"]] as const) {
+      const { deps } = fakes({ collections: EXISTING, ...extra });
+      const result = await runSync([feedB], pending(["b", "W1"]), deps, NONE);
+      expect(result.synced, text).toEqual([]);
+      expect(result.failed[0].message).toContain(text);
+    }
+  });
+});
+
 describe("describeSync", () => {
   it("says what happened in one sentence", () => {
-    const base = { synced: [], failed: [], skipped: [], created: [], blocked: [] };
+    const base = { synced: [], failed: [], skipped: [], created: [], collections: [], blocked: [] };
     const text = describeSync({
       ...base,
       synced: [{ path: "n", feedId: "a", openalexId: "W1", key: "AAAAAAAA", outcome: "added" }, { path: "n", feedId: "a", openalexId: "W2", key: "BBBBBBBB", outcome: "existing" }],
       failed: [{ path: "n", feedId: "a", openalexId: "W3", message: "boom" }],
       created: ["Inbox/Feed A"],
+      collections: [{ path: "Inbox/Feed A", created: true }, { path: "Projects/Proj", created: false }],
       skipped: [{ path: "n", feedId: "x", openalexId: "W4", reason: "its feed no longer exists" }],
     });
-    expect(text).toBe("1 added to Zotero, 1 already in your library (collections and tag added), 1 failed. Created collections: Inbox/Feed A. 1 skipped (its feed no longer exists). First failure: boom");
+    expect(text).toBe("1 added to Zotero, 1 already in your library (collections and tag added), 1 failed. Created collections: Inbox/Feed A. Filed in: Inbox/Feed A (new), Projects/Proj (existing). 1 skipped (its feed no longer exists). First failure: boom");
   });
 });

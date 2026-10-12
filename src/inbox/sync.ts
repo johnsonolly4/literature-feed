@@ -12,19 +12,23 @@ export interface PendingPaper {
   openalexId: string;
 }
 
-/** Ticked papers whose line has no "in Zotero" link yet, from the text of the inbox notes. */
+/**
+ * Ticked papers whose line has no "in Zotero" link yet, and papers in the "In Zotero" list that were unticked (a request to
+ * send them again), from the text of the inbox notes.
+ */
 export function findPending(notes: readonly { path: string; text: string }[]): PendingPaper[] {
   const out: PendingPaper[] = [];
   for (const note of notes) {
     for (const p of parseInbox(note.text).papers) {
-      if (p.ticked && !p.synced) out.push({ path: note.path, feedId: p.feedId, openalexId: p.openalexId });
+      const wanted = p.list === "synced" ? !p.ticked : p.ticked && !p.synced;
+      if (wanted) out.push({ path: note.path, feedId: p.feedId, openalexId: p.openalexId });
     }
   }
   return out;
 }
 
 export interface SyncDeps {
-  zotero: Pick<ZoteroClient, "listCollections" | "createCollection" | "findByDoi" | "findByTitle" | "createItem" | "addToCollectionsAndTag">;
+  zotero: Pick<ZoteroClient, "listCollections" | "createCollection" | "getItem" | "findByDoi" | "findByTitle" | "createItem" | "addToCollectionsAndTag">;
   openalex: Pick<OpenAlexClient, "getWork">;
 }
 
@@ -47,6 +51,8 @@ export interface SyncResult {
   skipped: { path: string; feedId: string; openalexId: string; reason: string }[];
   /** Collection paths created in this run. */
   created: string[];
+  /** Every collection the papers of this run were filed into, with whether this run made it. */
+  collections: { path: string; created: boolean }[];
   /** Collection paths that are missing and may not be created: when there are any, nothing was sent. */
   blocked: { path: string; reason: string }[];
 }
@@ -72,7 +78,7 @@ function errorMessage(e: unknown): string {
  * are added to that item.
  */
 export async function runSync(feeds: readonly FeedConfig[], pending: readonly PendingPaper[], deps: SyncDeps, options: SyncOptions): Promise<SyncResult> {
-  const result: SyncResult = { synced: [], failed: [], skipped: [], created: [], blocked: [] };
+  const result: SyncResult = { synced: [], failed: [], skipped: [], created: [], collections: [], blocked: [] };
   const byId = new Map(feeds.map((f) => [f.id, f]));
   const todo: PendingPaper[] = [];
   for (const p of pending) {
@@ -109,8 +115,12 @@ export async function runSync(feeds: readonly FeedConfig[], pending: readonly Pe
       result.created.push(path);
     }
     const done = planCollection(collections, path);
-    if (done.key) keyOf.set(path, done.key);
+    if (done.key) {
+      keyOf.set(path, done.key);
+      result.collections.push({ path, created: result.created.includes(path) });
+    }
   }
+  const pathOfKey = new Map([...keyOf].map(([path, key]) => [key, path]));
 
   // 2. Papers.
   const made = new Map<string, ZoteroFound>(); // items created in this run, by bare DOI, for a second feed that has the paper
@@ -122,15 +132,22 @@ export async function runSync(feeds: readonly FeedConfig[], pending: readonly Pe
       const doi = bareDoi(work.doi);
       let found: ZoteroFound | null = doi !== "" ? made.get(doi) ?? null : null;
       found ??= doi !== "" ? await deps.zotero.findByDoi(doi) : await deps.zotero.findByTitle(work.title ?? "");
+      let item: ZoteroFound;
+      let outcome: "added" | "existing";
       if (found) {
-        const { item } = await deps.zotero.addToCollectionsAndTag(found, keys, [feedTag(feed.id)]);
-        if (doi !== "") made.set(doi, item);
-        result.synced.push({ path: p.path, feedId: p.feedId, openalexId: p.openalexId, key: item.key, outcome: "existing" });
+        item = (await deps.zotero.addToCollectionsAndTag(found, keys, [feedTag(feed.id)])).item;
+        outcome = "existing";
       } else {
-        const item = await deps.zotero.createItem(toZoteroItem(work, feed.id, keys));
-        if (doi !== "") made.set(doi, item);
-        result.synced.push({ path: p.path, feedId: p.feedId, openalexId: p.openalexId, key: item.key, outcome: "added" });
+        item = await deps.zotero.createItem(toZoteroItem(work, feed.id, keys));
+        outcome = "added";
       }
+      // Read it back: a link in the note means the item is really in the library, in the collections it was meant for.
+      const stored = await deps.zotero.getItem(item.key);
+      if (!stored || stored.deleted) throw new Error("Zotero accepted the item but it is not in the library afterwards (it may be in the Trash)");
+      const missing = keys.filter((k) => !stored.collections.includes(k)).map((k) => pathOfKey.get(k) ?? k);
+      if (missing.length > 0) throw new Error(`Zotero accepted the item but it is not in the collection ${missing.join(", ")}`);
+      if (doi !== "") made.set(doi, item);
+      result.synced.push({ path: p.path, feedId: p.feedId, openalexId: p.openalexId, key: item.key, outcome });
     } catch (e) {
       result.failed.push({ path: p.path, feedId: p.feedId, openalexId: p.openalexId, message: errorMessage(e) });
     }
@@ -148,6 +165,9 @@ export function describeSync(r: SyncResult): string {
   const parts = [`${added} added to Zotero`, `${existing} already in your library (collections and tag added)`, `${r.failed.length} failed`];
   let text = `${parts.join(", ")}.`;
   if (r.created.length > 0) text += ` Created collections: ${r.created.join(", ")}.`;
+  if (r.synced.length > 0 && r.collections.length > 0) {
+    text += ` Filed in: ${r.collections.map((c) => `${c.path} (${c.created ? "new" : "existing"})`).join(", ")}.`;
+  }
   if (r.skipped.length > 0) text += ` ${r.skipped.length} skipped (${r.skipped[0].reason}).`;
   if (r.failed.length > 0) text += ` First failure: ${r.failed[0].message}`;
   return text;

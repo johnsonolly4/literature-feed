@@ -31,6 +31,8 @@ export class MarkdownRenderChild extends Component {
 
 export class TFile {}
 
+export class MarkdownView {}
+
 export class PluginSettingTab {
   constructor(readonly app: unknown, readonly plugin: unknown) { /* nothing */ }
   update(): void { /* nothing */ }

@@ -3,7 +3,7 @@ import type { Candidate } from "../src/openalex/client";
 import type { FeedConfig } from "../src/settings/data";
 import {
   buildNote, buildPapers, doiUrl, escapeMd, isoWeek, mergeIntoNote, noteName, parseInbox, renderNote, shortOpenAlexId, weekLabel,
-  NOTE_NAME_PATTERN, markSynced, waitingByFeed, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
+  NOTE_NAME_PATTERN, markSynced, tidySynced, waitingByFeed, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
 } from "../src/inbox/write";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
 import { priorityFlow, strongComonomer, possible, droppedNoLipoic, withSentence } from "./fixtures/lipoic-papers";
@@ -181,20 +181,20 @@ describe("parseInbox", () => {
     expect(parseInbox(text)).toEqual({
       scanned: "2026-10-12",
       papers: [
-        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false },
-        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false },
+        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null },
+        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null },
       ],
     });
   });
 
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
-    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false }]);
+    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null }]);
   });
 });
 
 describe("waitingByTier", () => {
-  const line = (id: string, feedId: string, tier: InboxPaper["tier"], ticked = false) => ({ openalexId: id, feedId, tier, ticked, synced: false });
+  const line = (id: string, feedId: string, tier: InboxPaper["tier"], ticked = false) => ({ openalexId: id, feedId, tier, ticked, synced: false, list: "ranked" as const, key: null });
 
   it("counts papers still waiting per tier and leaves out ticked ones", () => {
     expect(waitingByTier([line("W1", "a", "priority"), line("W2", "a", "strong", true), line("W3", "a", "possible"), line("W4", "a", "unchecked")]))
@@ -210,7 +210,7 @@ describe("waitingByTier", () => {
 });
 
 describe("waitingByFeed", () => {
-  const line = (id: string, feedId: string, tier: InboxPaper["tier"], ticked = false) => ({ openalexId: id, feedId, tier, ticked, synced: false });
+  const line = (id: string, feedId: string, tier: InboxPaper["tier"], ticked = false) => ({ openalexId: id, feedId, tier, ticked, synced: false, list: "ranked" as const, key: null });
 
   it("counts each feed's unticked papers on their own, a paper found by two feeds in both", () => {
     expect(waitingByFeed([line("W1", "a", "strong"), line("W1", "b", "possible"), line("W2", "a", "unchecked"), line("W3", "b", "priority", true)])).toEqual({
@@ -222,33 +222,59 @@ describe("waitingByFeed", () => {
 });
 
 describe("markSynced", () => {
+  const nl = String.fromCharCode(10);
   const base = renderNote(input([
     { feedId: "a", feedName: "A", papers: [paper(1, "strong"), paper(2, "possible")] },
     { feedId: "b", feedName: "B", papers: [paper(1, "possible")] },
   ]));
+  const paperLines = (text: string) => text.split(nl).filter((l) => l.startsWith("> - ["));
 
-  it("links the named paper in the named feed and leaves every other line as it was", () => {
+  it("ticks the paper, links it, and moves it into the feed's In Zotero list at the bottom", () => {
     const out = markSynced(base, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
-    const lines = out.split("\n");
-    const before = base.split("\n");
-    expect(lines).toHaveLength(before.length);
-    const changed = lines.filter((l, i) => l !== before[i]);
-    expect(changed).toHaveLength(1);
-    expect(changed[0]).toContain(" · [in Zotero](zotero://select/library/items/ABCD2345) %%oa:W1:s%%");
-    expect(changed[0].startsWith("> - [ ] **Paper 1**")).toBe(true);
+    const parsed = parseInbox(out).papers.map((p) => `${p.feedId}:${p.openalexId}:${p.list}:${p.ticked}:${p.synced}:${p.key}`);
+    expect(parsed).toEqual(["a:W2:ranked:false:false:null", "b:W1:ranked:false:false:null", "a:W1:synced:true:true:ABCD2345"]);
+    expect(out).toContain("> [!literature-feed-synced]- In Zotero · 1 %%feed:a:synced%%");
+    const line = paperLines(out).find((l) => l.includes("%%oa:W1:s%%")) ?? "";
+    expect(line.startsWith("> - [x] **Paper 1**")).toBe(true);
+    expect(line).toContain(" · [in Zotero](zotero://select/library/items/ABCD2345) %%oa:W1:s%%");
+    // the other callout is recounted
+    expect(out).toContain("· 1 paper %%feed:a%%");
   });
 
-  it("is read back as synced, still ticked or not as before, and still one paper per feed", () => {
-    const ticked = base.replace("> - [ ] **Paper 1**", "> - [x] **Paper 1**");
-    const out = markSynced(ticked, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
-    expect(parseInbox(out).papers.map((p) => `${p.feedId}:${p.openalexId}:${p.ticked}:${p.synced}`)).toEqual([
-      "a:W1:true:true", "a:W2:false:false", "b:W1:false:false",
-    ]);
+  it("changes nothing else: the other papers' lines and the other feed are as they were", () => {
+    const out = markSynced(base, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
+    const untouched = paperLines(base).filter((l) => !l.includes("%%oa:W1:s%%"));
+    for (const l of untouched) expect(paperLines(out)).toContain(l);
+    expect(out.split(nl).filter((l) => l.includes("%%feed:b%%"))).toEqual(base.split(nl).filter((l) => l.includes("%%feed:b%%")));
   });
 
-  it("does nothing twice, ignores keys that are not Zotero keys, and unknown papers", () => {
-    const once = markSynced(base, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
-    expect(markSynced(once, [{ feedId: "a", openalexId: "W1", key: "ZZZZ9999" }])).toBe(once);
+  it("removes a callout that is left empty, and adds to one that already exists", () => {
+    const one = markSynced(base, [{ feedId: "a", openalexId: "W1", key: "AAAAAAAA" }]);
+    const two = markSynced(one, [{ feedId: "a", openalexId: "W2", key: "BBBBBBBB" }]);
+    expect(two).not.toContain("%%feed:a%%");
+    expect(two).toContain("> [!literature-feed-synced]- In Zotero · 2 %%feed:a:synced%%");
+    expect(parseInbox(two).papers.filter((p) => p.feedId === "a").map((p) => `${p.openalexId}:${p.list}`)).toEqual(["W1:synced", "W2:synced"]);
+    expect(two).toContain("%%feed:b%%");
+  });
+
+  it("a paper from the Unchecked list moves too, and that list is recounted", () => {
+    const note = renderNote(input([{ feedId: "a", feedName: "A", papers: [paper(1, "strong"), paper(2, "unchecked"), paper(3, "unchecked")] }]));
+    const out = markSynced(note, [{ feedId: "a", openalexId: "W2", key: "CCCCCCCC" }]);
+    expect(out).toContain("matched by OpenAlex · 1 %%feed:a:unchecked%%");
+    expect(parseInbox(out).papers.find((p) => p.openalexId === "W2")?.list).toBe("synced");
+  });
+
+  it("a resync ticks the line again where it is in the In Zotero list, and keeps the new key", () => {
+    const synced = markSynced(base, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
+    const unticked = synced.replace("> - [x] **Paper 1**", "> - [ ] **Paper 1**");
+    const again = markSynced(unticked, [{ feedId: "a", openalexId: "W1", key: "ZZZZ9999" }]);
+    const p = parseInbox(again).papers.find((x) => x.openalexId === "W1" && x.feedId === "a");
+    expect(p).toMatchObject({ list: "synced", ticked: true, key: "ZZZZ9999" });
+    expect(again.match(/%%oa:W1:s%%/g)).toHaveLength(1);
+    expect(again.match(/zotero:\/\/select/g)).toHaveLength(1);
+  });
+
+  it("ignores keys that are not Zotero keys, papers that are not there, and an empty list", () => {
     expect(markSynced(base, [{ feedId: "a", openalexId: "W1", key: "bad key" }, { feedId: "a", openalexId: "W1", key: "abcd2345" }])).toBe(base);
     expect(markSynced(base, [{ feedId: "a", openalexId: "W99", key: "ABCD2345" }])).toBe(base);
     expect(markSynced(base, [])).toBe(base);
@@ -256,7 +282,36 @@ describe("markSynced", () => {
 
   it("marks the same paper under two feeds separately", () => {
     const out = markSynced(base, [{ feedId: "a", openalexId: "W1", key: "AAAAAAAA" }, { feedId: "b", openalexId: "W1", key: "AAAAAAAA" }]);
-    expect(parseInbox(out).papers.filter((p) => p.synced).map((p) => p.feedId)).toEqual(["a", "b"]);
+    expect(parseInbox(out).papers.filter((p) => p.list === "synced").map((p) => p.feedId)).toEqual(["a", "b"]);
+  });
+
+  it("keeps a feed name with a dot and brackets in its header when the callout is recounted", () => {
+    const note = renderNote(input([{ feedId: "a", feedName: "Lipoic [acid] · copolymers", papers: [paper(1, "strong"), paper(2, "possible")] }]));
+    const out = markSynced(note, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
+    expect(out).toContain("> [!literature-feed]- Lipoic \\[acid\\] · copolymers · 1 paper %%feed:a%%");
+  });
+});
+
+describe("tidySynced", () => {
+  it("moves papers that are ticked and linked but still in a normal list, and leaves the rest", () => {
+    const note = renderNote(input([{ feedId: "a", feedName: "A", papers: [paper(1, "strong"), paper(2, "possible")] }]));
+    const old = note
+      .replace("> - [ ] **Paper 1**", "> - [x] **Paper 1**")
+      .replace(" %%oa:W1:s%%", " · [in Zotero](zotero://select/library/items/ABCD2345) %%oa:W1:s%%");
+    const out = tidySynced(old);
+    expect(parseInbox(out).papers.map((p) => `${p.openalexId}:${p.list}`)).toEqual(["W2:ranked", "W1:synced"]);
+    expect(tidySynced(out)).toBe(out);
+    expect(tidySynced(note)).toBe(note);
+  });
+});
+
+describe("a rescan after papers were synced", () => {
+  it("does not list a synced paper again, and keeps the In Zotero list", () => {
+    const first = input([{ feedId: "a", feedName: "A", papers: [paper(1, "strong"), paper(2, "possible")] }]);
+    const synced = markSynced(renderNote(first), [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
+    const merged = mergeIntoNote(synced, input([{ feedId: "a", feedName: "A", papers: [paper(1, "strong"), paper(3, "possible")] }], "2026-10-19"));
+    expect(parseInbox(merged).papers.map((p) => `${p.openalexId}:${p.list}`)).toEqual(["W2:ranked", "W3:ranked", "W1:synced"]);
+    expect(merged.match(/%%oa:W1:/g)).toHaveLength(1);
   });
 });
 

@@ -141,3 +141,14 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* The "In Zotero" list of a feed in the reading inbox note */
+.literature-feed .callout[data-callout="literature-feed-synced"] {
+  --callout-color: var(--color-green-rgb, 8, 185, 78);
+  --callout-icon: lucide-library;
+}
+
+.literature-feed-collections {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}

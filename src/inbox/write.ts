@@ -169,10 +169,19 @@ function plural(n: number, word: string): string {
 }
 
 function rankedHeader(name: string, feedId: string, papers: readonly { tier: string }[]): string {
+  return rankedHeaderEscaped(escapeMd(name), feedId, papers);
+}
+
+/** For a name that is already escaped (read back from an existing header). */
+function rankedHeaderEscaped(escapedName: string, feedId: string, papers: readonly { tier: string }[]): string {
   const top = papers.filter((p) => p.tier === "priority").length;
   const open = papers.some((p) => p.tier === "priority" || p.tier === "strong");
   const count = `${plural(papers.length, "paper")}${top > 0 ? ` · ${top} priority` : ""}`;
-  return `> [!literature-feed]${open ? "+" : "-"} ${escapeMd(name)} · ${count} %%feed:${feedId}%%`;
+  return `> [!literature-feed]${open ? "+" : "-"} ${escapedName} · ${count} %%feed:${feedId}%%`;
+}
+
+function syncedHeader(feedId: string, count: number): string {
+  return `> [!literature-feed-synced]- In Zotero · ${count} %%feed:${feedId}:synced%%`;
 }
 
 function uncheckedHeader(feedId: string, count: number): string {
@@ -210,7 +219,13 @@ export interface ParsedPaper {
   ticked: boolean;
   /** The line carries the "in Zotero" link: the paper has been sent. */
   synced: boolean;
+  /** The callout the line is in: the feed's ranked list, its list of papers without an abstract, or its "In Zotero" list. */
+  list: NoteList;
+  /** The Zotero item key from the link, or null. */
+  key: string | null;
 }
+
+export type NoteList = "ranked" | "unchecked" | "synced";
 
 export interface ParsedNote {
   scanned: string;
@@ -219,7 +234,8 @@ export interface ParsedNote {
 
 /** What the "in Zotero" link starts with; a line that has it has been synced. */
 const ZOTERO_LINK = "](zotero://select/library/items/";
-const HEADER = /^>\s*\[!literature-feed(?:-unchecked)?\][+-]?\s.*%%feed:([a-z0-9-]+)(?::unchecked)?%%\s*$/;
+const HEADER = /^>\s*\[!literature-feed(?:-unchecked|-synced)?\][+-]?\s.*%%feed:([a-z0-9-]+)(?::(unchecked|synced))?%%\s*$/;
+const ZOTERO_KEY = /zotero:\/\/select\/library\/items\/([A-Z0-9]{8})/;
 const PAPER = /^>\s*-\s\[( |x|X)\]\s.*%%oa:(W\d+):([psou])%%\s*$/;
 const CODE_TO_TIER = Object.fromEntries(Object.entries(TIER_CODE).map(([tier, code]) => [code, tier])) as Record<string, ListedTier>;
 
@@ -227,6 +243,7 @@ const CODE_TO_TIER = Object.fromEntries(Object.entries(TIER_CODE).map(([tier, co
 export function parseInbox(text: string): ParsedNote {
   const papers: ParsedPaper[] = [];
   let feedId = "";
+  let list: NoteList = "ranked";
   let scanned = "";
   let inFront = false;
   const lines = text.split("\n");
@@ -240,10 +257,16 @@ export function parseInbox(text: string): ParsedNote {
     const header = HEADER.exec(line);
     if (header) {
       feedId = header[1];
+      list = (header[2] as NoteList | undefined) ?? "ranked";
       return;
     }
     const paper = PAPER.exec(line);
-    if (paper) papers.push({ openalexId: paper[2], feedId, tier: CODE_TO_TIER[paper[3]], ticked: paper[1] !== " ", synced: line.includes(ZOTERO_LINK) });
+    if (paper) {
+      papers.push({
+        openalexId: paper[2], feedId, tier: CODE_TO_TIER[paper[3]], ticked: paper[1] !== " ",
+        synced: line.includes(ZOTERO_LINK), list, key: ZOTERO_KEY.exec(line)?.[1] ?? null,
+      });
+    }
   });
   return { scanned, papers };
 }
@@ -342,23 +365,92 @@ export interface SyncedMark {
   key: string;
 }
 
+/** Index of the header line of the callout that holds line `i`, or -1. */
+function blockStart(lines: string[], i: number): number {
+  for (let k = i; k >= 0; k--) {
+    if (HEADER.test(lines[k])) return k;
+    if (!lines[k].startsWith(">")) return -1;
+  }
+  return -1;
+}
+
+/** The line ticked, with the "in Zotero" link for this key (an older link is replaced). */
+function withLink(line: string, key: string): string {
+  const ticked = line.replace(/^(>\s*-\s)\[ \]/, "$1[x]");
+  const link = `[in Zotero](zotero://select/library/items/${key})`;
+  if (ticked.includes(ZOTERO_LINK)) return ticked.replace(/\[in Zotero\]\(zotero:\/\/select\/library\/items\/[A-Z0-9]+\)/, link);
+  return ticked.replace(/ (%%oa:W\d+:[psou]%%)(\s*)$/, ` · ${link} $1$2`);
+}
+
+/** Recounts the headers of the callouts named in `touched` ("feedId|list") and removes the ones left empty. */
+function refreshBlocks(lines: string[], touched: ReadonlySet<string>): void {
+  for (const t of touched) {
+    const [feedId, list] = t.split("|");
+    const marker = list === "ranked" ? `%%feed:${feedId}%%` : `%%feed:${feedId}:${list}%%`;
+    const block = findBlock(lines, marker);
+    if (!block) continue;
+    const [start, end] = block;
+    const tiers = tiersOf(lines.slice(start + 1, end));
+    if (tiers.length === 0) {
+      lines.splice(start, end - start + (lines[end] !== undefined && lines[end].trim() === "" ? 1 : 0));
+      continue;
+    }
+    if (list === "synced") lines[start] = syncedHeader(feedId, tiers.length);
+    else if (list === "unchecked") lines[start] = uncheckedHeader(feedId, tiers.length);
+    else {
+      const name = /^>\s*\[!literature-feed\][+-]\s(.*?) · \d+ papers? /.exec(lines[start])?.[1] ?? feedId;
+      lines[start] = rankedHeaderEscaped(name, feedId, tiers.map((tier) => ({ tier })));
+    }
+  }
+}
+
 /**
- * Adds ` · [in Zotero](zotero://select/library/items/KEY)` before the hidden marker of each paper named (in that feed's
- * callouts), and changes nothing else. A paper that is already linked, or has a key that is not a Zotero key, is left alone.
+ * For each paper named: ticks its line, adds ` · [in Zotero](zotero://select/library/items/KEY)` before the hidden marker, and
+ * moves it into the feed's "In Zotero" callout (made at the end of the note when missing; collapsed). A paper that is already
+ * in that callout is updated where it is (a resync). Headers are recounted and a callout left empty is removed. Nothing else
+ * changes. A key that is not a Zotero key, or a paper not in the note, is ignored.
  */
 export function markSynced(text: string, marks: readonly SyncedMark[]): string {
   const wanted = new Map(marks.filter((m) => /^[A-Z0-9]{8}$/.test(m.key)).map((m) => [`${m.feedId}|${m.openalexId}`, m.key]));
   if (wanted.size === 0) return text;
-  let feedId = "";
-  return text.split("\n").map((line) => {
-    const header = HEADER.exec(line);
-    if (header) {
-      feedId = header[1];
-      return line;
+  const lines = text.split("\n");
+  const touched = new Set<string>();
+  for (const [id, key] of wanted) {
+    const [feedId, openalexId] = id.split("|");
+    let current = "";
+    let at = -1;
+    for (let i = 0; i < lines.length && at === -1; i++) {
+      const header = HEADER.exec(lines[i]);
+      if (header) current = header[1];
+      else if (current === feedId && PAPER.exec(lines[i])?.[2] === openalexId) at = i;
     }
-    const paper = PAPER.exec(line);
-    const key = paper ? wanted.get(`${feedId}|${paper[2]}`) : undefined;
-    if (!paper || key === undefined || line.includes(ZOTERO_LINK)) return line;
-    return line.replace(/ (%%oa:W\d+:[psou]%%)(\s*)$/, ` · [in Zotero](zotero://select/library/items/${key}) $1$2`);
-  }).join("\n");
+    if (at === -1) continue;
+    const list = (HEADER.exec(lines[blockStart(lines, at)] ?? "")?.[2] as NoteList | undefined) ?? "ranked";
+    const updated = withLink(lines[at], key);
+    if (list === "synced") {
+      lines[at] = updated;
+      continue;
+    }
+    lines.splice(at, 1);
+    touched.add(`${feedId}|${list}`);
+    const marker = `%%feed:${feedId}:synced%%`;
+    let block = findBlock(lines, marker);
+    if (!block) {
+      while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+      lines.push("", syncedHeader(feedId, 0), "");
+      block = findBlock(lines, marker);
+    }
+    lines.splice((block as [number, number])[1], 0, updated);
+    touched.add(`${feedId}|synced`);
+  }
+  refreshBlocks(lines, touched);
+  return lines.join("\n");
+}
+
+/** Moves papers that are ticked and linked but still in a normal list (made before the "In Zotero" list existed) into it. */
+export function tidySynced(text: string): string {
+  const marks = parseInbox(text).papers
+    .filter((p) => p.synced && p.ticked && p.list !== "synced" && p.key !== null)
+    .map((p) => ({ feedId: p.feedId, openalexId: p.openalexId, key: p.key as string }));
+  return markSynced(text, marks);
 }

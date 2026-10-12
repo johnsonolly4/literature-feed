@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { scorePaper } from "../src/match/score";
 import type { ScanResult } from "../src/openalex/client";
 import {
-  checkFeed, cloneFeed, defaultSettings, duplicateFeed, feedToJson, newFeed, normaliseSettings,
-  parseFeedJson, parseLines, parseYear, slugify, type FeedConfig,
+  DEFAULT_SECRET_IDS, checkFeed, cloneFeed, defaultSettings, duplicateFeed, feedToJson, migrateLegacyKeys, newFeed,
+  normaliseFolder, normaliseSettings, parseFeedJson, parseLines, parseYear, slugify, type FeedConfig, type SecretStore,
 } from "../src/settings/data";
 import { runFeedTest, summariseScan, testWindowStart } from "../src/settings/test-feed";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
@@ -24,21 +24,33 @@ describe("normaliseSettings", () => {
     for (const raw of [null, undefined, "x", 3, [], true]) expect(normaliseSettings(raw)).toEqual(defaultSettings());
   });
 
-  it("defaults hold no keys, no paths and no feeds", () => {
+  it("defaults hold no secrets, no paths and no feeds", () => {
     expect(defaultSettings()).toEqual({
-      openAlexKey: "", zoteroKey: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
+      openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
     });
   });
 
   it("keeps good values, trims strings and drops unknown fields", () => {
-    const s = normaliseSettings({ openAlexKey: " k ", zoteroUserId: "123", inboxFolder: " Inbox ", scanDay: 5, extra: 1 });
-    expect(s).toMatchObject({ openAlexKey: "k", zoteroUserId: "123", inboxFolder: "Inbox", scanDay: 5 });
+    const s = normaliseSettings({ openAlexKeySecret: " my-secret ", zoteroUserId: "123", inboxFolder: " Inbox ", scanDay: 5, extra: 1 });
+    expect(s).toMatchObject({ openAlexKeySecret: "my-secret", zoteroUserId: "123", inboxFolder: "Inbox", scanDay: 5 });
     expect(s).not.toHaveProperty("extra");
   });
 
+  it("stores the vault root as an empty folder", () => {
+    expect(normaliseSettings({ inboxFolder: "/", archiveFolder: " / " })).toMatchObject({ inboxFolder: "", archiveFolder: "" });
+    expect(normaliseFolder("Literature/Inbox")).toBe("Literature/Inbox");
+  });
+
+  it("accepts only ids that Obsidian allows for a secret", () => {
+    for (const bad of ["My Secret", "UPPER", "a_b", "-a", "a--b", "", 5, null]) {
+      expect(normaliseSettings({ zoteroKeySecret: bad }).zoteroKeySecret, String(bad)).toBe("");
+    }
+    expect(normaliseSettings({ zoteroKeySecret: "zotero-2" }).zoteroKeySecret).toBe("zotero-2");
+  });
+
   it("falls back on wrong types and a scan day out of range", () => {
-    const s = normaliseSettings({ openAlexKey: 5, inboxFolder: ["a"], scanDay: 9 });
-    expect(s.openAlexKey).toBe("");
+    const s = normaliseSettings({ openAlexKeySecret: 5, inboxFolder: ["a"], scanDay: 9 });
+    expect(s.openAlexKeySecret).toBe("");
     expect(s.inboxFolder).toBe("");
     expect(s.scanDay).toBe(1);
     expect(normaliseSettings({ scanDay: 2.5 }).scanDay).toBe(1);
@@ -64,7 +76,7 @@ describe("normaliseSettings", () => {
   });
 
   it("survives a save and a reload (JSON round trip)", () => {
-    const settings = normaliseSettings({ openAlexKey: "k", scanDay: 3, feeds: [JSON.parse(feedFile)] });
+    const settings = normaliseSettings({ openAlexKeySecret: "k", scanDay: 3, feeds: [JSON.parse(feedFile)] });
     settings.feeds[0].enabled = true;
     expect(normaliseSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
   });
@@ -74,6 +86,77 @@ describe("normaliseSettings", () => {
     const after = normaliseSettings({ ...before, scanDay: 4, feeds: [...before.feeds, { name: "B" }] });
     expect(after.scanDay).toBe(4);
     expect(after.feeds.map((f) => f.name)).toEqual(["A", "B"]);
+  });
+});
+
+describe("moving old plain-text keys into the secret store", () => {
+  // Made-up values: these are not keys of any service.
+  const legacy = { openAlexKey: "oa-test-value", zoteroKey: "zo-test-value", scanDay: 2 };
+
+  function fakeStore(initial: Record<string, string> = {}): SecretStore & { secrets: Map<string, string> } {
+    const secrets = new Map(Object.entries(initial));
+    return {
+      secrets,
+      getSecret: (id) => secrets.get(id) ?? null,
+      setSecret: (id, secret) => { secrets.set(id, secret); },
+    };
+  }
+
+  it("moves both keys under the default ids and records the ids", () => {
+    const store = fakeStore();
+    const settings = normaliseSettings(legacy);
+    expect(migrateLegacyKeys(legacy, settings, store)).toBe(true);
+    expect(store.secrets.get(DEFAULT_SECRET_IDS.openAlexKey)).toBe("oa-test-value");
+    expect(store.secrets.get(DEFAULT_SECRET_IDS.zoteroKey)).toBe("zo-test-value");
+    expect(settings).toMatchObject({ openAlexKeySecret: "literature-feed-openalex", zoteroKeySecret: "literature-feed-zotero", scanDay: 2 });
+  });
+
+  it("leaves no key text in the settings that are saved", () => {
+    const settings = normaliseSettings(legacy);
+    migrateLegacyKeys(legacy, settings, fakeStore());
+    const saved = JSON.stringify(settings);
+    expect(saved).not.toContain("oa-test-value");
+    expect(saved).not.toContain("zo-test-value");
+    expect(Object.keys(settings)).not.toContain("openAlexKey");
+    expect(Object.keys(settings)).not.toContain("zoteroKey");
+  });
+
+  it("never overwrites a secret that already holds a value", () => {
+    const store = fakeStore({ "literature-feed-openalex": "kept" });
+    const settings = normaliseSettings(legacy);
+    migrateLegacyKeys(legacy, settings, store);
+    expect(store.secrets.get("literature-feed-openalex")).toBe("kept");
+    expect(store.secrets.get("literature-feed-zotero")).toBe("zo-test-value");
+  });
+
+  it("uses the id that is already chosen", () => {
+    const store = fakeStore();
+    const raw = { ...legacy, openAlexKeySecret: "my-own" };
+    const settings = normaliseSettings(raw);
+    migrateLegacyKeys(raw, settings, store);
+    expect(store.secrets.get("my-own")).toBe("oa-test-value");
+    expect(settings.openAlexKeySecret).toBe("my-own");
+  });
+
+  it("does nothing when there is nothing to move", () => {
+    for (const raw of [null, "x", {}, { openAlexKey: "", zoteroKey: "   " }, { openAlexKey: 5 }, { openAlexKeySecret: "a" }]) {
+      const store = fakeStore();
+      expect(migrateLegacyKeys(raw, normaliseSettings(raw), store), JSON.stringify(raw)).toBe(false);
+      expect(store.secrets.size).toBe(0);
+    }
+  });
+
+  it("moves only the key that is there", () => {
+    const store = fakeStore();
+    const raw = { zoteroKey: "zo-test-value" };
+    const settings = normaliseSettings(raw);
+    expect(migrateLegacyKeys(raw, settings, store)).toBe(true);
+    expect(settings).toMatchObject({ openAlexKeySecret: "", zoteroKeySecret: "literature-feed-zotero" });
+    expect([...store.secrets.keys()]).toEqual(["literature-feed-zotero"]);
+  });
+
+  it("the default ids are valid secret ids", () => {
+    for (const id of Object.values(DEFAULT_SECRET_IDS)) expect(normaliseSettings({ zoteroKeySecret: id }).zoteroKeySecret).toBe(id);
   });
 });
 

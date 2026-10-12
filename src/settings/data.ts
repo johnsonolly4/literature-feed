@@ -15,9 +15,14 @@ export interface FeedConfig extends Feed {
   project: string;
 }
 
+/** The two API keys. Their values live in Obsidian's secret storage; settings hold only the id of the secret. */
+export type SecretName = "openAlexKey" | "zoteroKey";
+
 export interface Settings {
-  openAlexKey: string;
-  zoteroKey: string;
+  /** Id of the secret that holds the OpenAlex key ("" = none chosen). Never the key itself. */
+  openAlexKeySecret: string;
+  /** Id of the secret that holds the Zotero key ("" = none chosen). Never the key itself. */
+  zoteroKeySecret: string;
   zoteroUserId: string;
   inboxFolder: string;
   archiveFolder: string;
@@ -27,7 +32,15 @@ export interface Settings {
 }
 
 export function defaultSettings(): Settings {
-  return { openAlexKey: "", zoteroKey: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [] };
+  return {
+    openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
+  };
+}
+
+/** A folder setting: trimmed, and the vault root, which the folder picker gives as "/", is stored as "". */
+export function normaliseFolder(value: string): string {
+  const folder = value.trim();
+  return folder === "/" ? "" : folder;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -124,11 +137,11 @@ function normaliseFeed(raw: unknown, taken: Set<string>): FeedConfig | null {
 export function normaliseSettings(raw: unknown): Settings {
   const out = defaultSettings();
   if (!isRecord(raw)) return out;
-  out.openAlexKey = text(raw.openAlexKey);
-  out.zoteroKey = text(raw.zoteroKey);
+  out.openAlexKeySecret = secretId(raw.openAlexKeySecret);
+  out.zoteroKeySecret = secretId(raw.zoteroKeySecret);
   out.zoteroUserId = text(raw.zoteroUserId);
-  out.inboxFolder = text(raw.inboxFolder);
-  out.archiveFolder = text(raw.archiveFolder);
+  out.inboxFolder = normaliseFolder(text(raw.inboxFolder));
+  out.archiveFolder = normaliseFolder(text(raw.archiveFolder));
   if (typeof raw.scanDay === "number" && Number.isInteger(raw.scanDay) && raw.scanDay >= 0 && raw.scanDay <= 6) {
     out.scanDay = raw.scanDay;
   }
@@ -140,6 +153,43 @@ export function normaliseSettings(raw: unknown): Settings {
     }
   }
   return out;
+}
+
+/** A secret id as Obsidian allows it: lower-case letters, digits and dashes. Anything else is no id. */
+function secretId(value: unknown): string {
+  const id = text(value);
+  return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(id) ? id : "";
+}
+
+export interface SecretStore {
+  getSecret(id: string): string | null;
+  setSecret(id: string, secret: string): void;
+}
+
+export const DEFAULT_SECRET_IDS: Record<SecretName, string> = {
+  openAlexKey: "literature-feed-openalex",
+  zoteroKey: "literature-feed-zotero",
+};
+
+/**
+ * Earlier versions kept the keys as plain text in `data.json` (`openAlexKey`, `zoteroKey`). Moves any such value into
+ * the secret store and records the secret's id in `settings`. A secret that already holds a value is never overwritten.
+ * Returns true when something moved, so the caller saves the settings (which no longer hold the plain text).
+ * May throw (from `setSecret`); `settings` may then be half-updated, so the caller must discard it and not save.
+ */
+export function migrateLegacyKeys(raw: unknown, settings: Settings, store: SecretStore): boolean {
+  if (!isRecord(raw)) return false;
+  let moved = false;
+  for (const name of ["openAlexKey", "zoteroKey"] as const) {
+    const legacy = text(raw[name]);
+    if (legacy === "") continue;
+    const field = `${name}Secret` as const;
+    const id = settings[field] || DEFAULT_SECRET_IDS[name];
+    if (!store.getSecret(id)) store.setSecret(id, legacy);
+    settings[field] = id;
+    moved = true;
+  }
+  return moved;
 }
 
 export function newFeed(existing: readonly FeedConfig[]): FeedConfig {

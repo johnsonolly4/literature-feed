@@ -17,7 +17,7 @@ Feeds are set up in the plugin's settings. The scan is lexical (word and phrase 
 
 Open **Settings → Literature Feed**. Needs Obsidian 1.14 or later.
 
-- **Accounts:** OpenAlex API key, Zotero API key and Zotero user ID. The keys are masked in the settings and stored in the plugin's data file (see Network use).
+- **Accounts:** OpenAlex API key, Zotero API key and Zotero user ID. Each key row is a picker for a secret in Obsidian's secret storage: you choose or create the secret there, and the plugin's data file keeps only its name (see Network use).
 - **Folders:** inbox folder (weekly notes) and archive folder (finished notes).
 - **Schedule:** the weekday of the weekly scan.
 - **Feeds:** one row per feed with an on / off switch, edit, duplicate and export; **Add feed** and **Import feed** below. A feed has search topics (one OpenAlex search per line), concept groups, drop terms, lower terms, a start year, a Zotero collection and an optional project.
@@ -36,7 +36,7 @@ The plugin talks to two services, and nothing else. There is no telemetry, no an
 | OpenAlex | `api.openalex.org` | Your search queries (the topic strings of your feeds), a date window, and your OpenAlex API key (in an `Authorization` header, not in the address) | Finding new papers. Paper metadata (title, authors, venue, year, DOI, abstract) comes back |
 | Zotero | `api.zotero.org` | Your Zotero user ID and API key, and for each paper you tick: its metadata, plus the collection and tag names | Checking whether a paper is already in your library by DOI, then creating items, collections and tags in your library |
 
-Your API keys are stored in the plugin's own settings file inside your vault (`.obsidian/plugins/literature-feed/data.json`). They are sent only to the service they belong to. If you sync your vault, that file syncs with it, so keep it out of any public sync or backup.
+Your API keys are kept in Obsidian's secret storage, on your device and outside your vault. The plugin's settings file (`.obsidian/plugins/literature-feed/data.json`) holds only the name of each secret, never the key, so syncing or backing up your vault does not copy a key. For the same reason, you choose the secrets again on each device. Keys are sent only to the service they belong to. If an earlier version stored a key as plain text in the settings file, the plugin moves it into the secret storage the first time it loads and removes it from the file.
 
 ## Accounts needed
 

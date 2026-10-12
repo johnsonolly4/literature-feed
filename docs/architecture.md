@@ -2,7 +2,7 @@
 
 Update this when a folder or entry file is added, moved or removed. The planned layout is in `docs/plans/literature-feed.md` (Files of each phase); this page lists only what exists.
 
-- `src/main.ts`: plugin entry. Loads the settings (`normaliseSettings`), saves them, adds the settings tab, reloads on an external `data.json` change (Phase 3). Registers nothing else yet.
+- `src/main.ts`: plugin entry. Loads the settings (`normaliseSettings`), moves old plain-text keys into Obsidian's secret storage (`migrateLegacyKeys`), hands out key values (`getSecret`), saves the settings, adds the settings tab, reloads on an external `data.json` change (Phase 3). Registers nothing else yet.
 - `src/settings/`: `data.ts` settings and feed types, tolerant loader, feed JSON import / export, editor warnings (pure, tested); `tab.ts` the settings tab (declarative API: `getSettingDefinitions`); `feed-modal.ts` the confirm, feed editor and import windows; `test-feed.ts` the editor's Test (one scan, scored and counted; pure). UI files are not unit-tested; they are checked by hand in `test-vault`.
 - `docs/feeds/`: importable feed files (`lipoic-acid-copolymers.json`, the first feed).
 - `src/match/`: the matching engine, pure (no Obsidian imports; a test checks). `feed.ts` types, `score.ts` text normalisation, both spellings, phrase match and the tier rules, `dedupe.ts` DOI then title, journal over preprint (Phase 1).

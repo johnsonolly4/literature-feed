@@ -4,7 +4,7 @@ import { OpenAlexClient } from "../openalex/client";
 import { obsidianRequester } from "../openalex/request";
 import {
   GROUP_ROLES, checkFeed, cloneFeed, parseFeedJson, parseLines, parseYear,
-  type FeedConfig, type Settings,
+  type FeedConfig, type SecretName, type Settings,
 } from "./data";
 import { runFeedTest, type TestSummary } from "./test-feed";
 import type { GroupRole } from "../match/feed";
@@ -14,6 +14,8 @@ export interface SettingsHost {
   app: App;
   settings: Settings;
   saveSettings(): Promise<void>;
+  /** The value of an API key, read from Obsidian's secret storage ("" when none is chosen). */
+  getSecret(name: SecretName): string;
 }
 
 const ROLE_LABELS: Record<GroupRole, string> = {
@@ -161,7 +163,7 @@ export class FeedModal extends Modal {
     try {
       const client = new OpenAlexClient({
         request: obsidianRequester,
-        apiKey: this.host.settings.openAlexKey || undefined,
+        apiKey: this.host.getSecret("openAlexKey") || undefined,
         sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
       });
       this.showSummary(await runFeedTest(client, this.draft));

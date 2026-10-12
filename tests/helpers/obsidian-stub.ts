@@ -7,7 +7,16 @@ export class Component {
 }
 
 export class Plugin extends Component {
-  app: unknown;
+  /** Only what the plugin touches: an in-memory secret storage. */
+  app = (() => {
+    const secrets = new Map<string, string>();
+    return {
+      secretStorage: {
+        getSecret: (id: string): string | null => secrets.get(id) ?? null,
+        setSecret: (id: string, secret: string): void => { secrets.set(id, secret); },
+      },
+    };
+  })();
   manifest: unknown = { id: "literature-feed" };
   async loadData(): Promise<unknown> { return null; }
   async saveData(_data: unknown): Promise<void> { /* ignored */ }
@@ -23,6 +32,7 @@ export class Modal {
   constructor(readonly app: unknown) { /* nothing */ }
 }
 
+export class SecretComponent {}
 export class Setting {}
 export class Notice {}
 

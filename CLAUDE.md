@@ -27,7 +27,7 @@ If the user asks for another task without clearing, remind them to `/clear` firs
 - Never push, merge to `main`, tag, release or delete without asking.
 - Plugin code follows `.claude/rules/obsidian-plugin.md` (loads automatically for `src/`); it must work on desktop (Windows, macOS, Linux) and mobile.
 - Matching, API-client and sync changes need a test against fixtures with a known answer.
-- API keys live only in plugin settings (`data.json`, gitignored), never in code, tests, fixtures or docs. Recorded API responses in tests must have keys and personal data removed.
+- API keys live only in Obsidian's secret storage (`app.secretStorage`; `data.json` holds just the secret's id), never in code, tests, fixtures or docs, and I never read or print their values. Recorded API responses in tests must have keys and personal data removed.
 - Do only what was asked. Don't change user-facing text, layout or defaults beyond the task: ask first. Anything else you notice → `BACKLOG.md`, and mention it.
 - Follow the conventions already in the code. Don't reformat or reorganise files you aren't changing.
 - **The version only moves at release** (it is not a commit counter). Only `/release` touches the version fields (`package.json` + lock, `manifest.json`, `versions.json`), and only the user picks a bump. `tests/smoke.test.ts` fails if they differ.

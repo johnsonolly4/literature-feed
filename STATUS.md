@@ -6,7 +6,7 @@ _Updated: 2026-10-12 (Phase 3 session). Cap 40 lines. History lives in git and `
 ## Now
 Phase 0 (scaffold) and Phase 1 (matching engine, `feat/matching-engine`, pushed, PR johnsonolly4/literature-feed#1 open) done 2026-10-12.
 Phase 2 (OpenAlex client, `feat/openalex-client`, committed, not pushed) done except one check: the real run, the known paper (found), the recorded fixture, the no-abstract rule and the Unchecked tier (papers with no abstract and no required term in the title are listed apart, not dropped) are in; the late-indexing comparison needs a run on or after 2026-10-19 (BACKLOG).
-Phase 3 (settings tab) **code done, never seen in Obsidian** on `feat/settings-tab` (cut from `feat/openalex-client`, committed, not pushed): `src/settings/` (`data.ts`, `tab.ts`, `feed-modal.ts`, `test-feed.ts`), `src/openalex/request.ts`, `docs/feeds/lipoic-acid-copolymers.json`, `styles.css`. 114 tests pass (25 new in `tests/settings.test.ts`), lint 0 errors 0 warnings, build passes. Only the data layer and the Test summary are unit-tested; the tab and windows are not. The tab uses Obsidian's declarative settings API, chosen from the type definitions without running it (BACKLOG → Not yet tested has the full list of things to look at). Nothing was run against Zotero.
+Phase 3 (settings tab) **code done, never seen in Obsidian** on `feat/settings-tab` (cut from `feat/openalex-client`, committed, not pushed): `src/settings/` (`data.ts`, `tab.ts`, `feed-modal.ts`, `test-feed.ts`), `src/openalex/request.ts`, `docs/feeds/lipoic-acid-copolymers.json`, `styles.css`. API keys now live in Obsidian's secret storage (owner's decision): `data.json` holds only the secret's id, and the plain-text keys the owner had already typed into `test-vault` are moved over on first load (not yet seen happen; I only looked at that file masked). 128 tests pass, lint 0 errors 0 warnings, build passes. The data layer, the migration (fake store) and the Test summary are unit-tested; the tab, the secret picker and the windows are not. The tab uses Obsidian's declarative settings API and `SecretComponent`, both chosen from the type definitions without running them (BACKLOG → Not yet tested). Nothing was run against Zotero.
 
 ## Next (ordered: top item is the next session; plan: `docs/plans/literature-feed.md`)
 1. Phase 3 check in Obsidian: owner tries the tab in `test-vault` (list in BACKLOG → Not yet tested), then `/feedback` with what broke. Fix findings before Phase 4.
@@ -21,12 +21,12 @@ Phase 3 (settings tab) **code done, never seen in Obsidian** on `feat/settings-t
 ## Running: none
 
 ## Waiting on owner (needs a human)
-- [ ] Phase 3 in Obsidian: `npm run dev`, open `test-vault`, enable Literature Feed, go through BACKLOG → Not yet tested (Phase 3 and Phase 0 items); Test needs your OpenAlex key typed into the tab (about $0.004)
+- [ ] Phase 3 in Obsidian: `npm run dev`, open `test-vault`, enable Literature Feed (reload it so the key move runs), go through BACKLOG → Not yet tested (secret storage, Phase 3, Phase 0); Test uses your OpenAlex secret (about $0.004)
 - [ ] Check the lipoic feed terms in `docs/feeds/lipoic-acid-copolymers.json` (my reading of the plan) and the choices in BACKLOG → Decisions needed
 - [ ] Review PR #1 (johnsonolly4/literature-feed); merge when happy
 - [ ] Push `feat/openalex-client` and `feat/settings-tab` and open PRs when you want them (not pushed; each sits on the one before)
 - [ ] Before Phase 5: Zotero API key with write access to My Library, and the user ID (API keys part of the zotero.org account settings)
-- [ ] Keys go into the plugin's settings in `test-vault` only, never into chat
+- [ ] Keys go into Obsidian's secret storage via the plugin's settings in `test-vault` only, never into chat. Secrets are per device: choose them again on another machine
 
 ## Known issues
 - `npm install` reports 9 audit findings (6 moderate, 1 high, 2 critical), all in dev dependencies (same tooling versions as Lab Kit); nothing is bundled into `main.js`. Not looked into: BACKLOG.

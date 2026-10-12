@@ -1,8 +1,11 @@
-import { Notice, PluginSettingTab, debounce, normalizePath, type Plugin, type SettingDefinition, type SettingDefinitionItem } from "obsidian";
-import { duplicateFeed, feedToJson, newFeed, type FeedConfig, type Settings } from "./data";
+import {
+  Notice, PluginSettingTab, SecretComponent, debounce, normalizePath,
+  type Plugin, type SettingDefinition, type SettingDefinitionItem,
+} from "obsidian";
+import { duplicateFeed, feedToJson, newFeed, normaliseFolder, type FeedConfig, type Settings } from "./data";
 import { ConfirmModal, FeedModal, ImportModal, type SettingsHost } from "./feed-modal";
 
-type SecretKey = "openAlexKey" | "zoteroKey";
+type SecretField = "openAlexKeySecret" | "zoteroKeySecret";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -24,8 +27,8 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
         type: "group",
         heading: "Accounts",
         items: [
-          this.secretRow("OpenAlex API key", "Sent only to OpenAlex. Stored in this plugin's data file inside your vault.", "openAlexKey"),
-          this.secretRow("Zotero API key", "Needs write access to your library. Sent only to Zotero.", "zoteroKey"),
+          this.secretRow("OpenAlex API key", "Sent only to OpenAlex. Kept in Obsidian's secret storage, not in your vault.", "openAlexKeySecret"),
+          this.secretRow("Zotero API key", "Needs write access to your library. Sent only to Zotero. Kept in Obsidian's secret storage, not in your vault.", "zoteroKeySecret"),
           { name: "Zotero user ID", desc: "The number from the API keys page of your Zotero account.", control: { type: "text", key: "zoteroUserId" } },
         ],
       },
@@ -81,8 +84,8 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
     const text = typeof value === "string" ? value.trim() : "";
     switch (key) {
       case "zoteroUserId": s.zoteroUserId = text; break;
-      case "inboxFolder": s.inboxFolder = text === "" ? "" : normalizePath(text); break;
-      case "archiveFolder": s.archiveFolder = text === "" ? "" : normalizePath(text); break;
+      case "inboxFolder": s.inboxFolder = normaliseFolder(text === "" ? "" : normalizePath(text)); break;
+      case "archiveFolder": s.archiveFolder = normaliseFolder(text === "" ? "" : normalizePath(text)); break;
       case "scanDay": {
         const day = Number(value);
         if (Number.isInteger(day) && day >= 0 && day <= 6) s.scanDay = day;
@@ -93,18 +96,18 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
     await this.host.saveSettings();
   }
 
-  private secretRow(name: string, desc: string, key: SecretKey): SettingDefinition {
+  /** The picker stores the id of a secret; the key itself stays in Obsidian's secret storage. */
+  private secretRow(name: string, desc: string, field: SecretField): SettingDefinition {
     return {
       name,
       desc,
       render: (setting) => {
-        setting.setName(name).setDesc(desc).addText((t) => {
-          t.setValue(this.host.settings[key]).onChange((v) => {
-            this.host.settings[key] = v.trim();
+        setting.setName(name).setDesc(desc).addComponent((el) => new SecretComponent(this.app, el)
+          .setValue(this.host.settings[field])
+          .onChange((id) => {
+            this.host.settings[field] = id;
             this.saveSoon();
-          });
-          t.inputEl.type = "password";
-        });
+          }));
       },
     };
   }

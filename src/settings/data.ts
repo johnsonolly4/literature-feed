@@ -29,11 +29,19 @@ export interface Settings {
   /** 0 = Sunday … 6 = Saturday (`Date.getDay()`). */
   scanDay: number;
   feeds: FeedConfig[];
+  /** Day of the last complete scan, `YYYY-MM-DD`; "" = never scanned. */
+  lastScan: string;
+  /** `<feed id>/<OpenAlex id>` of papers already listed in an inbox note, newest last, so a rescan does not list them again. */
+  seen: string[];
 }
+
+/** The seen list keeps at most this many ids (the oldest go first). */
+export const SEEN_CAP = 5000;
 
 export function defaultSettings(): Settings {
   return {
     openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
+    lastScan: "", seen: [],
   };
 }
 
@@ -145,6 +153,8 @@ export function normaliseSettings(raw: unknown): Settings {
   if (typeof raw.scanDay === "number" && Number.isInteger(raw.scanDay) && raw.scanDay >= 0 && raw.scanDay <= 6) {
     out.scanDay = raw.scanDay;
   }
+  out.lastScan = typeof raw.lastScan === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastScan) ? raw.lastScan : "";
+  out.seen = textList(raw.seen).slice(-SEEN_CAP);
   const taken = new Set<string>();
   if (Array.isArray(raw.feeds)) {
     for (const entry of raw.feeds) {

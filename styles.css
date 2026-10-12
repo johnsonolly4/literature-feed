@@ -46,3 +46,49 @@
   margin: var(--size-4-2) 0;
   font-size: var(--font-ui-small);
 }
+
+/* Reading inbox note (cssclasses: literature-feed) */
+.literature-feed .callout[data-callout="literature-feed"] {
+  --callout-color: var(--color-accent-rgb);
+  --callout-icon: lucide-book-open;
+}
+
+.literature-feed .callout[data-callout="literature-feed-unchecked"] {
+  --callout-color: var(--text-muted-rgb, 128, 128, 128);
+  --callout-icon: lucide-file-question;
+}
+
+.literature-feed .callout[data-callout^="literature-feed"] .callout-content ul {
+  padding-inline-start: var(--size-4-1);
+}
+
+.literature-feed .callout[data-callout^="literature-feed"] .task-list-item {
+  margin-bottom: var(--size-4-2);
+}
+
+/* Status line and Home card made by the literature-feed code block */
+.literature-feed-status,
+.literature-feed-card {
+  margin: var(--size-4-2) 0;
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-secondary);
+}
+
+.literature-feed-card-title {
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--size-4-1);
+}
+
+.literature-feed-status-line {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+}

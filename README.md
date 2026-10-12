@@ -2,7 +2,7 @@
 
 An Obsidian plugin that finds new papers on your topics each week, lists them in a reading-inbox note, and sends the ones you tick to Zotero.
 
-> **Status: under development.** So far (Phase 3 of [the plan](docs/plans/literature-feed.md)) the plugin has a settings tab with feeds and a **Test** search; the weekly scan, the inbox note and the Zotero sync are not built yet. Everything below describes what it is being built to do, and it is not in the Obsidian community plugin store.
+> **Status: under development.** So far (Phase 4 of [the plan](docs/plans/literature-feed.md)) the plugin has a settings tab with feeds, a **Test** search and a **Scan now** command that writes the weekly reading-inbox note; the weekly schedule and the Zotero sync are not built yet. Everything below describes what it is being built to do, and it is not in the Obsidian community plugin store.
 
 ## What it does
 
@@ -12,6 +12,17 @@ An Obsidian plugin that finds new papers on your topics each week, lists them in
 4. From there your usual Zotero → ZotLit → Obsidian reading workflow takes over. Making literature notes is not this plugin's job.
 
 Feeds are set up in the plugin's settings. The scan is lexical (word and phrase matching); it does not use an AI model.
+
+## Reading inbox
+
+Run the command **Scan now** (command palette). It searches OpenAlex for every feed that is switched on and writes, or adds to, this week's note `<inbox folder>/<year>-W<week> Reading inbox.md`. A paper already listed is not listed again; the first scan looks back 30 days, later scans start 14 days before the last one so late-indexed papers are caught. If a scan fails for a feed, the other feeds still run and the last-scan date does not move.
+
+- The note has a status line with **Scan now** and a **Sync** button (disabled until the Zotero sync exists), then one collapsible section per feed. Each paper is a checkbox line: title, authors, venue, year, DOI link, tier (Priority, Strong, Possible) and the terms that matched. Feeds with no Priority or Strong paper start collapsed.
+- Papers with no abstract and no required term in the title are in a separate collapsed list per feed, "No abstract returned, matched by OpenAlex".
+- A paper judged on its title alone because no abstract came back carries "title only".
+- Ticking a box changes only that line; scanning again keeps your ticks.
+- The block `` ```literature-feed `` with the line `show: home` gives a small card (papers waiting, last scan, buttons) for another note, such as a home page.
+- Titles and names come from OpenAlex and are written as plain text with markdown characters escaped; links are rebuilt from the DOI.
 
 ## Settings
 

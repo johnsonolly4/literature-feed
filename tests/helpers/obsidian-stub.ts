@@ -21,7 +21,15 @@ export class Plugin extends Component {
   async loadData(): Promise<unknown> { return null; }
   async saveData(_data: unknown): Promise<void> { /* ignored */ }
   addSettingTab(_tab: unknown): void { /* ignored */ }
+  addCommand(_command: unknown): void { /* ignored */ }
+  registerMarkdownCodeBlockProcessor(_language: string, _handler: unknown): void { /* ignored */ }
 }
+
+export class MarkdownRenderChild extends Component {
+  constructor(readonly containerEl: unknown) { super(); }
+}
+
+export class TFile {}
 
 export class PluginSettingTab {
   constructor(readonly app: unknown, readonly plugin: unknown) { /* nothing */ }

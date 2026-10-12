@@ -77,6 +77,7 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 - Note: `<inbox>/<YYYY-[W]WW> Reading inbox.md`, starts with an empty line (vault rule), `kind: reading-inbox`, `cssclasses: [vt]`; one collapsible callout per feed; each paper = checkbox, title, authors, venue, year, DOI link, tier badge, matched terms; quiet feeds collapsed. Built with `createEl` only (titles from OpenAlex are untrusted text).
 - Same block with `show: home` = a small card for `00 Home` (papers waiting, last scan, Sync).
 - Done when: tests on the note text; seen in `test-vault` in light and dark, with and without Lab Kit's CSS snippets.
+- Built 2026-10-12 (not yet seen in Obsidian): also `src/inbox/scan.ts` and a **Scan now** command (so the note can be filled before Phase 7); own `.literature-feed-*` classes instead of Lab Kit's `vt` classes; the **Sync** button is shown disabled until Phase 5; Unchecked papers have their own callout per feed. See `docs/decisions.md`.
 
 ### Phase 5 — Zotero sync
 - Depends on: Phase 4

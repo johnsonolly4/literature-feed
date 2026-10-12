@@ -1,4 +1,9 @@
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, normalizePath } from "obsidian";
+import { registerInboxBlock } from "./inbox/block";
+import { runScan, updatedSeen, type ScanOutcome } from "./inbox/scan";
+import { mergeIntoNote, renderNote } from "./inbox/write";
+import { OpenAlexClient } from "./openalex/client";
+import { obsidianRequester } from "./openalex/request";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
 import type { SettingsHost } from "./settings/feed-modal";
 import { LiteratureFeedSettingTab } from "./settings/tab";
@@ -6,12 +11,15 @@ import { LiteratureFeedSettingTab } from "./settings/tab";
 export default class LiteratureFeedPlugin extends Plugin implements SettingsHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
+  private scanning = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
-    // Scan, inbox and Zotero sync come in later phases (see docs/plans/literature-feed.md).
+    registerInboxBlock(this);
+    this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
+    // The weekly schedule, the ribbon icon and the Zotero sync come in later phases (see docs/plans/literature-feed.md).
   }
 
   async loadSettings(): Promise<void> {
@@ -48,4 +56,65 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.loadSettings();
     this.tab?.update();
   }
+
+  /** One scan of every enabled feed; writes or extends this week's inbox note and says what it found. */
+  async scanNow(): Promise<void> {
+    if (this.scanning) {
+      new Notice("A scan is already running.");
+      return;
+    }
+    this.scanning = true;
+    try {
+      if (!this.settings.feeds.some((f) => f.enabled && f.topics.length > 0)) {
+        new Notice("No feed is switched on. Turn one on in the settings first.");
+        return;
+      }
+      new Notice("Scanning for new papers…");
+      const client = new OpenAlexClient({
+        request: obsidianRequester,
+        apiKey: this.getSecret("openAlexKey") || undefined,
+        sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+      });
+      const outcome = await runScan(this.settings, { client, now: new Date() });
+      const path = outcome.note ? await this.writeNote(outcome.note) : null;
+      this.settings.lastScan = outcome.lastScan;
+      this.settings.seen = updatedSeen(this.settings.seen, outcome.seenAdd);
+      await this.saveSettings();
+      new Notice(describeOutcome(outcome), outcome.failures.length > 0 ? 10_000 : 6_000);
+      if (path) await this.app.workspace.openLinkText(path, "", "tab");
+    } catch (e) {
+      new Notice(`The scan failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    } finally {
+      this.scanning = false;
+    }
+  }
+
+  /** Creates this week's note, or adds to it inside `vault.process`, so a tick made meanwhile is kept. Returns its path. */
+  private async writeNote(note: NonNullable<ScanOutcome["note"]>): Promise<string> {
+    const { vault } = this.app;
+    const path = normalizePath(note.path);
+    const existing = vault.getFileByPath(path);
+    if (existing) {
+      await vault.process(existing, (current) => mergeIntoNote(current, note.input));
+      return path;
+    }
+    const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    if (folder !== "" && !vault.getFolderByPath(folder)) await vault.createFolder(folder);
+    await vault.create(path, renderNote(note.input));
+    return path;
+  }
+}
+
+function describeOutcome(o: ScanOutcome): string {
+  const total = o.perTier.priority + o.perTier.strong + o.perTier.possible + o.perTier.unchecked;
+  const cost = `cost $${o.costUsd.toFixed(3)}`;
+  const parts = [
+    total === 0
+      ? `No new papers (${cost}).`
+      : `${total} new: ${o.perTier.priority} priority, ${o.perTier.strong} strong, ${o.perTier.possible} possible, ${o.perTier.unchecked} without abstract (${cost}).`,
+  ];
+  if (o.failures.length > 0) {
+    parts.push(`${o.failures.length} of ${o.feedsScanned} feeds failed: ${o.failures.map((f) => `${f.feed} (${f.message})`).join("; ")}. Last scan date not moved.`);
+  }
+  return parts.join(" ");
 }

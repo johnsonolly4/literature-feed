@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { scorePaper } from "../src/match/score";
 import type { ScanResult } from "../src/openalex/client";
 import {
-  DEFAULT_SECRET_IDS, checkFeed, cloneFeed, defaultSettings, duplicateFeed, feedToJson, migrateLegacyKeys, newFeed,
+  DEFAULT_SECRET_IDS, SEEN_CAP, checkFeed, cloneFeed, defaultSettings, duplicateFeed, feedToJson, migrateLegacyKeys, newFeed,
   normaliseFolder, normaliseSettings, parseFeedJson, parseLines, parseYear, slugify, type FeedConfig, type SecretStore,
 } from "../src/settings/data";
 import { runFeedTest, summariseScan, testWindowStart } from "../src/settings/test-feed";
@@ -26,7 +26,7 @@ describe("normaliseSettings", () => {
 
   it("defaults hold no secrets, no paths and no feeds", () => {
     expect(defaultSettings()).toEqual({
-      openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
+      openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [], lastScan: "", seen: [],
     });
   });
 
@@ -34,6 +34,17 @@ describe("normaliseSettings", () => {
     const s = normaliseSettings({ openAlexKeySecret: " my-secret ", zoteroUserId: "123", inboxFolder: " Inbox ", scanDay: 5, extra: 1 });
     expect(s).toMatchObject({ openAlexKeySecret: "my-secret", zoteroUserId: "123", inboxFolder: "Inbox", scanDay: 5 });
     expect(s).not.toHaveProperty("extra");
+  });
+
+  it("reads the last scan date and the seen list, and ignores bad ones", () => {
+    expect(normaliseSettings({ lastScan: "2026-10-12", seen: ["f/W1", "", 5, "f/W2", "f/W1"] })).toMatchObject({
+      lastScan: "2026-10-12", seen: ["f/W1", "f/W2"],
+    });
+    expect(normaliseSettings({ lastScan: "yesterday", seen: "x" })).toMatchObject({ lastScan: "", seen: [] });
+    const many = Array.from({ length: SEEN_CAP + 10 }, (_, i) => `f/W${i}`);
+    const seen = normaliseSettings({ seen: many }).seen;
+    expect(seen).toHaveLength(SEEN_CAP);
+    expect(seen[seen.length - 1]).toBe(`f/W${SEEN_CAP + 9}`);
   });
 
   it("stores the vault root as an empty folder", () => {

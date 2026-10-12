@@ -15,5 +15,11 @@ export const zoteroRequester: HttpRequester = async ({ url, method, headers, bod
   }
   const lower: Record<string, string> = {};
   for (const [name, value] of Object.entries(res.headers)) lower[name.toLowerCase()] = value;
-  return { status: res.status, json, headers: lower };
+  let text = "";
+  try {
+    text = res.text;
+  } catch {
+    // No readable body: the status alone is reported.
+  }
+  return { status: res.status, json, headers: lower, text };
 };

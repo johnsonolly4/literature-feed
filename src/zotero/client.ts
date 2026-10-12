@@ -18,6 +18,8 @@ export interface HttpResponse {
   status: number;
   json: unknown;
   headers: Record<string, string>;
+  /** The body as text, for error messages (Zotero explains a refused request in plain text). Optional. */
+  text?: string;
 }
 
 export type HttpRequester = (req: HttpRequest) => Promise<HttpResponse>;
@@ -126,7 +128,7 @@ export class ZoteroClient {
   }
 
   /** One request with the rules of the API: wait when asked (`Backoff`), retry on 429 with `Retry-After`, no key in errors. */
-  private async send(method: HttpRequest["method"], path: string, opts: { body?: unknown; headers?: Record<string, string> } = {}): Promise<HttpResponse> {
+  private async send(method: HttpRequest["method"], what: string, path: string, opts: { body?: unknown; headers?: Record<string, string> } = {}): Promise<HttpResponse> {
     const url = `${this.base}${path}`;
     const headers: Record<string, string> = { ...this.headers, ...opts.headers };
     let body: string | undefined;
@@ -154,7 +156,11 @@ export class ZoteroClient {
       if (res.status === 401 || res.status === 403) throw new ZoteroError(`Zotero refused the API key or user ID (HTTP ${res.status}). Check both in the settings.`, res.status);
       if (res.status === 409) throw new ZoteroError("Zotero says the library is locked (HTTP 409). Try again in a moment.", 409);
       if (res.status === 412) throw new ZoteroError("The item changed in Zotero in the meantime (HTTP 412). Press Sync again.", 412);
-      if (res.status < 200 || res.status >= 300) throw new ZoteroError(`Zotero request failed (HTTP ${res.status}).`, res.status);
+      if (res.status < 200 || res.status >= 300) {
+        // Zotero explains a refused request in a short plain-text body; it never repeats the key.
+        const reason = (res.text ?? "").replace(/\p{Cc}+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+        throw new ZoteroError(`Zotero request failed while trying to ${what} (HTTP ${res.status})${reason !== "" ? `: ${reason}` : "."}`, res.status);
+      }
       return res;
     }
   }
@@ -163,7 +169,7 @@ export class ZoteroClient {
   async listCollections(): Promise<ZoteroCollection[]> {
     const out: ZoteroCollection[] = [];
     for (let start = 0; ; start += PAGE) {
-      const res = await this.send("GET", `/collections?limit=${PAGE}&start=${start}`);
+      const res = await this.send("GET", "list your collections", `/collections?limit=${PAGE}&start=${start}`);
       const rows = Array.isArray(res.json) ? res.json : [];
       for (const row of rows) {
         if (!isRecord(row) || typeof row.key !== "string" || !isRecord(row.data) || typeof row.data.name !== "string") continue;
@@ -178,7 +184,7 @@ export class ZoteroClient {
 
   /** Creates one collection (a top-level one when `parentKey` is null) and returns its key. */
   async createCollection(name: string, parentKey: string | null): Promise<string> {
-    const res = await this.send("POST", "/collections", {
+    const res = await this.send("POST", "create a collection", "/collections", {
       body: [{ name, parentCollection: parentKey ?? false }],
       headers: { "Zotero-Write-Token": this.token() },
     });
@@ -214,7 +220,7 @@ export class ZoteroClient {
 
   private async search(query: string, everything: boolean): Promise<ReturnType<ZoteroClient["toFound"]>[]> {
     const mode = everything ? "&qmode=everything" : "";
-    const res = await this.send("GET", `/items?q=${encodeURIComponent(query)}${mode}&itemType=-attachment&itemType=-note&limit=${PAGE}`);
+    const res = await this.send("GET", "look for the paper in your library", `/items?q=${encodeURIComponent(query)}${mode}&itemType=-attachment&limit=${PAGE}`);
     return (Array.isArray(res.json) ? res.json : []).map((row) => this.toFound(row));
   }
 
@@ -236,7 +242,7 @@ export class ZoteroClient {
 
   /** Creates one item and returns what was made (so a second feed that finds the same paper can add to it). */
   async createItem(item: ZoteroItem): Promise<ZoteroFound> {
-    const res = await this.send("POST", "/items", { body: [item], headers: { "Zotero-Write-Token": this.token() } });
+    const res = await this.send("POST", "create the item", "/items", { body: [item], headers: { "Zotero-Write-Token": this.token() } });
     const key = this.firstKey(res.json, "Zotero rejected the item");
     const ok = isRecord(res.json) && isRecord(res.json.successful) ? res.json.successful["0"] : undefined;
     const version = isRecord(ok) && typeof ok.version === "number" ? ok.version : Number(res.headers["last-modified-version"]) || 0;
@@ -253,7 +259,7 @@ export class ZoteroClient {
     const nextCollections = [...new Set([...found.collections, ...collections])];
     const nextTags = [...found.tags, ...tags.filter((t) => !found.tags.some((x) => x.tag === t)).map((tag) => ({ tag }))];
     if (nextCollections.length === found.collections.length && nextTags.length === found.tags.length) return { item: found, changed: false };
-    const res = await this.send("PATCH", `/items/${encodeURIComponent(found.key)}`, {
+    const res = await this.send("PATCH", "add the paper to its collections", `/items/${encodeURIComponent(found.key)}`, {
       body: { collections: nextCollections, tags: nextTags },
       headers: { "If-Unmodified-Since-Version": String(found.version) },
     });

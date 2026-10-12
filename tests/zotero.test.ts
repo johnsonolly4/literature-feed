@@ -110,6 +110,7 @@ describe("finding an item already in the library", () => {
     expect(calls[0].url).toContain("q=10.1021%2Fjacs.6c02848");
     expect(calls[0].url).toContain("qmode=everything");
     expect(calls[0].url).toContain("itemType=-attachment");
+    expect(calls[0].url.match(/itemType=/g)).toHaveLength(1);
   });
 
   it("does not take an item with a different DOI, even with the same title", async () => {
@@ -195,6 +196,17 @@ describe("limits and errors", () => {
     expect(sleeps).toEqual([]);
     await client.listCollections();
     expect(sleeps).toEqual([5000]);
+  });
+
+  it("names the step that failed and passes on Zotero's own explanation, one line, cut short", async () => {
+    const reason = "Invalid value for field 'x'" + String.fromCharCode(10) + String.fromCharCode(10) + "second line " + "y".repeat(400);
+    const { client } = fake([{ status: 400, json: null, headers: {}, text: reason }]);
+    const message = ((await client.createItem({ itemType: "journalArticle" }).catch((e: unknown) => e)) as ZoteroError).message;
+    expect(message).toContain("while trying to create the item (HTTP 400): Invalid value for field 'x' second line y");
+    expect(message).not.toContain(String.fromCharCode(10));
+    expect(message.length).toBeLessThan(400);
+    const bare = fake([res(400)]);
+    expect(((await bare.client.findByDoi("10.1000/x").catch((e: unknown) => e)) as ZoteroError).message).toBe("Zotero request failed while trying to look for the paper in your library (HTTP 400).");
   });
 
   it("gives plain messages that never contain the key or the address", async () => {

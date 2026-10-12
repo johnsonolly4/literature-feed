@@ -24,3 +24,8 @@ Phase 1 took these where the plan was silent (approved in plan mode 2026-10-12 a
 - [ ] Phase 0: the plugin loads and unloads in `test-vault` (`npm run dev`, enable Literature Feed). Only the build, the unit test and lint were run.
 
 ## Future features
+- [ ] Feed assistant (after Phase 3; idea from chat 2026-10-12). The plugin calls no LLM and sends nothing; the user does the pasting.
+  - Command **Copy feed-builder prompt**: fixed text with the role and tier definitions, the feed JSON schema and one example feed (the lipoic acid feed). No papers inside. It tells the user to append a Zotero **Export Items** as CSL JSON (Create Bibliography has no abstracts) and, optionally, a second export of papers they do not want (best source of drop and lower terms). It says: only propose terms likely to appear in a title or abstract (matching reads nothing else, so PDFs add vocabulary but no matchable text).
+  - Command **New feed from clipboard**, with a paste-box window as fallback (clipboard access can fail on mobile): strip a code fence, validate the JSON and say what is wrong, show a preview, save as a new feed that is switched off.
+  - Back-test, proposed for the first version: if the CSL JSON export is pasted too, run `scorePaper` (`src/match/score.ts`) over it and report papers per tier, e.g. "8 seed papers: 5 Priority, 2 Strong, 1 Dropped". CSL JSON needs no parser (`JSON.parse`); BibTeX would, so leave it out.
+  - Later, from real use: terms frequent in dismissed papers but absent from ticked ones, offered as drop / lower candidates.

@@ -26,7 +26,7 @@ describe("normaliseSettings", () => {
 
   it("defaults hold no secrets, no paths and no feeds", () => {
     expect(defaultSettings()).toEqual({
-      openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [], lastScan: "", seen: [], lastScanResult: null,
+      openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [], lastScan: "", seen: [], lastScanResult: null, createInboxCollections: false, createProjectCollections: false,
     });
   });
 
@@ -58,6 +58,16 @@ describe("normaliseSettings", () => {
     for (const bad of [null, "x", {}, { ...good, at: "today" }, { ...good, strong: -1 }, { ...good, dropped: 1.5 }, { ...good, failed: "0" }]) {
       expect(normaliseSettings({ lastScanResult: bad }).lastScanResult, JSON.stringify(bad)).toBeNull();
     }
+  });
+
+  it("reads the two collection-creation settings as on only when they are exactly true", () => {
+    expect(normaliseSettings({})).toMatchObject({ createInboxCollections: false, createProjectCollections: false });
+    expect(normaliseSettings({ createInboxCollections: true, createProjectCollections: false })).toMatchObject({ createInboxCollections: true, createProjectCollections: false });
+    for (const bad of ["true", 1, "yes", null, [true]]) {
+      expect(normaliseSettings({ createInboxCollections: bad, createProjectCollections: bad })).toMatchObject({ createInboxCollections: false, createProjectCollections: false });
+    }
+    const saved = normaliseSettings({ createProjectCollections: true });
+    expect(normaliseSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
   });
 
   it("stores the vault root as an empty folder", () => {

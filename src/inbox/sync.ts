@@ -26,8 +26,12 @@ export function findPending(notes: readonly { path: string; text: string }[]): P
 export interface SyncDeps {
   zotero: Pick<ZoteroClient, "listCollections" | "createCollection" | "findByDoi" | "findByTitle" | "createItem" | "addToCollectionsAndTag">;
   openalex: Pick<OpenAlexClient, "getWork">;
-  /** Asked once, before anything is written, when collections have to be created. `lines` describe them; false stops the sync. */
-  confirmCreate(lines: string[]): Promise<boolean>;
+}
+
+/** Whether Sync may create a missing collection (the plugin settings): the feed's inbox collection and its project collection are separate. */
+export interface SyncOptions {
+  createInboxCollections: boolean;
+  createProjectCollections: boolean;
 }
 
 export interface SyncedPaper extends SyncedMark {
@@ -43,12 +47,19 @@ export interface SyncResult {
   skipped: { path: string; feedId: string; openalexId: string; reason: string }[];
   /** Collection paths created in this run. */
   created: string[];
-  /** The user said no to creating collections: nothing was written. */
-  declined: boolean;
+  /** Collection paths that are missing and may not be created: when there are any, nothing was sent. */
+  blocked: { path: string; reason: string }[];
 }
 
-function describePlan(path: string, toCreate: string[]): string {
-  return `${path} (new: ${toCreate.join(" / ")})`;
+/** Why a missing collection may not be created, or null when it may (only its last name is missing and the setting is on). */
+function whyBlocked(path: string, toCreate: string[], kinds: Set<"inbox" | "project">, options: SyncOptions): string | null {
+  const allowed = (kinds.has("inbox") && options.createInboxCollections) || (kinds.has("project") && options.createProjectCollections);
+  if (toCreate.length > 1) return `"${toCreate[0]}" is missing in Zotero; create it there first (the plugin creates only the last name of a path)`;
+  if (!allowed) {
+    const setting = kinds.has("inbox") ? "Create missing inbox collections" : "Create missing project collections";
+    return `"${toCreate[0]}" is missing in Zotero; create it there, or switch on "${setting}" in the settings`;
+  }
+  return null;
 }
 
 function errorMessage(e: unknown): string {
@@ -60,8 +71,8 @@ function errorMessage(e: unknown): string {
  * pressing Sync again retries it. The same paper under two feeds is created once and the second feed's collections and tag
  * are added to that item.
  */
-export async function runSync(feeds: readonly FeedConfig[], pending: readonly PendingPaper[], deps: SyncDeps): Promise<SyncResult> {
-  const result: SyncResult = { synced: [], failed: [], skipped: [], created: [], declined: false };
+export async function runSync(feeds: readonly FeedConfig[], pending: readonly PendingPaper[], deps: SyncDeps, options: SyncOptions): Promise<SyncResult> {
+  const result: SyncResult = { synced: [], failed: [], skipped: [], created: [], blocked: [] };
   const byId = new Map(feeds.map((f) => [f.id, f]));
   const todo: PendingPaper[] = [];
   for (const p of pending) {
@@ -70,27 +81,35 @@ export async function runSync(feeds: readonly FeedConfig[], pending: readonly Pe
   }
   if (todo.length === 0) return result;
 
-  // 1. Collections: which paths do the feeds need, which exist, which must be created (asked first).
+  // 1. Collections: which paths do the feeds need, which exist, which are missing. Nothing is written unless every missing one
+  //    may be created (the last name of a path, and the matching setting is on); otherwise nothing is sent at all.
   const collections: ZoteroCollection[] = await deps.zotero.listCollections();
   const used = [...new Set(todo.map((p) => p.feedId))].map((id) => byId.get(id) as FeedConfig);
-  const paths = [...new Set(used.flatMap((f) => [f.zoteroCollection, f.project]).filter((p) => p.trim() !== ""))];
-  const missing = paths.map((path) => ({ path, plan: planCollection(collections, path) })).filter((x) => x.plan.toCreate.length > 0);
-  if (missing.length > 0) {
-    const yes = await deps.confirmCreate(missing.map((m) => describePlan(m.path, m.plan.toCreate)));
-    if (!yes) return { ...result, declined: true };
+  const kindsOf = new Map<string, Set<"inbox" | "project">>();
+  for (const f of used) {
+    for (const [path, kind] of [[f.zoteroCollection, "inbox"], [f.project, "project"]] as const) {
+      if (path.trim() === "") continue;
+      kindsOf.set(path, (kindsOf.get(path) ?? new Set()).add(kind));
+    }
   }
+  const paths = [...kindsOf.keys()];
+  for (const path of paths) {
+    const plan = planCollection(collections, path);
+    if (plan.toCreate.length === 0) continue;
+    const reason = whyBlocked(path, plan.toCreate, kindsOf.get(path) as Set<"inbox" | "project">, options);
+    if (reason !== null) result.blocked.push({ path, reason });
+  }
+  if (result.blocked.length > 0) return result;
   const keyOf = new Map<string, string>();
   for (const path of paths) {
-    let plan = planCollection(collections, path);
-    let parent = plan.parentKey;
-    for (const name of plan.toCreate) {
-      const key = await deps.zotero.createCollection(name, parent);
-      collections.push({ key, name, parent });
-      parent = key;
+    const plan = planCollection(collections, path);
+    if (plan.toCreate.length === 1) {
+      const key = await deps.zotero.createCollection(plan.toCreate[0], plan.parentKey);
+      collections.push({ key, name: plan.toCreate[0], parent: plan.parentKey });
+      result.created.push(path);
     }
-    if (plan.toCreate.length > 0) result.created.push(path);
-    plan = planCollection(collections, path);
-    if (plan.key) keyOf.set(path, plan.key);
+    const done = planCollection(collections, path);
+    if (done.key) keyOf.set(path, done.key);
   }
 
   // 2. Papers.
@@ -121,7 +140,9 @@ export async function runSync(feeds: readonly FeedConfig[], pending: readonly Pe
 
 /** One sentence for the Notice. */
 export function describeSync(r: SyncResult): string {
-  if (r.declined) return "Sync stopped: the new collections were not created, so nothing was sent.";
+  if (r.blocked.length > 0) {
+    return `Sync stopped, nothing was sent. ${r.blocked.map((b) => `${b.path}: ${b.reason}.`).join(" ")} Then press Sync again.`;
+  }
   const added = r.synced.filter((s) => s.outcome === "added").length;
   const existing = r.synced.length - added;
   const parts = [`${added} added to Zotero`, `${existing} already in your library (collections and tag added)`, `${r.failed.length} failed`];

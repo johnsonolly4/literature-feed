@@ -35,6 +35,10 @@ export interface Settings {
   seen: string[];
   /** Result of the most recent scan; null before the first one. */
   lastScanResult: ScanCounts | null;
+  /** Sync may create a missing inbox collection (the last name of the feed's "Zotero collection" path). Off = create it in Zotero yourself. */
+  createInboxCollections: boolean;
+  /** Sync may create a missing project collection (the last name of the feed's "Project" path). Off = create it in Zotero yourself. */
+  createProjectCollections: boolean;
 }
 
 /** One feed's part of a scan. */
@@ -73,7 +77,7 @@ export const SEEN_CAP = 5000;
 export function defaultSettings(): Settings {
   return {
     openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
-    lastScan: "", seen: [], lastScanResult: null,
+    lastScan: "", seen: [], lastScanResult: null, createInboxCollections: false, createProjectCollections: false,
   };
 }
 
@@ -188,6 +192,8 @@ export function normaliseSettings(raw: unknown): Settings {
   out.lastScan = typeof raw.lastScan === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastScan) ? raw.lastScan : "";
   out.seen = textList(raw.seen).slice(-SEEN_CAP);
   out.lastScanResult = normaliseScanCounts(raw.lastScanResult);
+  out.createInboxCollections = raw.createInboxCollections === true;
+  out.createProjectCollections = raw.createProjectCollections === true;
   const taken = new Set<string>();
   if (Array.isArray(raw.feeds)) {
     for (const entry of raw.feeds) {

@@ -36,7 +36,7 @@ Tick the papers you want, then press **Sync** in the status block or run the com
 - If your library already has an item with that DOI (or, for a paper without a DOI, the same title), no copy is made: that item is added to the feed's collections and gets the `feed/<name>` tag, and nothing else about it changes.
 - Otherwise a new item is created (journal article, preprint or thesis, by the OpenAlex type) in the feed's Zotero collection and, if set, its project collection, with the tag `feed/<name>` and "OpenAlex: W..." in Extra.
 - The note line gets a link "in Zotero" (`zotero://select/...`). A paper that fails stays ticked and is tried again at the next Sync; the Notice says why.
-- A collection path such as `Inbox/Lipoic acid copolymers` means a collection inside another. If part of a path is missing in your library, a window lists what would be created and nothing is sent until you agree.
+- A collection path such as `Inbox/Lipoic acid copolymers` means a collection inside another. **The plugin does not create Zotero collections unless you allow it**, because they may turn into folders in your vault. If a collection is missing, Sync stops before sending anything and the Notice says which one to create in Zotero (then press Sync again). Two settings allow creation, separately for inbox collections and project collections (both off by default); even then only the last name of a path is created, inside a parent that already exists.
 
 Your Zotero desktop app picks the new items up at its next sync with zotero.org; ZotLit reads Zotero desktop's local database, so a synced paper shows up in ZotLit after that.
 
@@ -47,7 +47,8 @@ Open **Settings → Literature Feed**. Needs Obsidian 1.14 or later.
 - **Accounts:** OpenAlex API key, Zotero API key and Zotero user ID. Each key row is a picker for a secret in Obsidian's secret storage: you choose or create the secret there, and the plugin's data file keeps only its name (see Network use).
 - **Folders:** inbox folder (weekly notes) and archive folder (finished notes).
 - **Schedule:** the weekday of the weekly scan.
-- **Feeds:** one row per feed with an on / off switch, edit, duplicate and export; **Add feed** and **Import feed** below. A feed has search topics (one OpenAlex search per line), concept groups, drop terms, lower terms, a start year, a Zotero collection and an optional project.
+- **Zotero:** two switches, "Create missing inbox collections" and "Create missing project collections" (both off by default); see Sync to Zotero.
+- **Feeds:** one row per feed with an on / off switch, edit, duplicate and export; **Add feed** and **Import feed** below. A feed has a name, a start year, a Zotero collection and an optional project (the first four fields of the editor), then search topics (one OpenAlex search per line), concept groups, drop terms and lower terms.
   - A concept group has a role. **Required:** a paper without a match is dropped. **Boost:** a match raises it to Strong. **Priority:** a match raises it to Priority. A paper counts as matching a group when any of the group's terms is in its title or abstract.
   - **Drop** terms remove a paper. **Lower** terms move it down one tier.
   - A paper with no abstract is judged on its title alone and ranks at most Possible; if its title does not show the required terms it goes to an Unchecked list instead of being dropped.

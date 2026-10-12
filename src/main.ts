@@ -6,7 +6,7 @@ import { NOTE_NAME_PATTERN, markSynced, mergeIntoNote, renderNote } from "./inbo
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
-import { confirmAsync, type SettingsHost } from "./settings/feed-modal";
+import type { SettingsHost } from "./settings/feed-modal";
 import { LiteratureFeedSettingTab } from "./settings/tab";
 import { ZoteroClient } from "./zotero/client";
 import { zoteroRequester } from "./zotero/request";
@@ -124,14 +124,12 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       const result = await runSync(this.settings.feeds, pending, {
         zotero: new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep }),
         openalex: new OpenAlexClient({ request: obsidianRequester, apiKey: this.getSecret("openAlexKey") || undefined, sleep }),
-        confirmCreate: (lines) => confirmAsync(this.app, "Create Zotero collections",
-          `These collections do not exist in your Zotero library yet:\n\n${lines.join("\n")}\n\nCreate them?`, "Create and sync"),
-      });
+      }, { createInboxCollections: this.settings.createInboxCollections, createProjectCollections: this.settings.createProjectCollections });
       for (const note of notes) {
         const marks = result.synced.filter((s) => s.path === note.file.path);
         if (marks.length > 0) await this.app.vault.process(note.file, (current) => markSynced(current, marks));
       }
-      new Notice(describeSync(result), result.failed.length > 0 ? 12_000 : 8_000);
+      new Notice(describeSync(result), result.failed.length > 0 || result.blocked.length > 0 ? 15_000 : 8_000);
       for (const redraw of this.scanListeners) redraw();
     } catch (e) {
       new Notice(`The sync failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);

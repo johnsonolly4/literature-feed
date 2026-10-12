@@ -29,22 +29,16 @@ const TIER_LABELS: [keyof TestSummary["perTier"], string][] = [
 ];
 
 export class ConfirmModal extends Modal {
-  private confirmed = false;
-
-  constructor(
-    app: App, private readonly title: string, private readonly message: string, private readonly action: string,
-    private readonly onConfirm: () => void, private readonly onCancel: () => void = () => { /* nothing */ },
-  ) {
+  constructor(app: App, private readonly title: string, private readonly message: string, private readonly action: string, private readonly onConfirm: () => void) {
     super(app);
   }
 
   onOpen(): void {
     this.setTitle(this.title);
-    this.contentEl.createEl("p", { cls: "literature-feed-confirm-message", text: this.message });
+    this.contentEl.createEl("p", { text: this.message });
     new Setting(this.contentEl)
       .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
       .addButton((b) => b.setButtonText(this.action).setCta().onClick(() => {
-        this.confirmed = true;
         this.close();
         this.onConfirm();
       }));
@@ -52,13 +46,7 @@ export class ConfirmModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
-    if (!this.confirmed) this.onCancel();
   }
-}
-
-/** Asks a yes / no question; closing the window counts as no. */
-export function confirmAsync(app: App, title: string, message: string, action: string): Promise<boolean> {
-  return new Promise((resolve) => new ConfirmModal(app, title, message, action, () => resolve(true), () => resolve(false)).open());
 }
 
 export class FeedModal extends Modal {
@@ -80,6 +68,16 @@ export class FeedModal extends Modal {
     const draft = this.draft;
 
     new Setting(contentEl).setName("Name").addText((t) => t.setValue(draft.name).onChange((v) => { draft.name = v.trim(); }));
+    new Setting(contentEl).setName("Years from")
+      .setDesc("Only papers from this year on. Leave empty for no limit.")
+      .addText((t) => t.setValue(draft.yearsFrom === null ? "" : String(draft.yearsFrom)).setPlaceholder("2020")
+        .onChange((v) => { draft.yearsFrom = parseYear(v); }));
+    new Setting(contentEl).setName("Zotero collection")
+      .setDesc("Where synced papers go: a collection, or a slash between a collection and the one inside it. It must exist in Zotero unless creating inbox collections is switched on in the settings.")
+      .addText((t) => t.setValue(draft.zoteroCollection).onChange((v) => { draft.zoteroCollection = v.trim(); }));
+    new Setting(contentEl).setName("Project")
+      .setDesc("Optional second collection, written the same way. It must exist in Zotero unless creating project collections is switched on in the settings.")
+      .addText((t) => t.setValue(draft.project).onChange((v) => { draft.project = v.trim(); }));
 
     this.addLines("Search topics", "One OpenAlex search per line. Quotes, brackets, AND and OR work.", () => draft.topics, (v) => { draft.topics = v; }, 5);
 
@@ -98,13 +96,6 @@ export class FeedModal extends Modal {
 
     this.addLines("Drop terms", "A paper with any of these is removed.", () => draft.drop, (v) => { draft.drop = v; }, 4);
     this.addLines("Lower terms", "A paper with any of these moves down one tier.", () => draft.lower, (v) => { draft.lower = v; }, 4);
-
-    new Setting(contentEl).setName("Years from")
-      .setDesc("Only papers from this year on. Leave empty for no limit.")
-      .addText((t) => t.setValue(draft.yearsFrom === null ? "" : String(draft.yearsFrom)).setPlaceholder("2020")
-        .onChange((v) => { draft.yearsFrom = parseYear(v); }));
-    new Setting(contentEl).setName("Zotero collection").addText((t) => t.setValue(draft.zoteroCollection).onChange((v) => { draft.zoteroCollection = v.trim(); }));
-    new Setting(contentEl).setName("Project").setDesc("Optional second Zotero collection.").addText((t) => t.setValue(draft.project).onChange((v) => { draft.project = v.trim(); }));
 
     this.warningsEl = contentEl.createDiv({ cls: "literature-feed-warnings" });
     this.refreshWarnings();

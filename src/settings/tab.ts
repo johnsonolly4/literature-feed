@@ -52,6 +52,22 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
         ],
       },
       {
+        type: "group",
+        heading: "Zotero",
+        items: [
+          {
+            name: "Create missing inbox collections",
+            desc: "When a synced paper's inbox collection does not exist yet, create it (only its last name, inside an existing parent). Off: create it in Zotero yourself; Sync stops and says which.",
+            control: { type: "toggle", key: "createInboxCollections" },
+          },
+          {
+            name: "Create missing project collections",
+            desc: "The same for the project collection. Off: create it in Zotero yourself. Leave this off if your Zotero collections turn into folders in your vault.",
+            control: { type: "toggle", key: "createProjectCollections" },
+          },
+        ],
+      },
+      {
         type: "list",
         heading: "Feeds",
         emptyState: "No feeds yet. Add one, or import a feed file.",
@@ -75,6 +91,8 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       case "inboxFolder": return s.inboxFolder;
       case "archiveFolder": return s.archiveFolder;
       case "scanDay": return String(s.scanDay);
+      case "createInboxCollections": return s.createInboxCollections;
+      case "createProjectCollections": return s.createProjectCollections;
       default: return undefined;
     }
   }
@@ -91,6 +109,8 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
         if (Number.isInteger(day) && day >= 0 && day <= 6) s.scanDay = day;
         break;
       }
+      case "createInboxCollections": s.createInboxCollections = value === true; break;
+      case "createProjectCollections": s.createProjectCollections = value === true; break;
       default: return;
     }
     await this.host.saveSettings();

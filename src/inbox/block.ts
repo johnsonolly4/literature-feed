@@ -2,8 +2,8 @@
 // for another note. Built with createEl only. It redraws when the note it reads is modified, so ticking a box updates it.
 import { MarkdownRenderChild, TFile, type App, type MarkdownPostProcessorContext, type Plugin } from "obsidian";
 import type { Settings } from "../settings/data";
-import { describeCounts } from "./scan";
-import { NOTE_NAME_PATTERN, parseInbox, waitingByTier } from "./write";
+import { describeCounts, describeFeedRow } from "./scan";
+import { NOTE_NAME_PATTERN, parseInbox, waitingByFeed, waitingByTier, type ListedTier } from "./write";
 
 export interface BlockHost {
   app: App;
@@ -58,6 +58,20 @@ class StatusBlock extends MarkdownRenderChild {
 
     const result = this.host.settings.lastScanResult;
     if (result) box.createDiv({ cls: "literature-feed-status-line", text: describeCounts(result) });
+
+    // With more than one feed, a row per feed. Feeds that are switched on, plus any feed the note still lists.
+    const enabled = this.host.settings.feeds.filter((f) => f.enabled);
+    if (parsed && enabled.length > 1) {
+      const perFeed = waitingByFeed(parsed.papers);
+      const names = new Map(this.host.settings.feeds.map((f) => [f.id, f.name]));
+      const ids = [...new Set([...enabled.map((f) => f.id), ...Object.keys(perFeed)])];
+      const empty: Record<ListedTier, number> = { priority: 0, strong: 0, possible: 0, unchecked: 0 };
+      const list = box.createEl("ul", { cls: "literature-feed-feed-rows" });
+      for (const id of ids) {
+        const last = result?.feeds.find((f) => f.id === id);
+        list.createEl("li", { text: describeFeedRow(names.get(id) ?? last?.name ?? id, perFeed[id] ?? empty, last) });
+      }
+    }
 
     const buttons = box.createDiv({ cls: "literature-feed-buttons" });
     const scan = buttons.createEl("button", { text: "Scan now" });

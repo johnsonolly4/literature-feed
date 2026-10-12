@@ -1,7 +1,7 @@
 // One scan: every enabled feed, scored, turned into what goes into this week's note. No Obsidian here: the client is
 // passed in, and the result says what to write and what to remember. The caller does the writing.
 import type { OpenAlexClient } from "../openalex/client";
-import { SEEN_CAP, type ScanCounts, type Settings } from "../settings/data";
+import { SEEN_CAP, type FeedCounts, type ScanCounts, type Settings } from "../settings/data";
 import { buildPapers, noteName, shortOpenAlexId, weekLabel, type FeedSection, type ListedTier, type NoteInput } from "./write";
 
 /** The window starts this many days before the last scan, so papers OpenAlex indexed late are still caught. */
@@ -26,6 +26,8 @@ export interface ScanOutcome {
   dropped: number;
   costUsd: number;
   failures: { feed: string; message: string }[];
+  /** One entry per feed that was scanned, in feed order. */
+  perFeed: FeedCounts[];
   /** Number of feeds that were scanned (enabled and with topics). */
   feedsScanned: number;
   /** Store these after the note is written. `lastScan` only moves when every feed succeeded. */
@@ -64,6 +66,7 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
   const seen = new Set(settings.seen);
   const perTier: Record<ListedTier, number> = { priority: 0, strong: 0, possible: 0, unchecked: 0 };
   const failures: ScanOutcome["failures"] = [];
+  const perFeed: FeedCounts[] = [];
   const sections: FeedSection[] = [];
   const seenAdd: string[] = [];
   let costUsd = 0;
@@ -71,6 +74,8 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
 
   const feeds = settings.feeds.filter((f) => f.enabled && f.topics.length > 0);
   for (const feed of feeds) {
+    const row: FeedCounts = { id: feed.id, name: feed.name, priority: 0, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: false };
+    perFeed.push(row);
     try {
       const scan = await deps.client.scan(feed.topics, { fromDate: windowStart(feed.yearsFrom, settings.lastScan, today) });
       costUsd += scan.costUsd;
@@ -80,23 +85,26 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
       });
       const built = buildPapers(feed, unseen);
       dropped += built.dropped;
+      row.dropped = built.dropped;
       if (built.papers.length === 0) continue;
       for (const p of built.papers) {
         perTier[p.tier]++;
+        row[p.tier]++;
         seenAdd.push(seenKey(feed.id, p.openalexId));
       }
       sections.push({ feedId: feed.id, feedName: feed.name, papers: built.papers });
     } catch (e) {
+      row.failed = true;
       failures.push({ feed: feed.name, message: e instanceof Error ? e.message : "unknown error" });
     }
   }
 
   const lastScan = failures.length === 0 && feeds.length > 0 ? today : settings.lastScan;
   if (sections.length === 0) {
-    return { note: null, perTier, dropped, costUsd, failures, feedsScanned: feeds.length, lastScan, seenAdd };
+    return { note: null, perTier, dropped, costUsd, failures, perFeed, feedsScanned: feeds.length, lastScan, seenAdd };
   }
   const note = { path: inboxPath(settings.inboxFolder, deps.now), input: { week: weekLabel(deps.now), scanned: today, sections } };
-  return { note, perTier, dropped, costUsd, failures, feedsScanned: feeds.length, lastScan, seenAdd };
+  return { note, perTier, dropped, costUsd, failures, perFeed, feedsScanned: feeds.length, lastScan, seenAdd };
 }
 
 /** The `seen` list after a scan: new keys added at the end, the oldest dropped beyond the cap. */
@@ -106,7 +114,7 @@ export function updatedSeen(seen: readonly string[], add: readonly string[]): st
 
 export function scanCounts(outcome: ScanOutcome, at: string): ScanCounts {
   const { perTier } = outcome;
-  return { at, ...perTier, dropped: outcome.dropped, failed: outcome.failures.length };
+  return { at, ...perTier, dropped: outcome.dropped, failed: outcome.failures.length, feeds: outcome.perFeed.map((f) => ({ ...f })) };
 }
 
 /** One sentence for the status block: what the latest scan found. */
@@ -117,4 +125,14 @@ export function describeCounts(c: ScanCounts): string {
     : `${total} new (${c.priority} priority, ${c.strong} strong, ${c.possible} possible, ${c.unchecked} without abstract)`;
   const failed = c.failed > 0 ? `, ${c.failed} ${c.failed === 1 ? "feed" : "feeds"} failed` : "";
   return `Last scan ${c.at}: ${found}, ${c.dropped} dropped by the feed rules${failed}.`;
+}
+
+/** One row of the per-feed list: what is waiting for this feed and what the last scan found for it. */
+export function describeFeedRow(name: string, waiting: Record<ListedTier, number>, last: FeedCounts | undefined): string {
+  const total = waiting.priority + waiting.strong + waiting.possible + waiting.unchecked;
+  const now = `${total} waiting (${waiting.priority} priority, ${waiting.strong} strong, ${waiting.possible} possible, ${waiting.unchecked} without abstract)`;
+  if (!last) return `${name}: ${now}`;
+  if (last.failed) return `${name}: ${now}. Last scan: failed.`;
+  const found = last.priority + last.strong + last.possible + last.unchecked;
+  return `${name}: ${now}. Last scan: ${found} new, ${last.dropped} dropped.`;
 }

@@ -48,8 +48,13 @@ describe("normaliseSettings", () => {
   });
 
   it("reads the result of the last scan and ignores a damaged one", () => {
-    const good = { at: "2026-10-12", priority: 0, strong: 2, possible: 1, unchecked: 0, dropped: 11, failed: 0 };
+    const row = { id: "a", name: "Feed A", priority: 0, strong: 2, possible: 1, unchecked: 0, dropped: 11, failed: false };
+    const good = { at: "2026-10-12", priority: 0, strong: 2, possible: 1, unchecked: 0, dropped: 11, failed: 0, feeds: [row] };
     expect(normaliseSettings({ lastScanResult: good }).lastScanResult).toEqual(good);
+    // An older file without the per-feed list still reads, with an empty list; damaged feed rows are dropped.
+    const { feeds: _feeds, ...old } = good;
+    expect(normaliseSettings({ lastScanResult: old }).lastScanResult).toEqual({ ...old, feeds: [] });
+    expect(normaliseSettings({ lastScanResult: { ...good, feeds: [row, { ...row, id: "" }, { ...row, dropped: -1 }, "x", { ...row, failed: "no" }] } }).lastScanResult?.feeds).toEqual([row]);
     for (const bad of [null, "x", {}, { ...good, at: "today" }, { ...good, strong: -1 }, { ...good, dropped: 1.5 }, { ...good, failed: "0" }]) {
       expect(normaliseSettings({ lastScanResult: bad }).lastScanResult, JSON.stringify(bad)).toBeNull();
     }

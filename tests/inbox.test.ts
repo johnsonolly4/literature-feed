@@ -3,7 +3,7 @@ import type { Candidate } from "../src/openalex/client";
 import type { FeedConfig } from "../src/settings/data";
 import {
   buildNote, buildPapers, doiUrl, escapeMd, isoWeek, mergeIntoNote, noteName, parseInbox, renderNote, shortOpenAlexId, weekLabel,
-  NOTE_NAME_PATTERN, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
+  NOTE_NAME_PATTERN, waitingByFeed, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
 } from "../src/inbox/write";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
 import { priorityFlow, strongComonomer, possible, droppedNoLipoic, withSentence } from "./fixtures/lipoic-papers";
@@ -206,6 +206,18 @@ describe("waitingByTier", () => {
     expect(waitingByTier([line("W1", "a", "possible"), line("W1", "b", "strong")])).toEqual({ priority: 0, strong: 1, possible: 0, unchecked: 0 });
     expect(waitingByTier([line("W1", "a", "possible", true), line("W1", "b", "strong")])).toEqual({ priority: 0, strong: 1, possible: 0, unchecked: 0 });
     expect(waitingByTier([line("W1", "a", "possible", true), line("W1", "b", "strong", true)])).toEqual({ priority: 0, strong: 0, possible: 0, unchecked: 0 });
+  });
+});
+
+describe("waitingByFeed", () => {
+  const line = (id: string, feedId: string, tier: InboxPaper["tier"], ticked = false) => ({ openalexId: id, feedId, tier, ticked });
+
+  it("counts each feed's unticked papers on their own, a paper found by two feeds in both", () => {
+    expect(waitingByFeed([line("W1", "a", "strong"), line("W1", "b", "possible"), line("W2", "a", "unchecked"), line("W3", "b", "priority", true)])).toEqual({
+      a: { priority: 0, strong: 1, possible: 0, unchecked: 1 },
+      b: { priority: 0, strong: 0, possible: 1, unchecked: 0 },
+    });
+    expect(waitingByFeed([])).toEqual({});
   });
 });
 

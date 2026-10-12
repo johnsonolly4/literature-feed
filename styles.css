@@ -100,6 +100,20 @@
   font-size: var(--font-ui-small);
 }
 
+.literature-feed-feed-rows {
+  margin: var(--size-4-2) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-feed-rows li {
+  margin: 0;
+  padding: var(--size-4-1) 0;
+  border-top: 1px solid var(--vt-divider, var(--background-modifier-border));
+}
+
 .literature-feed-buttons {
   display: flex;
   flex-wrap: wrap;

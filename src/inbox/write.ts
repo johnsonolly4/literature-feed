@@ -260,6 +260,17 @@ export function waitingByTier(papers: readonly ParsedPaper[]): Record<ListedTier
   return counts;
 }
 
+/** Papers still waiting in each feed's own lists, per tier (a paper found by two feeds is counted in both). */
+export function waitingByFeed(papers: readonly ParsedPaper[]): Record<string, Record<ListedTier, number>> {
+  const out: Record<string, Record<ListedTier, number>> = {};
+  for (const p of papers) {
+    if (p.ticked) continue;
+    const row = (out[p.feedId] ??= { priority: 0, strong: 0, possible: 0, unchecked: 0 });
+    row[p.tier]++;
+  }
+  return out;
+}
+
 // ---- adding to an existing note -----------------------------------------------------------------------------------------
 
 /** Indexes [start, end) of the callout whose header carries `marker` (the "> " lines that follow the header). */

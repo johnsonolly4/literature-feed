@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, describeCounts, inboxPath, localDay, runScan, scanCounts, seenKey, updatedSeen, windowStart, type ScanDeps } from "../src/inbox/scan";
+import { addDays, describeCounts, describeFeedRow, inboxPath, localDay, runScan, scanCounts, seenKey, updatedSeen, windowStart, type ScanDeps } from "../src/inbox/scan";
 import type { Candidate, ScanResult } from "../src/openalex/client";
 import { SEEN_CAP, defaultSettings, type FeedConfig, type Settings } from "../src/settings/data";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
@@ -140,17 +140,39 @@ describe("last scan counts", () => {
   it("turns an outcome into the stored counts, with the failed feeds counted", async () => {
     const { client } = fakeClient((_t, _f, call) => (call === 0 ? new Error("HTTP 500") : scanResult([cand(priorityFlow, 1), cand(possible, 2), cand(droppedNoLipoic, 3)])));
     const out = await runScan(settings({ feeds: [feed("a"), feed("b")] }), { client, now: NOW });
-    expect(scanCounts(out, "2026-10-12")).toEqual({ at: "2026-10-12", priority: 1, strong: 0, possible: 1, unchecked: 0, dropped: 1, failed: 1 });
+    expect(scanCounts(out, "2026-10-12")).toEqual({
+      at: "2026-10-12", priority: 1, strong: 0, possible: 1, unchecked: 0, dropped: 1, failed: 1,
+      feeds: [
+        { id: "a", name: "Feed a", priority: 0, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: true },
+        { id: "b", name: "Feed b", priority: 1, strong: 0, possible: 1, unchecked: 0, dropped: 1, failed: false },
+      ],
+    });
+  });
+
+  it("counts each feed's own papers, so the rows add up to the total", async () => {
+    const { client } = fakeClient((_t, _f, call) => scanResult(call === 0 ? [cand(priorityFlow, 1)] : [cand(priorityFlow, 1), cand(possible, 2), cand(droppedNoLipoic, 3)]));
+    const out = await runScan(settings({ feeds: [feed("a"), feed("b")] }), { client, now: NOW });
+    expect(out.perFeed.map((f) => [f.id, f.priority, f.possible, f.dropped, f.failed])).toEqual([["a", 1, 0, 0, false], ["b", 1, 1, 1, false]]);
+    expect(out.perTier.priority).toBe(2);
+    expect(out.perFeed.reduce((n, f) => n + f.possible, 0)).toBe(out.perTier.possible);
+  });
+
+  it("describes a feed row, with and without a last scan, and when that scan failed", () => {
+    const waiting = { priority: 1, strong: 2, possible: 0, unchecked: 1 };
+    const last = { id: "a", name: "A", priority: 0, strong: 2, possible: 1, unchecked: 0, dropped: 11, failed: false };
+    expect(describeFeedRow("Feed A", waiting, undefined)).toBe("Feed A: 4 waiting (1 priority, 2 strong, 0 possible, 1 without abstract)");
+    expect(describeFeedRow("Feed A", waiting, last)).toBe("Feed A: 4 waiting (1 priority, 2 strong, 0 possible, 1 without abstract). Last scan: 3 new, 11 dropped.");
+    expect(describeFeedRow("Feed A", waiting, { ...last, failed: true })).toContain("Last scan: failed.");
   });
 
   it("says in one sentence what the last scan found", () => {
-    expect(describeCounts({ at: "2026-10-12", priority: 0, strong: 2, possible: 1, unchecked: 0, dropped: 11, failed: 0 }))
+    expect(describeCounts({ at: "2026-10-12", priority: 0, strong: 2, possible: 1, unchecked: 0, dropped: 11, failed: 0, feeds: [] }))
       .toBe("Last scan 2026-10-12: 3 new (0 priority, 2 strong, 1 possible, 0 without abstract), 11 dropped by the feed rules.");
-    expect(describeCounts({ at: "2026-10-19", priority: 0, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 0 }))
+    expect(describeCounts({ at: "2026-10-19", priority: 0, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 0, feeds: [] }))
       .toBe("Last scan 2026-10-19: no new papers, 0 dropped by the feed rules.");
-    expect(describeCounts({ at: "2026-10-19", priority: 1, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 2 }))
+    expect(describeCounts({ at: "2026-10-19", priority: 1, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 2, feeds: [] }))
       .toContain(", 2 feeds failed.");
-    expect(describeCounts({ at: "2026-10-19", priority: 0, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 1 }))
+    expect(describeCounts({ at: "2026-10-19", priority: 0, strong: 0, possible: 0, unchecked: 0, dropped: 0, failed: 1, feeds: [] }))
       .toContain(", 1 feed failed.");
   });
 });

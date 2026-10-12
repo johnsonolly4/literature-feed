@@ -37,6 +37,20 @@ export interface Settings {
   lastScanResult: ScanCounts | null;
 }
 
+/** One feed's part of a scan. */
+export interface FeedCounts {
+  /** The feed's id (as in `FeedConfig`). */
+  id: string;
+  /** The feed's name at the time of the scan. */
+  name: string;
+  priority: number;
+  strong: number;
+  possible: number;
+  unchecked: number;
+  dropped: number;
+  failed: boolean;
+}
+
 /** What the most recent scan found; shown on the status block and the Home card. Papers are counted once per feed. */
 export interface ScanCounts {
   /** Day of that scan, `YYYY-MM-DD`. */
@@ -49,6 +63,8 @@ export interface ScanCounts {
   dropped: number;
   /** Feeds that failed in that scan. */
   failed: number;
+  /** The same, feed by feed (every feed that was scanned). */
+  feeds: FeedCounts[];
 }
 
 /** The seen list keeps at most this many ids (the oldest go first). */
@@ -191,7 +207,15 @@ function normaliseScanCounts(raw: unknown): ScanCounts | null {
   const [priority, strong, possible, unchecked, dropped, failed] =
     ["priority", "strong", "possible", "unchecked", "dropped", "failed"].map((k) => count(raw[k]));
   if ([priority, strong, possible, unchecked, dropped, failed].some((n) => n === null)) return null;
-  return { at: raw.at, priority: priority!, strong: strong!, possible: possible!, unchecked: unchecked!, dropped: dropped!, failed: failed! };
+  const feeds = Array.isArray(raw.feeds) ? raw.feeds.map(normaliseFeedCounts).filter((f): f is FeedCounts => f !== null) : [];
+  return { at: raw.at, priority: priority!, strong: strong!, possible: possible!, unchecked: unchecked!, dropped: dropped!, failed: failed!, feeds };
+}
+
+function normaliseFeedCounts(raw: unknown): FeedCounts | null {
+  if (!isRecord(raw) || typeof raw.id !== "string" || raw.id === "" || typeof raw.name !== "string" || typeof raw.failed !== "boolean") return null;
+  const [priority, strong, possible, unchecked, dropped] = ["priority", "strong", "possible", "unchecked", "dropped"].map((k) => count(raw[k]));
+  if ([priority, strong, possible, unchecked, dropped].some((n) => n === null)) return null;
+  return { id: raw.id, name: raw.name, priority: priority!, strong: strong!, possible: possible!, unchecked: unchecked!, dropped: dropped!, failed: raw.failed };
 }
 
 /** A secret id as Obsidian allows it: lower-case letters, digits and dashes. Anything else is no id. */

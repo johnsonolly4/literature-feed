@@ -1,17 +1,21 @@
-import { Notice, Plugin, normalizePath } from "obsidian";
+import { Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
-import { mergeIntoNote, renderNote } from "./inbox/write";
+import { describeSync, findPending, runSync } from "./inbox/sync";
+import { NOTE_NAME_PATTERN, markSynced, mergeIntoNote, renderNote } from "./inbox/write";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
-import type { SettingsHost } from "./settings/feed-modal";
+import { confirmAsync, type SettingsHost } from "./settings/feed-modal";
 import { LiteratureFeedSettingTab } from "./settings/tab";
+import { ZoteroClient } from "./zotero/client";
+import { zoteroRequester } from "./zotero/request";
 
 export default class LiteratureFeedPlugin extends Plugin implements SettingsHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
+  private syncing = false;
   /** Open status blocks and cards; they redraw after a scan. */
   readonly scanListeners = new Set<() => void>();
 
@@ -21,6 +25,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
+    this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
     // The weekly schedule, the ribbon icon and the Zotero sync come in later phases (see docs/plans/literature-feed.md).
   }
 
@@ -92,6 +97,55 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     } finally {
       this.scanning = false;
     }
+  }
+
+  /** Sends every ticked paper in the inbox notes to Zotero and links the note lines to the new items. */
+  async syncNow(): Promise<void> {
+    if (this.syncing) {
+      new Notice("A sync is already running.");
+      return;
+    }
+    this.syncing = true;
+    try {
+      const apiKey = this.getSecret("zoteroKey");
+      const userId = this.settings.zoteroUserId;
+      if (apiKey === "" || userId === "") {
+        new Notice("Add your Zotero API key and user ID in the settings first.");
+        return;
+      }
+      const notes = await this.readInboxNotes();
+      const pending = findPending(notes.map((n) => ({ path: n.file.path, text: n.text })));
+      if (pending.length === 0) {
+        new Notice("Nothing to sync: tick the papers you want first.");
+        return;
+      }
+      new Notice(`Sending ${pending.length} paper${pending.length === 1 ? "" : "s"} to Zotero…`);
+      const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
+      const result = await runSync(this.settings.feeds, pending, {
+        zotero: new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep }),
+        openalex: new OpenAlexClient({ request: obsidianRequester, apiKey: this.getSecret("openAlexKey") || undefined, sleep }),
+        confirmCreate: (lines) => confirmAsync(this.app, "Create Zotero collections",
+          `These collections do not exist in your Zotero library yet:\n\n${lines.join("\n")}\n\nCreate them?`, "Create and sync"),
+      });
+      for (const note of notes) {
+        const marks = result.synced.filter((s) => s.path === note.file.path);
+        if (marks.length > 0) await this.app.vault.process(note.file, (current) => markSynced(current, marks));
+      }
+      new Notice(describeSync(result), result.failed.length > 0 ? 12_000 : 8_000);
+      for (const redraw of this.scanListeners) redraw();
+    } catch (e) {
+      new Notice(`The sync failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  /** The inbox notes (by their file name) in the inbox folder, with their text. */
+  private async readInboxNotes(): Promise<{ file: TFile; text: string }[]> {
+    const { vault } = this.app;
+    const folder = this.settings.inboxFolder === "" ? vault.getRoot() : vault.getFolderByPath(this.settings.inboxFolder);
+    const files = (folder?.children ?? []).filter((f): f is TFile => f instanceof TFile && NOTE_NAME_PATTERN.test(f.name));
+    return Promise.all(files.map(async (file) => ({ file, text: await vault.read(file) })));
   }
 
   /** Creates this week's note, or adds to it inside `vault.process`, so a tick made meanwhile is kept. Returns its path. */

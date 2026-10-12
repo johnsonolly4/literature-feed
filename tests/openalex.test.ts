@@ -256,3 +256,27 @@ describe("a recorded OpenAlex response", () => {
     expect(scorePaper({ ...(paper as Candidate), abstract: null }, lipoicFeed).tier).toBe("possible");
   });
 });
+
+describe("OpenAlexClient.getWork", () => {
+  it("fetches one work by its short id with the same fields as a search", async () => {
+    const { request, calls } = fakeRequester([{ status: 200, json: journalWork }]);
+    const work = await new OpenAlexClient({ request, sleep: noSleep }).getWork("W1000000001");
+    expect(work.title).toBe(journalWork.title);
+    const url = new URL(calls[0].url);
+    expect(url.origin + url.pathname).toBe("https://api.openalex.org/works/W1000000001");
+    expect(url.searchParams.get("select")).toContain("abstract_inverted_index");
+  });
+
+  it("refuses an id that is not a short work id, and an answer that is not a work", async () => {
+    const { request, calls } = fakeRequester([{ status: 200, json: { error: "x" } }]);
+    const client = new OpenAlexClient({ request, sleep: noSleep });
+    for (const bad of ["", "https://openalex.org/W1", "A1", "W1/../x", "W1?x=1"]) await expect(client.getWork(bad), bad).rejects.toThrow(OpenAlexError);
+    expect(calls).toHaveLength(0);
+    await expect(client.getWork("W5")).rejects.toThrow("not a work");
+  });
+
+  it("says plainly when the work is not found", async () => {
+    const { request } = fakeRequester([{ status: 404, json: null }]);
+    await expect(new OpenAlexClient({ request, sleep: noSleep }).getWork("W5")).rejects.toThrow("HTTP 404");
+  });
+});

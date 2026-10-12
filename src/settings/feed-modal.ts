@@ -29,16 +29,22 @@ const TIER_LABELS: [keyof TestSummary["perTier"], string][] = [
 ];
 
 export class ConfirmModal extends Modal {
-  constructor(app: App, private readonly title: string, private readonly message: string, private readonly action: string, private readonly onConfirm: () => void) {
+  private confirmed = false;
+
+  constructor(
+    app: App, private readonly title: string, private readonly message: string, private readonly action: string,
+    private readonly onConfirm: () => void, private readonly onCancel: () => void = () => { /* nothing */ },
+  ) {
     super(app);
   }
 
   onOpen(): void {
     this.setTitle(this.title);
-    this.contentEl.createEl("p", { text: this.message });
+    this.contentEl.createEl("p", { cls: "literature-feed-confirm-message", text: this.message });
     new Setting(this.contentEl)
       .addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
       .addButton((b) => b.setButtonText(this.action).setCta().onClick(() => {
+        this.confirmed = true;
         this.close();
         this.onConfirm();
       }));
@@ -46,7 +52,13 @@ export class ConfirmModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    if (!this.confirmed) this.onCancel();
   }
+}
+
+/** Asks a yes / no question; closing the window counts as no. */
+export function confirmAsync(app: App, title: string, message: string, action: string): Promise<boolean> {
+  return new Promise((resolve) => new ConfirmModal(app, title, message, action, () => resolve(true), () => resolve(false)).open());
 }
 
 export class FeedModal extends Modal {

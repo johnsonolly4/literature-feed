@@ -9,6 +9,7 @@ export interface BlockHost {
   app: App;
   settings: Settings;
   scanNow(): Promise<void>;
+  syncNow(): Promise<void>;
   /** Called after every scan, so open blocks redraw even when the note itself did not change. */
   scanListeners: Set<() => void>;
 }
@@ -79,8 +80,11 @@ class StatusBlock extends MarkdownRenderChild {
       scan.disabled = true;
       void this.host.scanNow().finally(() => { scan.disabled = false; });
     });
-    const sync = buttons.createEl("button", { text: "Sync", attr: { title: "The Zotero sync is not built yet." } });
-    sync.disabled = true;
+    const sync = buttons.createEl("button", { text: "Sync", attr: { title: "Send the ticked papers to Zotero" } });
+    sync.addEventListener("click", () => {
+      sync.disabled = true;
+      void this.host.syncNow().finally(() => { sync.disabled = false; });
+    });
     if (this.home && note) {
       const open = buttons.createEl("button", { text: "Open inbox" });
       open.addEventListener("click", () => { void this.host.app.workspace.openLinkText(note.path, "", false); });

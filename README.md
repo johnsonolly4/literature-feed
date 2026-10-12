@@ -2,7 +2,7 @@
 
 An Obsidian plugin that finds new papers on your topics each week, lists them in a reading-inbox note, and sends the ones you tick to Zotero.
 
-> **Status: under development.** So far (Phase 4 of [the plan](docs/plans/literature-feed.md)) the plugin has a settings tab with feeds, a **Test** search and a **Scan now** command that writes the weekly reading-inbox note; the weekly schedule and the Zotero sync are not built yet. Everything below describes what it is being built to do, and it is not in the Obsidian community plugin store.
+> **Status: under development.** So far (Phase 5 of [the plan](docs/plans/literature-feed.md)) the plugin has a settings tab with feeds, a **Test** search, a **Scan now** command that writes the weekly reading-inbox note, and a **Sync ticked papers** command that sends the ticked papers to Zotero; the weekly schedule is not built yet. Everything below describes what it is being built to do, and it is not in the Obsidian community plugin store.
 
 ## What it does
 
@@ -17,7 +17,7 @@ Feeds are set up in the plugin's settings. The scan is lexical (word and phrase 
 
 Run the command **Scan now** (command palette). It searches OpenAlex for every feed that is switched on and writes, or adds to, this week's note `<inbox folder>/<year>-W<week> Reading inbox.md`. A paper already listed is not listed again; the first scan looks back 30 days, later scans start 14 days before the last one so late-indexed papers are caught. If a scan fails for a feed, the other feeds still run and the last-scan date does not move.
 
-- The note has a status line with **Scan now** and a **Sync** button (disabled until the Zotero sync exists), then one collapsible section per feed. Each paper is a checkbox line: title, authors, venue, year, DOI link, tier (Priority, Strong, Possible) and the terms that matched. Feeds with no Priority or Strong paper start collapsed.
+- The note has a status line with **Scan now** and a **Sync** button, then one collapsible section per feed. Each paper is a checkbox line: title, authors, venue, year, DOI link, tier (Priority, Strong, Possible) and the terms that matched. Feeds with no Priority or Strong paper start collapsed.
 - Papers with no abstract and no required term in the title are in a separate collapsed list per feed, "No abstract returned, matched by OpenAlex".
 - The status block and card also say what the latest scan found, for example "Last scan 2026-10-12: 3 new (0 priority, 2 strong, 1 possible, 0 without abstract), 11 dropped by the feed rules."
 - With more than one feed switched on, the block and card add one row per feed: what is waiting for that feed and what the latest scan found for it (new and dropped, or failed).
@@ -25,6 +25,20 @@ Run the command **Scan now** (command palette). It searches OpenAlex for every f
 - Ticking a box changes only that line; scanning again keeps your ticks.
 - The block `` ```literature-feed `` with the line `show: home` gives a small card (papers waiting, last scan, buttons) for another note, such as a home page. Put it inside a callout (for example a column of a Home note) and it drops its own box and title. It counts the unticked papers of the latest inbox note, each paper once even if two feeds found it; older weeks are not counted.
 - Titles and names come from OpenAlex and are written as plain text with markdown characters escaped; links are rebuilt from the DOI.
+
+## Settings
+
+## Sync to Zotero
+
+Tick the papers you want, then press **Sync** in the status block or run the command **Sync ticked papers**. For every ticked paper in the inbox notes that has no "in Zotero" link yet:
+
+- The plugin fetches the paper's full record from OpenAlex again (clean title, authors, abstract, DOI).
+- If your library already has an item with that DOI (or, for a paper without a DOI, the same title), no copy is made: that item is added to the feed's collections and gets the `feed/<name>` tag, and nothing else about it changes.
+- Otherwise a new item is created (journal article, preprint or thesis, by the OpenAlex type) in the feed's Zotero collection and, if set, its project collection, with the tag `feed/<name>` and "OpenAlex: W..." in Extra.
+- The note line gets a link "in Zotero" (`zotero://select/...`). A paper that fails stays ticked and is tried again at the next Sync; the Notice says why.
+- A collection path such as `Inbox/Lipoic acid copolymers` means a collection inside another. If part of a path is missing in your library, a window lists what would be created and nothing is sent until you agree.
+
+Your Zotero desktop app picks the new items up at its next sync with zotero.org; ZotLit reads Zotero desktop's local database, so a synced paper shows up in ZotLit after that.
 
 ## Settings
 
@@ -46,8 +60,8 @@ The plugin talks to two services, and nothing else. There is no telemetry, no an
 
 | Service | Host | What is sent | What it is for |
 |---|---|---|---|
-| OpenAlex | `api.openalex.org` | Your search queries (the topic strings of your feeds), a date window, and your OpenAlex API key (in an `Authorization` header, not in the address) | Finding new papers. Paper metadata (title, authors, venue, year, DOI, abstract) comes back |
-| Zotero | `api.zotero.org` | Your Zotero user ID and API key, and for each paper you tick: its metadata, plus the collection and tag names | Checking whether a paper is already in your library by DOI, then creating items, collections and tags in your library |
+| OpenAlex | `api.openalex.org` | Your search queries (the topic strings of your feeds), a date window, the OpenAlex id of each paper you sync, and your OpenAlex API key (in an `Authorization` header, not in the address) | Finding new papers. Paper metadata (title, authors, venue, year, DOI, abstract) comes back |
+| Zotero | `api.zotero.org` | Your Zotero user ID and API key, and for each paper you tick: its title, authors, abstract, venue, date, DOI and link, plus the collection and tag names (and, to avoid duplicates, a search for the DOI or title in your library) | Checking whether a paper is already in your library by DOI, then creating items, collections and tags in your library |
 
 Your API keys are kept in Obsidian's secret storage, on your device and outside your vault. The plugin's settings file (`.obsidian/plugins/literature-feed/data.json`) holds only the name of each secret, never the key, so syncing or backing up your vault does not copy a key. For the same reason, you choose the secrets again on each device. Keys are sent only to the service they belong to. If an earlier version stored a key as plain text in the settings file, the plugin moves it into the secret storage the first time it loads and removes it from the file.
 

@@ -141,3 +141,8 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* A confirm window whose message has several lines (one per collection to create) */
+.literature-feed-confirm-message {
+  white-space: pre-line;
+}

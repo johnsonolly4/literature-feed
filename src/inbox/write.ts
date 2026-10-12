@@ -208,6 +208,8 @@ export interface ParsedPaper {
   feedId: string;
   tier: ListedTier;
   ticked: boolean;
+  /** The line carries the "in Zotero" link: the paper has been sent. */
+  synced: boolean;
 }
 
 export interface ParsedNote {
@@ -215,6 +217,8 @@ export interface ParsedNote {
   papers: ParsedPaper[];
 }
 
+/** What the "in Zotero" link starts with; a line that has it has been synced. */
+const ZOTERO_LINK = "](zotero://select/library/items/";
 const HEADER = /^>\s*\[!literature-feed(?:-unchecked)?\][+-]?\s.*%%feed:([a-z0-9-]+)(?::unchecked)?%%\s*$/;
 const PAPER = /^>\s*-\s\[( |x|X)\]\s.*%%oa:(W\d+):([psou])%%\s*$/;
 const CODE_TO_TIER = Object.fromEntries(Object.entries(TIER_CODE).map(([tier, code]) => [code, tier])) as Record<string, ListedTier>;
@@ -239,7 +243,7 @@ export function parseInbox(text: string): ParsedNote {
       return;
     }
     const paper = PAPER.exec(line);
-    if (paper) papers.push({ openalexId: paper[2], feedId, tier: CODE_TO_TIER[paper[3]], ticked: paper[1] !== " " });
+    if (paper) papers.push({ openalexId: paper[2], feedId, tier: CODE_TO_TIER[paper[3]], ticked: paper[1] !== " ", synced: line.includes(ZOTERO_LINK) });
   });
   return { scanned, papers };
 }
@@ -329,4 +333,32 @@ export function mergeIntoNote(existing: string, input: NoteInput): string {
 /** A new note when there is none, otherwise the existing one with the new papers added. */
 export function buildNote(existing: string | null, input: NoteInput): string {
   return existing === null ? renderNote(input) : mergeIntoNote(existing, input);
+}
+
+export interface SyncedMark {
+  feedId: string;
+  openalexId: string;
+  /** The Zotero item key: eight capital letters or digits. */
+  key: string;
+}
+
+/**
+ * Adds ` · [in Zotero](zotero://select/library/items/KEY)` before the hidden marker of each paper named (in that feed's
+ * callouts), and changes nothing else. A paper that is already linked, or has a key that is not a Zotero key, is left alone.
+ */
+export function markSynced(text: string, marks: readonly SyncedMark[]): string {
+  const wanted = new Map(marks.filter((m) => /^[A-Z0-9]{8}$/.test(m.key)).map((m) => [`${m.feedId}|${m.openalexId}`, m.key]));
+  if (wanted.size === 0) return text;
+  let feedId = "";
+  return text.split("\n").map((line) => {
+    const header = HEADER.exec(line);
+    if (header) {
+      feedId = header[1];
+      return line;
+    }
+    const paper = PAPER.exec(line);
+    const key = paper ? wanted.get(`${feedId}|${paper[2]}`) : undefined;
+    if (!paper || key === undefined || line.includes(ZOTERO_LINK)) return line;
+    return line.replace(/ (%%oa:W\d+:[psou]%%)(\s*)$/, ` · [in Zotero](zotero://select/library/items/${key}) $1$2`);
+  }).join("\n");
 }

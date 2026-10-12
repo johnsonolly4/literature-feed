@@ -181,6 +181,14 @@ export class OpenAlexClient {
     }
   }
 
+  /** One work by its short id (`W123`), with the same fields as a search result. Used when a ticked paper goes to Zotero. */
+  async getWork(id: string): Promise<OpenAlexWork> {
+    if (!/^W\d+$/.test(id)) throw new OpenAlexError("That is not an OpenAlex work id");
+    const body = await this.get(`${API_URL}/${id}?select=${SELECT}`);
+    if (typeof body.id !== "string") throw new OpenAlexError("OpenAlex answered with something that is not a work");
+    return body as unknown as OpenAlexWork;
+  }
+
   /** All works for one topic, page by page. Cost is the sum of `meta.cost_usd` over the pages. */
   async searchTopic(topic: string, opts: SearchOptions = {}): Promise<TopicResult> {
     const perPage = opts.perPage ?? 100;

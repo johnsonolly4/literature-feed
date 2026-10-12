@@ -84,6 +84,7 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 - Files: `src/zotero/client.ts` (Web API v3: look up by DOI, create items, collections, tags), `src/inbox/sync.ts` (read ticks with `vault.process`, write back `zotero://select/…` link + "in Zotero" badge), tests with recorded responses.
 - Each ticked paper: created once (DOI check against the library), added to `Inbox/<feed>` and, if the feed has a project, `Projects/<project>`; tag `feed/<slug>`.
 - Done when: tests pass; **one real sync** of one paper into my library, seen in Zotero desktop after its sync.
+- Built 2026-10-12 (not yet run against a real library): `src/zotero/client.ts`, `map.ts`, `request.ts`, `src/inbox/sync.ts`, the command **Sync ticked papers** and the block's **Sync** button; missing collections are created after a confirmation; an existing DOI gets the collections and tag added; test responses are hand-written until the real sync. See `docs/decisions.md`.
 
 ### Phase 6 — Read state and archive
 - Depends on: Phase 5

@@ -40,7 +40,7 @@ flowchart LR
 | Possible | every **required** group only |
 | Dropped | a required group missing, or a **drop** term matched |
 
-A paper with **no abstract** is matched on its title alone and can rank at most Possible (decided 2026-10-12; `docs/decisions.md`). The cap applies before lower terms.
+A paper with **no abstract** is matched on its title alone and can rank at most Possible (decided 2026-10-12; `docs/decisions.md`). The cap applies before lower terms. If the title does not show the required terms it is **Unchecked** and listed apart ("no abstract returned, matched by OpenAlex"), not Dropped; a drop term in the title still drops it, and lower terms do not apply to it. A feed with no required group never gives Unchecked.
 
 A **lower** term (per feed) moves a paper down one tier (Priority → Strong → Possible → Dropped). Use **drop** for clearly off-topic meanings, **lower** for on-topic-but-less-wanted work.
 

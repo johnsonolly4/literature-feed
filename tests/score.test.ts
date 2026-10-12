@@ -135,7 +135,7 @@ describe("normalising and matching", () => {
     expect(termVariants("  ")).toEqual([]);
     expect(termVariants("--")).toEqual([]);
     const feed: Feed = { name: "t", groups: [{ name: "g", role: "required", terms: [""] }], drop: [" "], lower: ["-"] };
-    const score = scorePaper({ title: "Anything" }, feed);
+    const score = scorePaper({ title: "Anything", abstract: "Some text." }, feed);
     expect(score.dropTerms).toEqual([]);
     expect(score.lowerTerms).toEqual([]);
     expect(score.tier).toBe("dropped");
@@ -168,9 +168,34 @@ describe("papers with no abstract", () => {
     expect(scorePaper({ title }, lipoicFeed).groups.map((g) => g.name)).toContain("Flow or optimisation");
   });
 
-  it("still drops on a drop term or a missing required group in the title", () => {
-    expect(scorePaper({ title: `${title} on gold nanoparticles` }, lipoicFeed).tier).toBe("dropped");
-    expect(scorePaper({ title: "Flow synthesis of acrylamide copolymers" }, lipoicFeed).tier).toBe("dropped");
+  it("still drops on a drop term in the title", () => {
+    const score = scorePaper({ title: `${title} on gold nanoparticles` }, lipoicFeed);
+    expect(score.tier).toBe("dropped");
+    expect(score.dropTerms).toEqual(["gold nanoparticle"]);
+    // A drop term wins over "unchecked" even when the required terms are missing from the title.
+    expect(scorePaper({ title: "Gold nanoparticles in flow" }, lipoicFeed).tier).toBe("dropped");
+  });
+
+  it("is Unchecked, not Dropped, when the title cannot show the required terms", () => {
+    const noTerm = "Flow synthesis of acrylamide copolymers";
+    for (const abstract of [undefined, null, "", "   "]) {
+      const score = scorePaper({ title: noTerm, abstract }, lipoicFeed);
+      expect(score.tier).toBe("unchecked");
+      expect(score.dropTerms).toEqual([]);
+      expect(score.lowerTerms).toEqual([]);
+    }
+    // With an abstract the same title is judged on its text, and is Dropped if the terms are missing.
+    expect(scorePaper({ title: noTerm, abstract: "Made in a flow reactor." }, lipoicFeed).tier).toBe("dropped");
+    expect(scorePaper({ title: noTerm, abstract: "Lipoic acid was copolymerised." }, lipoicFeed).tier).toBe("priority");
+  });
+
+  it("a lower term in the title does not apply to an Unchecked paper", () => {
+    expect(scorePaper({ title: "Self-healing acrylamide copolymers" }, lipoicFeed).tier).toBe("unchecked");
+  });
+
+  it("a feed with no required group never gives Unchecked", () => {
+    const feed: Feed = { name: "t", groups: [], drop: [], lower: [] };
+    expect(scorePaper({ title: "Anything" }, feed).tier).toBe("possible");
   });
 
   it("still applies lower terms after the cap", () => {
@@ -204,7 +229,7 @@ describe("feeds without every role", () => {
 
   it("every required group is needed", () => {
     const feed: Feed = { name: "t", groups: [polymers, { name: "r2", role: "required", terms: ["lipoic acid"] }], drop: [], lower: [] };
-    expect(scorePaper({ title: "Polymer" }, feed).tier).toBe("dropped");
+    expect(scorePaper({ title: "Polymer", abstract: "A study." }, feed).tier).toBe("dropped");
     expect(scorePaper({ title: "Polymer lipoic acid" }, feed).tier).toBe("possible");
   });
 });

@@ -29,7 +29,8 @@ export interface Paper {
   isPreprint?: boolean;
 }
 
-export type Tier = "priority" | "strong" | "possible" | "dropped";
+/** `unchecked`: no abstract and the title alone cannot show the required terms; listed apart, not ranked. */
+export type Tier = "priority" | "strong" | "possible" | "dropped" | "unchecked";
 
 export interface GroupMatch {
   name: string;

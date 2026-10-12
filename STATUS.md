@@ -5,9 +5,10 @@ _Updated: 2026-10-12 (Phase 0 session). Cap 40 lines. History lives in git and `
 
 ## Now
 Phase 0 (repo scaffold) done 2026-10-12: `npm run build`, `npm test` (2 tests) and `npm run lint` pass with 0 errors, 0 warnings; `npm run dev` writes the plugin into `test-vault/.obsidian/plugins/literature-feed/`. Not seen in Obsidian: loading the plugin in `test-vault` is still to be done by the owner (see Waiting on owner). Nothing run against OpenAlex or Zotero.
+Phase 1 (matching engine, pure) done 2026-10-12 on `feat/matching-engine`, not pushed: `src/match/` (feed, score, dedupe), 55 new tests (57 in all), lint and build pass. Pure code: nothing to see in Obsidian. Rules I chose where the plan was silent: BACKLOG → Decisions needed.
 
 ## Next (ordered: top item is the next session; plan: `docs/plans/literature-feed.md`)
-1. Phase 1: matching engine (pure): `src/match/`, fixtures, tests for each tier, drop term and lower term
+1. Push `feat/matching-engine` and open a PR (owner says "push")
 2. Phase 2: OpenAlex client (one real run with the owner's key)
 3. Phase 3: settings tab
 4. Phase 4: weekly dashboard note

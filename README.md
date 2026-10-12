@@ -19,7 +19,7 @@ The plugin talks to two services, and nothing else. There is no telemetry, no an
 
 | Service | Host | What is sent | What it is for |
 |---|---|---|---|
-| OpenAlex | `api.openalex.org` | Your search queries (the topic strings of your feeds), a date window, and your OpenAlex API key | Finding new papers. Paper metadata (title, authors, venue, year, DOI, abstract) comes back |
+| OpenAlex | `api.openalex.org` | Your search queries (the topic strings of your feeds), a date window, and your OpenAlex API key (in an `Authorization` header, not in the address) | Finding new papers. Paper metadata (title, authors, venue, year, DOI, abstract) comes back |
 | Zotero | `api.zotero.org` | Your Zotero user ID and API key, and for each paper you tick: its metadata, plus the collection and tag names | Checking whether a paper is already in your library by DOI, then creating items, collections and tags in your library |
 
 Your API keys are stored in the plugin's own settings file inside your vault (`.obsidian/plugins/literature-feed/data.json`). They are sent only to the service they belong to. If you sync your vault, that file syncs with it, so keep it out of any public sync or backup.

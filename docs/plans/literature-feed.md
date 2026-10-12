@@ -57,8 +57,10 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 
 ### Phase 2 — OpenAlex client
 - Depends on: Phase 1
-- Files: `src/openalex/client.ts` (`requestUrl`, `title_and_abstract.search`, `per_page=100`, `select=` fields, date window since the last scan, 429 back-off, `meta.cost_usd` summed per run), `tests/openalex.test.ts` (recorded responses).
+- Files: `src/openalex/client.ts` (injected `requestUrl`, `search.title_and_abstract`, `per_page=100`, `select=` fields, date window since the last scan via `from_publication_date`, 429 back-off, `meta.cost_usd` summed per run), `tests/openalex.test.ts` (responses hand-written to the documented shape until the real run), `scripts/openalex-run.mjs` (the real run).
 - Done when: tests pass; **one real run with my key** reports the count and cost per topic (settles whether AND / OR / quoted phrases work as assumed).
+- Changed after reading the OpenAlex docs (2026-10-12): the scoped parameter `search.title_and_abstract` replaces the filter form (deprecated per the docs; both are in `buildSearchUrl` until the real run); `from_publication_date` replaces created / updated dates (paid plan); key as Bearer header.
+- **Code and tests done 2026-10-12** (`feat/openalex-client`). The real run is waiting on the key.
 
 ### Phase 3 — Settings tab
 - Depends on: Phase 2

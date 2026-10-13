@@ -257,7 +257,7 @@ class StatusBlock extends MarkdownRenderChild {
 
     const table = wrap.createEl("table", { cls: "literature-feed-papers" });
     const head = table.createEl("thead").createEl("tr");
-    head.createEl("th");
+    head.createEl("th", { cls: "literature-feed-tick-cell" });
     for (const { key, label } of SORTABLE) {
       const active = this.sort.by === key;
       const th = head.createEl("th", { cls: active ? "is-sorted" : "" });
@@ -275,7 +275,7 @@ class StatusBlock extends MarkdownRenderChild {
     if (shown.length === 0) body.createEl("tr").createEl("td", { attr: { colspan: "6" }, cls: "literature-feed-empty", text: "No papers in this view." });
     for (const { paper, status } of shown) {
       const tr = body.createEl("tr", { cls: paper.ticked ? `is-checked is-${status}` : "" });
-      const tick = tr.createEl("td").createEl("input", { type: "checkbox", cls: "literature-feed-tick" });
+      const tick = tr.createEl("td", { cls: "literature-feed-tick-cell" }).createEl("input", { type: "checkbox", cls: "literature-feed-tick" });
       tick.checked = paper.ticked;
       tick.addEventListener("change", () => { void this.host.toggleTick(note.path, paper.feedId, paper.openalexId, tick.checked); });
 

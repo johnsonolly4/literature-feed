@@ -434,3 +434,16 @@ table.literature-feed-papers tr.is-checked.is-processed { --literature-feed-rgb:
   border-radius: 999px;
   font-size: var(--font-ui-small);
 }
+
+/* The tick box is centred in its cell, across and down */
+table.literature-feed-papers .literature-feed-tick-cell {
+  width: 1%;
+  padding-inline: var(--size-4-3);
+  text-align: center;
+  vertical-align: middle;
+}
+
+table.literature-feed-papers input.literature-feed-tick[type="checkbox"] {
+  display: block;
+  margin: 0 auto;
+}

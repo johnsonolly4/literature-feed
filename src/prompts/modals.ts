@@ -262,8 +262,10 @@ export class AnswerModal extends Modal {
       why.addEventListener("input", () => { reasons[i] = why.value; });
       const mark = (v: Verdict): void => {
         verdicts[i] = verdicts[i] === v ? null : v;
-        accept.toggleClass("mod-cta", verdicts[i] === "accepted");
-        reject.toggleClass("mod-warning", verdicts[i] === "rejected");
+        accept.toggleClass("is-accepted", verdicts[i] === "accepted");
+        reject.toggleClass("is-rejected", verdicts[i] === "rejected");
+        row.toggleClass("is-accepted", verdicts[i] === "accepted");
+        row.toggleClass("is-rejected", verdicts[i] === "rejected");
       };
       accept.addEventListener("click", () => mark("accepted"));
       reject.addEventListener("click", () => mark("rejected"));

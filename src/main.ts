@@ -395,6 +395,12 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     return file ? { path: file.path, text: await this.app.vault.read(file) } : null;
   }
 
+  async createNote(name: string, text: string): Promise<void> {
+    const path = normalizePath(`${name}.md`);
+    if (!this.app.vault.getFileByPath(path)) await this.app.vault.create(path, text);
+    await this.app.workspace.openLinkText(path, "", "tab");
+  }
+
   async editTarget(path: string, change: (text: string) => string): Promise<void> {
     const file = this.app.vault.getFileByPath(path);
     if (file) await this.app.vault.process(file, change);

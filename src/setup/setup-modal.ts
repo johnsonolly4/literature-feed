@@ -2,6 +2,7 @@
 // and checks again after every button, so the list always shows the state of the vault. Nothing is written without a button.
 import { Modal, Notice, type App } from "obsidian";
 import { checkSetup, type FixAction, type SetupRow, type SetupSnapshot } from "./checks";
+import { HOWTO_NAME, howtoText } from "./howto";
 import { BY_HAND, INTEGRATIONS, planIntegration, removeIntegration, type IntegrationInfo } from "./integrate";
 
 /** What the window needs from the plugin. */
@@ -12,6 +13,8 @@ export interface SetupHost {
   /** The text of the note an integration goes into, or null when it was not found. */
   readTarget(info: IntegrationInfo): Promise<{ path: string; text: string } | null>;
   editTarget(path: string, change: (text: string) => string): Promise<void>;
+  /** Makes a note (the stand-alone how-to) in the vault root and opens it. */
+  createNote(name: string, text: string): Promise<void>;
 }
 
 const MARK: Record<SetupRow["state"], string> = { ok: "✓", todo: "!", info: "i" };
@@ -41,7 +44,34 @@ export class SetupModal extends Modal {
     contentEl.createEl("p", { text: todo === 0 ? "Nothing to do." : `${todo} thing${todo === 1 ? "" : "s"} to do.` });
     for (const row of rows) this.renderRow(contentEl, row);
 
+    // The kit's notes are only offered when Lab Kit is there; without it, a stand-alone how-to note.
     if (rows.find((r) => r.id === "lab-kit")?.state === "ok") await this.renderIntegration(contentEl, snapshot);
+    else this.renderHowto(contentEl, snapshot);
+  }
+
+  private renderHowto(parent: HTMLElement, snapshot: SetupSnapshot): void {
+    parent.createEl("h3", { text: "A how-to note" });
+    const el = parent.createDiv({ cls: "literature-feed-setup-row" });
+    const exists = snapshot.noteExists(HOWTO_NAME);
+    el.createSpan({ cls: "literature-feed-setup-mark", text: exists ? MARK.ok : MARK.info });
+    const text = el.createDiv({ cls: "literature-feed-setup-text" });
+    text.createDiv({ cls: "literature-feed-title", text: HOWTO_NAME });
+    text.createDiv({
+      cls: "literature-feed-meta",
+      text: exists
+        ? `The note "${HOWTO_NAME}" already exists in this vault.`
+        : "A one-page note on how the weekly reading inbox works (the cards and table, ticking and syncing, dismissing, the labels, improving a search). It is made in the vault root; move or edit it as you like.",
+    });
+    if (!exists) {
+      const create = el.createEl("button", { text: "Create the note" });
+      create.addEventListener("click", () => {
+        create.disabled = true;
+        void this.host.createNote(HOWTO_NAME, howtoText({ inboxFolder: snapshot.settings.inboxFolder })).then(() => this.render(), (e: unknown) => {
+          new Notice(`Could not make the note: ${e instanceof Error ? e.message : "unknown error"}`, 8000);
+          return this.render();
+        });
+      });
+    }
   }
 
   private renderRow(parent: HTMLElement, row: SetupRow): void {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { INTEGRATIONS, SPEC_HEADING, planIntegration, removeIntegration, type IntegrationId } from "../src/setup/integrate";
+import { ADDED_BY, INTEGRATIONS, planIntegration, removeIntegration, type IntegrationId } from "../src/setup/integrate";
+import { HOWTO_NAME, howtoText } from "../src/setup/howto";
 import { LAB_KIT_LITERATURE_FOLDER, checkSetup, type SetupSnapshot } from "../src/setup/checks";
 import { defaultSettings, type FeedConfig, type Settings } from "../src/settings/data";
 
@@ -78,7 +79,7 @@ describe("checkSetup", () => {
 
 const HOME = "---\nobsidianUIMode: preview\ncssclasses:\n  - home\n---\n\n# Home\n\n> [!columns]\n> > [!planning] This week\n";
 const HUB = "---\nkind: hub\n---\n\n> [!note]- How I read\n> 1. Read in Zotero.\n\n> [!columns]\n> > [!focus] To process\n";
-const SPEC = "---\nkind: guide\n---\n\n## Folders\n\n| Folder | What |\n";
+const SPEC = "---\nkind: guide\n---\n\n## Every day\n\nText.\n\n## Reading papers\n\n1. Read in Zotero.\n\n> [!tip] Linking a paper\n> Link it.\n\n## Meetings\n\nMore.\n";
 const ctx = { inboxFolder: "Reading" };
 const LINK = (id: string): string => `[Reading inbox](obsidian://literature-feed-inbox?tile=${id})`;
 
@@ -119,16 +120,28 @@ describe("planIntegration and removeIntegration", () => {
     expect(plan.anchor).toBe("before: > [!columns]");
   });
 
-  it("writes the Vault spec section with the folder it was given, or the vault root", () => {
-    const plan = planIntegration("vault-spec", SPEC, ctx);
-    expect(plan.next).toContain(SPEC_HEADING);
-    expect(plan.next).toContain("into `Reading/`.");
-    expect(plan.next).toContain("kind: reading-inbox");
-    expect(planIntegration("vault-spec", SPEC, { inboxFolder: "" }).next).toContain("into the vault root.");
+  it("adds the how-my-vault-works callout at the end of the Reading papers section, before the next heading, marked as an addition", () => {
+    const plan = planIntegration("how-vault-works", SPEC, ctx);
+    expect(plan.state).toBe("addable");
+    const next = plan.next ?? "";
+    expect(plan.anchor).toBe("before: ## Meetings");
+    expect(next).toContain(`> [!reading-inbox] Reading inbox ${ADDED_BY}`);
+    expect(next).toContain("in `Reading/`)");
+    expect(next.indexOf("> Link it.")).toBeLessThan(next.indexOf(ADDED_BY));
+    expect(next.indexOf(ADDED_BY)).toBeLessThan(next.indexOf("## Meetings"));
+    expect(next.indexOf("## Every day")).toBeLessThan(next.indexOf(ADDED_BY));
+    expect(planIntegration("how-vault-works", SPEC, { inboxFolder: "" }).next).toContain("in the vault root)");
+    expect(planIntegration("how-vault-works", next, ctx).state).toBe("already-added");
+  });
+
+  it("puts the how-my-vault-works callout at the end of the note when there is no Reading papers section", () => {
+    const plan = planIntegration("how-vault-works", "## Other\n\nText.\n", ctx);
+    expect(plan.anchor).toBe("after: Text.");
+    expect(plan.next?.endsWith(`> - Added by **Check setup** in the Literature Feed settings. If a kit update replaces this note, run **Check setup** again to put it back.\n`)).toBe(true);
   });
 
   it("removes exactly what it added, giving back the original text", () => {
-    for (const [id, text] of [["home-tile", HOME], ["literature-tile", HUB], ["vault-spec", SPEC]] as [IntegrationId, string][]) {
+    for (const [id, text] of [["home-tile", HOME], ["literature-tile", HUB], ["how-vault-works", SPEC]] as [IntegrationId, string][]) {
       const next = planIntegration(id, text, ctx).next ?? "";
       expect(removeIntegration(id, next), id).toBe(text);
     }
@@ -137,15 +150,12 @@ describe("planIntegration and removeIntegration", () => {
     expect(removeIntegration("home-tile", HOME)).toBe(HOME);
   });
 
-  it("removes a tile the user edited inside, and a spec section with text the user added under its heading, but not what follows the next heading", () => {
+  it("removes a tile the user edited inside, and the callout the user edited, but not what follows", () => {
     const home = planIntegration("home-tile", HOME, ctx).next ?? "";
     expect(removeIntegration("home-tile", home.replace("limit: 3", "limit: 9"))).toBe(HOME);
-    const spec = planIntegration("vault-spec", SPEC, ctx).next ?? "";
-    const withNext = `${spec}\n## Another section\n\nKeep this.\n`;
-    const removed = removeIntegration("vault-spec", withNext);
-    expect(removed).not.toContain(SPEC_HEADING);
-    expect(removed).toContain("## Another section\n\nKeep this.");
-    expect(removed.startsWith(SPEC)).toBe(true);
+    const spec = planIntegration("how-vault-works", SPEC, ctx).next ?? "";
+    const edited = spec.replace("> - Open it from", "> - My own words: open it from");
+    expect(removeIntegration("how-vault-works", edited)).toBe(SPEC);
   });
 
   it("reports a missing note or a missing place, and keeps every other line and the line endings", () => {
@@ -163,10 +173,22 @@ describe("planIntegration and removeIntegration", () => {
     expect(planIntegration("home-tile", handMade, ctx)).toMatchObject({ state: "already-added", removable: false });
     expect(removeIntegration("home-tile", handMade)).toBe(handMade);
     expect(planIntegration("home-tile", planIntegration("home-tile", HOME, ctx).next ?? "", ctx).removable).toBe(true);
-    expect(planIntegration("vault-spec", handMade, ctx).state).toBe("addable");
+    expect(planIntegration("how-vault-works", handMade, ctx).state).toBe("addable");
   });
 
   it("lists the three integrations with the notes they go into", () => {
-    expect(INTEGRATIONS.map((i) => [i.id, i.noteName])).toEqual([["home-tile", "00 Home"], ["literature-tile", "Literature"], ["vault-spec", "Vault spec"]]);
+    expect(INTEGRATIONS.map((i) => [i.id, i.noteName])).toEqual([["home-tile", "00 Home"], ["literature-tile", "Literature"], ["how-vault-works", "How my vault works"]]);
+  });
+});
+
+describe("the stand-alone how-to note", () => {
+  it("is named and says how the weekly inbox works, with the folder", () => {
+    expect(HOWTO_NAME).toBe("Reading inbox how-to");
+    const text = howtoText({ inboxFolder: "Reading" });
+    expect(text.startsWith("---\nkind: guide\n---")).toBe(true);
+    expect(text).toContain("in `Reading/`");
+    expect(text).toContain("Sync N to Zotero");
+    expect(text).toContain("Show search effectiveness");
+    expect(howtoText({ inboxFolder: "" })).toContain("in the vault root");
   });
 });

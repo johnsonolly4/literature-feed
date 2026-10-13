@@ -624,3 +624,19 @@ table.literature-feed-papers th.is-sorted,
 table.literature-feed-papers th.is-sorted button.literature-feed-sort {
   color: var(--text-normal);
 }
+
+/* Accept and Reject in the review window: the chosen one goes green or red, and so does the row's edge */
+.literature-feed-suggestion.is-accepted { border-color: rgb(var(--vt-done, 16, 185, 129)); }
+.literature-feed-suggestion.is-rejected { border-color: rgb(var(--vt-overdue, 239, 68, 68)); }
+
+.literature-feed-suggestion .literature-feed-buttons button.is-accepted {
+  background: rgba(var(--vt-done, 16, 185, 129), 0.25);
+  border-color: rgb(var(--vt-done, 16, 185, 129));
+  color: rgb(var(--vt-done-text, 110, 231, 183));
+}
+
+.literature-feed-suggestion .literature-feed-buttons button.is-rejected {
+  background: rgba(var(--vt-overdue, 239, 68, 68), 0.25);
+  border-color: rgb(var(--vt-overdue, 239, 68, 68));
+  color: rgb(var(--vt-overdue-text, 252, 165, 165));
+}

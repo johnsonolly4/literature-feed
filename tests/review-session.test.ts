@@ -12,7 +12,7 @@ function paper(n: number): ReviewPaper {
 
 function session(): ReviewSession {
   return {
-    version: 1, savedAt: Date.UTC(2026, 9, 13, 12, 0), selected: ["lipoic"], fromYear: "2021", maxPapers: 60, minTier: "possible", abstracts: true,
+    version: 1, savedAt: Date.UTC(2026, 9, 13, 12, 0), selected: ["lipoic"], fromYear: "2021", maxPapers: 60, capPerTopic: 800, minTier: "possible", abstracts: true,
     result: { papers: [paper(1), paper(2)], total: 172, topics: [{ feedId: "lipoic", topic: "lipoic acid", count: 172, fetched: 100, fromCache: false }], spentUsd: 0.01, stopped: null },
     extras: { missing: [{ paper: { title: "Old", abstract: null, doi: null, year: 2010, openalexId: "https://openalex.org/W9", authors: [], venue: null, publicationDate: null }, count: 2, citers: ["W1", "W2"] }], alsoCite: [], stopped: null },
     answerText: "{\"themes\":[]}",
@@ -62,5 +62,18 @@ describe("describeSession", () => {
   it("copes with a search that no longer exists and with no date", () => {
     const s = { ...session(), savedAt: 0 };
     expect(describeSession(s, new Map())).toBe("Earlier review, date unknown, 2 papers, $0.010");
+  });
+});
+
+describe("works fetched per topic", () => {
+  it("is kept, defaults to 1000 when missing, and stays within 100 to 2000", () => {
+    const base = JSON.parse(JSON.stringify(session())) as Record<string, unknown>;
+    expect(normaliseSession(base)?.capPerTopic).toBe(800);
+    delete base.capPerTopic;
+    expect(normaliseSession(base)?.capPerTopic).toBe(1000);
+    base.capPerTopic = 999999;
+    expect(normaliseSession(base)?.capPerTopic).toBe(2000);
+    base.capPerTopic = 5;
+    expect(normaliseSession(base)?.capPerTopic).toBe(100);
   });
 });

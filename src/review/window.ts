@@ -3,17 +3,19 @@
 // copy the prompt for an LLM, paste its answer back, and make the review note. The state is saved as it changes (session.ts) so
 // nothing is lost when the tab is closed. Nothing is sent from here except the OpenAlex searches the user starts; the prompt only
 // goes to the clipboard.
-import { Notice, Setting, type App } from "obsidian";
+import { Menu, Notice, Setting, type App } from "obsidian";
 import { shortOpenAlexId } from "../inbox/write";
 import type { Candidate } from "../openalex/client";
 import { extractJson } from "../prompts/schemas";
 import type { FeedConfig, Settings } from "../settings/data";
-import { Budget, CAP_PER_TOPIC, COST_FILTER, DEFAULT_PROMPT_PAPERS, MAX_PROMPT_PAPERS, monthOf, monthTotal, passesMonthlyLimit, type SpendTally } from "./budget";
+import { Budget, CAP_PER_TOPIC, MAX_CAP_PER_TOPIC, PAGE_SIZE, COST_FILTER, DEFAULT_PROMPT_PAPERS, MAX_PROMPT_PAPERS, monthOf, monthTotal, passesMonthlyLimit, type SpendTally } from "./budget";
 import type { ReviewCache } from "./cache";
 import { buildCanvas } from "./canvas";
 import { chartBlock, chartSpecs } from "./chart";
 import { drawChart } from "./chart-view";
-import { planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewPlan, type ReviewResult } from "./collect";
+import { buildSeedProfile, seedDois, type SeedProfile } from "./seeds";
+import { leaveOneOut, suggestQueries } from "./seed-queries";
+import { REVIEW_ORDERS, planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewOrder, type ReviewPlan, type ReviewResult } from "./collect";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
 import { buildGraphData, graphBlock, type GraphData } from "./graph-data";
 import { buildNetwork, chartData, referenceCoverage, type Network } from "./network";
@@ -28,7 +30,9 @@ import { describeSession, type ReviewSession } from "./session";
 export interface ReviewHost {
   app: App;
   settings: Settings;
-  newReviewClient(): ReviewClient & NetworkClient;
+  /** Adds a search string to one of the searches (it is saved) and says what happened. */
+  addTopicToFeed(feedId: string, topic: string): Promise<string>;
+  newReviewClient(): ReviewClient & NetworkClient & { getWorksByDoi(dois: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }> };
   reviewCache: ReviewCache;
   saveReviewCache(): Promise<void>;
   spend: SpendTally;
@@ -49,6 +53,10 @@ export interface ReviewHost {
 /** How the panel starts when a saved review exists: ask, pick it up, or start fresh. */
 export type StartMode = "ask" | "resume" | "new";
 
+const SUGGEST_DESC = "Reads the papers above (about $0.0001), finds the phrases they share, and suggests search strings that would find them. Each string shows which of your papers it finds, so you can see what is not covered. Nothing is added until you press Add.";
+const SEEDS_NAME = "Papers I already know";
+const SEEDS_HINT = "10.1039/D2PY00040G, 10.1021/…";
+const SEEDS_DESC = "Paste the DOIs of papers you already know are what you are after (any text: the DOIs are picked out). Results are then ordered by how much they share with these: references they cite and authors who wrote them. This finds papers that word things differently from your searches. About $0.0001 for 50.";
 const TIER_CHOICES: Record<ReviewOptions["minTier"], string> = { possible: "Possible and better", strong: "Strong and better", priority: "Priority only" };
 
 function today(): string {
@@ -67,7 +75,13 @@ export class ReviewPanel {
   private selected: Set<string>;
   private fromYear: string;
   private maxPapers = DEFAULT_PROMPT_PAPERS;
+  private capPerTopic = CAP_PER_TOPIC;
   private minTier: ReviewOptions["minTier"] = "possible";
+  private order: ReviewOrder = "fit";
+  /** The papers the user already knows: what they pasted, and what was read from it. */
+  private seedText = "";
+  private seeds: SeedProfile | null = null;
+  private seedOut!: HTMLElement;
   private abstracts = true;
   private refresh = false;
   private allowMore = false;
@@ -124,7 +138,7 @@ export class ReviewPanel {
   private snapshot(): ReviewSession | null {
     if (!this.result) return null;
     return {
-      version: 1, savedAt: Date.now(), selected: [...this.selected], fromYear: this.fromYear, maxPapers: this.maxPapers, minTier: this.minTier,
+      version: 1, savedAt: Date.now(), selected: [...this.selected], fromYear: this.fromYear, maxPapers: this.maxPapers, capPerTopic: this.capPerTopic, minTier: this.minTier, order: this.order, seedText: this.seedText, ...(this.seeds ? { seeds: this.seeds } : {}),
       abstracts: this.abstracts, result: this.result, extras: this.extras, answerText: this.answerText,
       run: this.runMeta, llm: this.llm, promptNote: this.promptNote, baseline: this.baseline, snapshot: this.snapshotFeeds ? this.snapshotFeeds.map(snapshotFeed) : null,
     };
@@ -148,7 +162,11 @@ export class ReviewPanel {
     if (selected.length > 0) this.selected = new Set(selected);
     this.fromYear = s.fromYear === "" ? this.fromYear : s.fromYear;
     this.maxPapers = Math.min(MAX_PROMPT_PAPERS, s.maxPapers);
+    this.capPerTopic = s.capPerTopic;
     this.minTier = s.minTier;
+    this.order = s.order ?? "cited";
+    this.seedText = s.seedText ?? "";
+    this.seeds = s.seeds ?? null;
     this.abstracts = s.abstracts;
     this.result = s.result;
     this.extras = s.extras;
@@ -175,7 +193,9 @@ export class ReviewPanel {
     this.selected = new Set(record.feeds.filter((f) => f.topics.length > 0).map((f) => f.id));
     this.fromYear = record.fromDate.slice(0, 4);
     this.maxPapers = Math.min(MAX_PROMPT_PAPERS, record.maxPapers);
+    this.capPerTopic = Math.min(MAX_CAP_PER_TOPIC, Math.max(PAGE_SIZE, record.capPerTopic));
     this.minTier = record.minTier;
+    this.order = record.order ?? "cited";
     this.abstracts = record.abstracts;
     this.result = null;
     this.extras = null;
@@ -254,6 +274,14 @@ export class ReviewPanel {
       t.inputEl.type = "number";
       t.setValue(this.fromYear).onChange((v) => { this.fromYear = v.trim(); this.plan = null; });
     });
+    new Setting(contentEl).setName("Works fetched per topic").setDesc(`Best matches first, ${PAGE_SIZE} per request (about $0.0001 each). The default is ${CAP_PER_TOPIC}; up to ${MAX_CAP_PER_TOPIC}. A topic with more matches than this loses its least relevant ones, so raise it if you may be missing papers. The cost is shown before anything is fetched.`).addText((t) => {
+      t.inputEl.type = "number";
+      t.setValue(String(this.capPerTopic)).onChange((v) => {
+        const n = Math.floor(Number(v));
+        this.capPerTopic = Number.isFinite(n) ? Math.min(MAX_CAP_PER_TOPIC, Math.max(PAGE_SIZE, n)) : CAP_PER_TOPIC;
+        this.plan = null;
+      });
+    });
     new Setting(contentEl).setName("Papers in the prompt").setDesc(`At most ${MAX_PROMPT_PAPERS}. The best matches come first.`).addText((t) => {
       t.inputEl.type = "number";
       t.setValue(String(this.maxPapers)).onChange((v) => {
@@ -264,6 +292,19 @@ export class ReviewPanel {
     new Setting(contentEl).setName("Keep papers ranked").addDropdown((d) => {
       for (const [k, label] of Object.entries(TIER_CHOICES)) d.addOption(k, label);
       d.setValue(this.minTier).onChange((v) => { this.minTier = v as ReviewOptions["minTier"]; this.plan = null; });
+    });
+    new Setting(contentEl).setName(SEEDS_NAME).setDesc(SEEDS_DESC)
+      .addTextArea((t) => {
+        t.inputEl.rows = 4;
+        t.setPlaceholder(SEEDS_HINT).setValue(this.seedText).onChange((v) => { this.seedText = v; });
+      });
+    new Setting(contentEl).setName("Searches from these papers").setDesc(SUGGEST_DESC)
+      .addButton((b) => b.setButtonText("Read papers and suggest searches").onClick(() => void this.suggestFromSeeds(b)));
+    this.seedOut = contentEl.createDiv();
+    this.drawSeedSuggestions();
+    new Setting(contentEl).setName("Order papers by").setDesc("Within the same rank. The prompt, the note and the graph take the first papers in this order, so it decides which ones are left out. Best fit counts topics, searches and terms matched; it does not use citations, which would put new papers last.").addDropdown((d) => {
+      for (const [k, label] of Object.entries(REVIEW_ORDERS)) d.addOption(k, label);
+      d.setValue(this.order).onChange((v) => { this.order = v as ReviewOrder; this.plan = null; });
     });
     new Setting(contentEl).setName("Include abstracts in the prompt").addToggle((t) => t.setValue(this.abstracts).onChange((v) => { this.abstracts = v; this.renderResult(); }));
     new Setting(contentEl).setName("Fetch again").setDesc("Ignore results saved in the last 24 hours. This spends credits again.").addToggle((t) => t.setValue(false).onChange((v) => { this.refresh = v; this.plan = null; }));
@@ -282,7 +323,7 @@ export class ReviewPanel {
       new Notice("Enter a year such as 2020.");
       return null;
     }
-    return { fromDate: `${year}-01-01`, capPerTopic: CAP_PER_TOPIC, maxPapers: this.maxPapers, minTier: this.minTier, refresh: this.refresh };
+    return { fromDate: `${year}-01-01`, capPerTopic: this.capPerTopic, maxPapers: this.maxPapers, minTier: this.minTier, order: this.order, seeds: this.seeds, refresh: this.refresh };
   }
 
   /** The searches in use: the recorded definitions of a repeat, or the current settings. */
@@ -336,7 +377,7 @@ export class ReviewPanel {
     this.out.createEl("p", {
       text: `${plan.estimate.works} works in ${plan.estimate.requests} requests: about ${usd(plan.estimate.usd)}, plus ${usd(this.spentSoFar)} already spent counting. The limit is ${usd(this.host.settings.reviewBudgetUsd)}.`,
     });
-    if (plan.estimate.works >= plan.topics.length * CAP_PER_TOPIC) this.out.createEl("p", { cls: "literature-feed-meta", text: `Each topic is capped at ${CAP_PER_TOPIC} works, best matches first. Narrow the year to see more of the rest.` });
+    if (plan.estimate.works >= plan.topics.length * this.capPerTopic) this.out.createEl("p", { cls: "literature-feed-meta", text: `Each topic is capped at ${this.capPerTopic} works, best matches first, so some topics have more matches than are fetched. Raise "Works fetched per topic" above, or narrow the year, to see more.` });
     const over = plan.overBudget && !this.allowMore;
     if (over) {
       this.out.createEl("p", { cls: "literature-feed-warning", text: `This would cost about ${usd(total)}, over your limit. Raise the year, choose fewer searches, or allow going over the limit above, once.` });
@@ -352,6 +393,97 @@ export class ReviewPanel {
     });
   }
 
+  /** Reads the papers (when they changed) and shows the suggested strings. */
+  private async suggestFromSeeds(button: { setDisabled(d: boolean): unknown }): Promise<void> {
+    button.setDisabled(true);
+    this.seedOut.empty();
+    this.seedOut.createEl("p", { text: "Reading…" });
+    try {
+      const budget = new Budget(this.host.settings.reviewBudgetUsd);
+      const note = await this.readSeeds(budget);
+      if (note !== "") new Notice(note, 8000);
+      this.save();
+    } catch (e) {
+      new Notice(`Could not read the papers: ${e instanceof Error ? e.message : "unknown error"}`, 8000);
+    }
+    button.setDisabled(false);
+    this.drawSeedSuggestions();
+  }
+
+  /** The strings built from the papers the user knows, with what each finds, a size check, and Add. */
+  private drawSeedSuggestions(): void {
+    const out = this.seedOut;
+    out.empty();
+    const seeds = this.seeds;
+    if (!seeds) return;
+    const papers = seeds.papers ?? [];
+    if (papers.length < 2) {
+      out.createEl("p", { cls: "literature-feed-meta", text: papers.length === 0 ? "Press the button again to read the papers' words (this profile was saved before they were kept)." : "Two or more papers are needed to find what they share." });
+      return;
+    }
+    const background = Object.values(this.host.reviewCache.topics).flatMap((t) => t.papers.map((c) => `${c.title}
+${c.abstract ?? ""}`)).slice(0, 4000);
+    const bg = background;
+    const queries = suggestQueries(papers, { background: bg });
+    const test = leaveOneOut(papers, { background: bg });
+    const title = (id: string): string => papers.find((p) => p.id === id)?.title ?? id;
+    out.createEl("p", { text: `${papers.length} papers read. Strings built like these find a paper they were not built from ${test.found} times out of ${test.total} (each paper left out in turn): treat them as a start, not a net. ${seeds.missing.length > 0 ? `${seeds.missing.length} DOIs were not found in OpenAlex.` : ""}` });
+    if (queries.length === 0) {
+      out.createEl("p", { cls: "literature-feed-meta", text: "These papers share too little wording to build a string from. Add more papers on the same subject." });
+      return;
+    }
+    for (const q of queries) {
+      const box = out.createDiv({ cls: "literature-feed-detailwork" });
+      box.createEl("code", { text: q.text });
+      box.createDiv({ cls: "literature-feed-meta", text: `Finds ${q.matches.length} of your ${papers.length} papers.` });
+      const sizeLine = box.createDiv({ cls: "literature-feed-meta" });
+      const missed = papers.filter((p) => !q.matches.includes(p.id));
+      if (missed.length > 0) {
+        const d = box.createEl("details");
+        d.createEl("summary", { text: `Does not find ${missed.length}` });
+        for (const p of missed) d.createDiv({ cls: "literature-feed-meta", text: title(p.id) });
+      }
+      const row = box.createDiv({ cls: "literature-feed-buttons" });
+      row.createEl("button", { text: "Check size ($0.0001)" }).addEventListener("click", (e) => {
+        const b = e.currentTarget as HTMLButtonElement;
+        b.disabled = true;
+        const year = Number(this.fromYear);
+        void this.host.newReviewClient().countTopic(q.text, { fromDate: Number.isInteger(year) ? `${year}-01-01` : undefined }).then(
+          (r) => { sizeLine.setText(`${r.count} works match since ${Number.isInteger(year) ? year : "the start"}.`); },
+          (err: unknown) => { sizeLine.setText(`The check failed: ${err instanceof Error ? err.message : "unknown error"}`); b.disabled = false; },
+        );
+      });
+      row.createEl("button", { text: "Copy" }).addEventListener("click", () => { void navigator.clipboard.writeText(q.text).then(() => new Notice("Copied.")); });
+      row.createEl("button", { text: "Add to a search…", cls: "mod-cta" }).addEventListener("click", (e) => {
+        const menu = new Menu();
+        for (const f of this.host.settings.feeds) menu.addItem((item) => item.setTitle(f.name).onClick(() => { void this.host.addTopicToFeed(f.id, q.text).then((m) => new Notice(m, 8000)); }));
+        menu.showAtMouseEvent(e);
+      });
+    }
+  }
+
+  /** Reads the papers the user pasted (once per change of the list; about $0.0001 for 50) and says what it found. */
+  private async readSeeds(budget: Budget): Promise<string> {
+    const dois = seedDois(this.seedText);
+    if (dois.length === 0) {
+      this.seeds = null;
+      if (this.order === "seeds") this.order = "fit";
+      return "";
+    }
+    if (this.seeds && this.seeds.dois.length === dois.length && dois.every((d) => this.seeds?.dois.includes(d))) return "";
+    const client = this.host.newReviewClient();
+    const res = await client.getWorksByDoi(dois);
+    budget.add(res.costUsd > 0 ? res.costUsd : COST_FILTER * Math.ceil(dois.length / 50));
+    await this.host.saveReviewCache();
+    this.seeds = buildSeedProfile(dois, res.papers);
+    if (this.seeds.ids.length === 0) {
+      this.seeds = null;
+      return "None of the papers you know were found in OpenAlex, so the order does not use them.";
+    }
+    if (this.order === "fit") this.order = "seeds";
+    return `Read ${this.seeds.ids.length} of ${dois.length} papers you know${this.seeds.missing.length > 0 ? ` (${this.seeds.missing.length} not found)` : ""}; papers are ordered by overlap with them.`;
+  }
+
   private async run(): Promise<void> {
     const opts = this.options();
     const plan = this.plan;
@@ -362,6 +494,10 @@ export class ReviewPanel {
     this.out.empty();
     this.out.createEl("p", { text: "Searching…" });
     try {
+      const seedNote = await this.readSeeds(budget);
+      if (seedNote !== "") new Notice(seedNote, 10000);
+      opts.seeds = this.seeds;
+      opts.order = this.order;
       this.result = await runReview(feeds, plan, opts, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget });
     } catch (e) {
       this.out.empty();

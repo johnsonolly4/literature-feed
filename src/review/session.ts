@@ -1,7 +1,9 @@
 // The state of a literature review in progress, kept in the plugin folder (`review-session.json`) so that closing the tab, clicking
 // elsewhere or restarting Obsidian does not lose it. Pure: the plugin reads and writes the file; flags and the network are worked
 // out again when a session is restored. The review note is the permanent copy; this file is replaced by the next review.
-import type { ReviewOptions, ReviewPaper, ReviewResult } from "./collect";
+import { CAP_PER_TOPIC, MAX_CAP_PER_TOPIC, PAGE_SIZE } from "./budget";
+import type { ReviewOptions, ReviewOrder, ReviewPaper, ReviewResult } from "./collect";
+import type { SeedProfile } from "./seeds";
 import type { NetworkExtras } from "./network-fetch";
 import { normaliseRecord, normaliseRun, type FeedSnapshot, type ReviewRecord, type RunInfo } from "./record";
 
@@ -13,7 +15,14 @@ export interface ReviewSession {
   selected: string[];
   fromYear: string;
   maxPapers: number;
+  /** Works fetched per topic. */
+  capPerTopic: number;
   minTier: ReviewOptions["minTier"];
+  /** How papers of one rank are ordered (absent in older sessions). */
+  order?: ReviewOrder;
+  /** The papers the user already knows (the text they pasted, and what was read from it). */
+  seedText?: string;
+  seeds?: SeedProfile;
   abstracts: boolean;
   result: ReviewResult;
   extras: NetworkExtras | null;
@@ -67,7 +76,11 @@ export function normaliseSession(raw: unknown): ReviewSession | null {
     selected: isStrings(raw.selected) ? raw.selected : [],
     fromYear: typeof raw.fromYear === "string" ? raw.fromYear : "",
     maxPapers: Math.max(1, Math.floor(num(raw.maxPapers, 60))),
+    capPerTopic: Math.min(MAX_CAP_PER_TOPIC, Math.max(PAGE_SIZE, Math.floor(num(raw.capPerTopic, CAP_PER_TOPIC)))),
     minTier: typeof raw.minTier === "string" && MIN_TIERS.includes(raw.minTier) ? (raw.minTier as ReviewOptions["minTier"]) : "possible",
+    ...(isRecord(raw.seeds) ? { seeds: raw.seeds as unknown as SeedProfile } : {}),
+    ...(typeof raw.seedText === "string" ? { seedText: raw.seedText } : {}),
+    ...(raw.order === "seeds" || raw.order === "fit" || raw.order === "newest" || raw.order === "cited" ? { order: raw.order } : {}),
     abstracts: raw.abstracts !== false,
     result: { papers, total: num(r.total, papers.length), topics, spentUsd: Math.max(0, num(r.spentUsd, 0)), stopped: typeof r.stopped === "string" ? r.stopped : null },
     extras: validExtras(raw.extras),

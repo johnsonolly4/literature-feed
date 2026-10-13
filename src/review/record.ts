@@ -6,7 +6,7 @@ import type { ConceptGroup } from "../match/feed";
 import { PAGE_SIZE } from "./budget";
 import { buildSearchUrl } from "../openalex/client";
 import type { FeedConfig } from "../settings/data";
-import { REVIEW_SORT, type ReviewOptions, type ReviewPaper, type ReviewResult } from "./collect";
+import { REVIEW_SORT, type ReviewOrder, type ReviewOptions, type ReviewPaper, type ReviewResult } from "./collect";
 import { paperLabel } from "./prompt";
 
 export const RECORD_BLOCK = "literature-feed-record";
@@ -30,6 +30,8 @@ export interface RunInfo {
   capPerTopic: number;
   minTier: ReviewOptions["minTier"];
   maxPapers: number;
+  /** How papers of one rank were ordered (absent in older records: citations, then year). */
+  order?: ReviewOrder;
   abstracts: boolean;
   feeds: FeedSnapshot[];
 }
@@ -83,6 +85,7 @@ export interface ReviewRecord {
   pageSize: number;
   minTier: ReviewOptions["minTier"];
   maxPapers: number;
+  order?: ReviewOrder;
   abstracts: boolean;
   feeds: FeedSnapshot[];
   topics: RecordTopic[];
@@ -107,7 +110,7 @@ export function feedFromSnapshot(s: FeedSnapshot): FeedConfig {
 }
 
 export function runInfo(now: Date, feeds: readonly FeedConfig[], opts: ReviewOptions, abstracts: boolean): RunInfo {
-  return { ranAt: now.toISOString(), fromDate: opts.fromDate, capPerTopic: opts.capPerTopic, minTier: opts.minTier, maxPapers: opts.maxPapers, abstracts, feeds: feeds.map(snapshotFeed) };
+  return { ranAt: now.toISOString(), fromDate: opts.fromDate, capPerTopic: opts.capPerTopic, minTier: opts.minTier, maxPapers: opts.maxPapers, order: opts.order ?? "fit", abstracts, feeds: feeds.map(snapshotFeed) };
 }
 
 export interface RecordInput {
@@ -127,7 +130,7 @@ export function buildRecord(input: RecordInput): ReviewRecord {
   });
   return {
     version: 1, ranAt: run.ranAt, fromDate: run.fromDate, sort: REVIEW_SORT, capPerTopic: run.capPerTopic, pageSize: PAGE_SIZE, minTier: run.minTier,
-    maxPapers: run.maxPapers, abstracts: run.abstracts, feeds: run.feeds,
+    maxPapers: run.maxPapers, ...(run.order ? { order: run.order } : {}), abstracts: run.abstracts, feeds: run.feeds,
     topics: result.topics.map((t) => ({
       feedId: t.feedId, topic: t.topic, count: t.count, fetched: t.fetched, fromCache: t.fromCache,
       url: buildSearchUrl(t.topic, { fromDate: run.fromDate, page: 1, perPage: PAGE_SIZE, extra: true, sort: REVIEW_SORT }),
@@ -187,7 +190,7 @@ export function renderRecordSection(r: ReviewRecord): string[] {
   const out: string[] = [
     "## How this review was made", "",
     `- **Run:** ${r.ranAt}. Source: OpenAlex, works whose title or abstract match each topic (\`search.title_and_abstract\`), published on or after ${r.fromDate}, sorted by relevance, at most ${r.capPerTopic} works per topic (${r.pageSize} per request).`,
-    `- **Kept:** papers ranked ${r.minTier} or better by the search rules (see below), sorted by rank, then citations, then year; ${r.papers.length} of ${r.total} go into the review.`,
+    `- **Kept:** papers ranked ${r.minTier} or better by the search rules (see below), sorted by rank, then ${r.order === "seeds" ? "how much they overlap with the papers the owner already knows (shared references and authors), then fit" : r.order === "newest" ? "year" : r.order === "cited" ? "citations" : r.order === "fit" ? "how well they fit the searches (topics, searches and terms matched), then year" : "citations"}; ${r.papers.length} of ${r.total} go into the review.`,
     `- **Cost:** about $${r.spentUsd.toFixed(3)}.${r.stopped ? ` The search ${r.stopped}.` : ""} OpenAlex lists references for ${r.coverage.withList} of ${r.coverage.total} papers.`,
   ];
   if (r.llm) {

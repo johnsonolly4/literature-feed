@@ -9,6 +9,7 @@ import type { Candidate } from "../openalex/client";
 import type { FeedConfig } from "../settings/data";
 import { COST_PER_REQUEST, PAGE_SIZE, estimateSearch, overBudget, type Budget, type Estimate, type TopicCount, type TopicPlan } from "./budget";
 import { getTopic, putTopic, topicKey, type ReviewCache } from "./cache";
+import { seedScore, type SeedProfile } from "./seeds";
 
 /** The two calls a review makes on the OpenAlex client. */
 export interface ReviewClient {
@@ -26,6 +27,41 @@ export interface ReviewOptions {
   minTier: Exclude<ListedTier, "unchecked">;
   /** Ignore the cache and fetch again. */
   refresh: boolean;
+  /** How papers of the same rank are ordered (default "fit"). */
+  order?: ReviewOrder;
+  /** Papers the user already knows; each result then carries how much it overlaps with them (`seed`). */
+  seeds?: SeedProfile | null;
+}
+
+export type ReviewOrder = "seeds" | "fit" | "newest" | "cited";
+export const REVIEW_ORDERS: Record<ReviewOrder, string> = { seeds: "Closest to the papers I know", fit: "Best fit to the searches", newest: "Newest first", cited: "Most cited first" };
+
+/**
+ * How well a paper fits the searches, apart from its rank: the distinct topics that returned it (twice as much as a search) and
+ * the distinct searches that kept it, plus the distinct terms that matched (up to six). Not citations: a paper from this year that
+ * fits exactly should not sit below an old, often-cited one that fits loosely.
+ */
+export function fitScore(p: Pick<ReviewPaper, "finds">): number {
+  const topics = new Set(p.finds.flatMap((f) => f.topics.map((t) => `${f.feedId}#${t}`)));
+  const feeds = new Set(p.finds.map((f) => f.feedId));
+  const terms = new Set(p.finds.flatMap((f) => f.matched));
+  return topics.size * 2 + feeds.size + Math.min(terms.size, 6) / 2;
+}
+
+/** Papers in order: rank first, then the chosen order, then the others as ties. */
+export function orderPapers(papers: readonly ReviewPaper[], order: ReviewOrder = "fit"): ReviewPaper[] {
+  const rank = (p: ReviewPaper): number => RANK.indexOf(p.tier);
+  const year = (p: ReviewPaper): number => p.year ?? 0;
+  return [...papers].sort((a, b) => {
+    const base = rank(a) - rank(b);
+    if (base !== 0) return base;
+    const fit = fitScore(b) - fitScore(a);
+    const cited = b.citedByCount - a.citedByCount;
+    const known = (b.seed?.score ?? 0) - (a.seed?.score ?? 0);
+    const first = order === "seeds" ? known || fit : order === "newest" ? year(b) - year(a) : order === "cited" ? cited : fit;
+    const rest = order === "fit" || order === "seeds" ? [year(b) - year(a), cited] : order === "newest" ? [fit, cited] : [fit, year(b) - year(a)];
+    return first || rest[0] || rest[1] || a.title.localeCompare(b.title);
+  });
 }
 
 export interface ReviewDeps {
@@ -73,6 +109,8 @@ export interface ReviewPaper {
   finds: Find[];
   /** The best tier among the finds. */
   tier: ListedTier;
+  /** Overlap with the papers the user already knows (absent when none were given). */
+  seed?: { refs: number; authors: number; score: number; isSeed: boolean };
 }
 
 export interface TopicRun {
@@ -210,13 +248,12 @@ export async function runReview(feeds: readonly FeedConfig[], plan: ReviewPlan, 
         id, title: c.title, authors: c.authors, venue: c.venue, year: c.year ?? null, publicationDate: c.publicationDate,
         doi: c.doi ?? null, abstract: c.abstract ?? null, isPreprint: c.isPreprint === true,
         citedByCount: c.citedByCount ?? 0, referencedWorks: c.referencedWorks ?? [], finds: [find], tier,
+        ...(opts.seeds ? { seed: seedScore({ id, referencedWorks: c.referencedWorks ?? [], authors: c.authors }, opts.seeds) } : {}),
       });
     }
   }
 
-  const all = [...byId.values()].sort(
-    (a, b) => RANK.indexOf(a.tier) - RANK.indexOf(b.tier) || b.citedByCount - a.citedByCount || (b.year ?? 0) - (a.year ?? 0) || a.title.localeCompare(b.title),
-  );
+  const all = orderPapers([...byId.values()], opts.order);
   return { papers: all.slice(0, opts.maxPapers), total: all.length, topics: topicRuns, spentUsd: deps.budget.spent, stopped };
 }
 

@@ -5,6 +5,7 @@ import { printJson } from "../prompts/schemas";
 import type { FeedConfig } from "../settings/data";
 import type { Flags } from "./flags";
 import type { ReviewPaper } from "./collect";
+import { seedLine } from "./seeds";
 
 /** The label a paper has in the prompt and in the answer: P1, P2, …. */
 export const paperLabel = (index: number): string => `P${index + 1}`;
@@ -66,6 +67,8 @@ export function paperBlock(label: string, p: ReviewPaper, flags: Flags, names: R
   if (terms.length > 0) lines.push(`Matched terms: ${terms.join(", ")}`);
   const flag = flagText(flags, names);
   if (flag !== "") lines.push(`Note: ${flag}`);
+  const known = p.seed ? seedLine(p.seed) : "";
+  if (known !== "") lines.push(`Overlap: ${known}`);
   if (opts.includeAbstracts) {
     const abstract = cutAbstract(p.abstract, opts.abstractChars);
     lines.push(abstract === "" ? "Abstract: (none returned)" : `Abstract: ${abstract}`);

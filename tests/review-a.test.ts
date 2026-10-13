@@ -8,7 +8,7 @@ import { buildLiteratureIndex } from "../src/inbox/state";
 import { LIT_REVIEW_EXAMPLE, buildLitReviewPrompt, checkLitReviewAnswer, cutAbstract, paperLabel } from "../src/review/prompt";
 import { Budget, CAP_PER_TOPIC, addSpend, emptyTally, estimateSearch, monthOf, monthTotal, normaliseTally, overBudget, pagesFor, passesMonthlyLimit } from "../src/review/budget";
 import { CACHE_TTL_MS, MAX_TOPIC_ENTRIES, emptyCache, getTopic, getWork, normaliseCache, putTopic, putWorks, topicKey } from "../src/review/cache";
-import { planReview, runReview, type ReviewClient, type ReviewOptions } from "../src/review/collect";
+import { fitScore, orderPapers, planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewPaper } from "../src/review/collect";
 import { countFlags, flagsFor } from "../src/review/flags";
 import { buildLookup, doiOfItem, emptyIndex, findInZotero, mergeIndex, normaliseIndex } from "../src/zotero/library-index";
 import type { FeedConfig } from "../src/settings/data";
@@ -117,10 +117,10 @@ describe("budget", () => {
     expect(pagesFor(95)).toEqual({ fetch: 95, pages: 1 });
     expect(pagesFor(100)).toEqual({ fetch: 100, pages: 1 });
     expect(pagesFor(101)).toEqual({ fetch: 101, pages: 2 });
-    expect(pagesFor(5000)).toEqual({ fetch: CAP_PER_TOPIC, pages: 3 });
+    expect(pagesFor(5000)).toEqual({ fetch: CAP_PER_TOPIC, pages: CAP_PER_TOPIC / 100 });
     const est = estimateSearch([
       { key: "a", topic: "a", count: 812, fromCache: false }, { key: "b", topic: "b", count: 50, fromCache: false }, { key: "c", topic: "c", count: 400, fromCache: true },
-    ]);
+    ], 300);
     expect(est.requests).toBe(4);
     expect(est.works).toBe(300 + 50 + 300);
     expect(est.usd).toBeCloseTo(0.004);
@@ -507,5 +507,26 @@ describe("checkLitReviewAnswer", () => {
     const r = checkLitReviewAnswer({ themes: "no", priorities: [{ paper: "P9", level: "must" }] }, labels);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.errors.length).toBeGreaterThan(1);
+  });
+});
+
+describe("the order of papers of one rank", () => {
+  const paper = (id: string, over: Partial<ReviewPaper>): ReviewPaper => ({
+    id, title: `Paper ${id}`, authors: [], venue: null, year: 2020, publicationDate: null, doi: null, abstract: null, isPreprint: false, citedByCount: 0, referencedWorks: [],
+    tier: "strong", finds: [{ feedId: "a", tier: "strong", matched: ["x"], topics: [1] }], ...over,
+  });
+  const oldCited = paper("old", { year: 2015, citedByCount: 900 });
+  const newFit = paper("new", { year: 2025, citedByCount: 3, finds: [{ feedId: "a", tier: "strong", matched: ["x", "y", "z"], topics: [1, 2, 3] }, { feedId: "b", tier: "strong", matched: ["x"], topics: [2] }] });
+  const priority = paper("pri", { tier: "priority", citedByCount: 0 });
+
+  it("puts a recent paper that fits many topics above an old, often-cited one that fits one", () => {
+    expect(orderPapers([oldCited, newFit]).map((p) => p.id)).toEqual(["new", "old"]);
+    expect(fitScore(newFit)).toBeGreaterThan(fitScore(oldCited));
+  });
+
+  it("still puts rank first, and offers the old orders", () => {
+    expect(orderPapers([oldCited, newFit, priority]).map((p) => p.id)).toEqual(["pri", "new", "old"]);
+    expect(orderPapers([newFit, oldCited], "cited").map((p) => p.id)).toEqual(["old", "new"]);
+    expect(orderPapers([oldCited, newFit], "newest").map((p) => p.id)).toEqual(["new", "old"]);
   });
 });

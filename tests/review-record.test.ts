@@ -156,7 +156,7 @@ describe("repeating a review", () => {
 
 describe("the saved session keeps the record fields", () => {
   const s: ReviewSession = {
-    version: 1, savedAt: Date.UTC(2026, 9, 13, 12, 0), selected: ["lipoic"], fromYear: "2021", maxPapers: 60, minTier: "possible", abstracts: true,
+    version: 1, savedAt: Date.UTC(2026, 9, 13, 12, 0), selected: ["lipoic"], fromYear: "2021", maxPapers: 60, capPerTopic: 800, minTier: "possible", abstracts: true,
     result: result([paper(1)]), extras: null, answerText: "", run: runInfo(new Date("2026-10-13T12:04:00Z"), [feed()], OPTS, true), llm: "Test model 1",
     promptNote: "Prompt.md", baseline: record(), snapshot: [snapshotFeed(feed())],
   };

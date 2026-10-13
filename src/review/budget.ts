@@ -13,9 +13,11 @@ export const COST_FILTER = 0.0001;
 export const COST_PER_REQUEST = COST_SEARCH;
 /** The default spending limit of one review. */
 export const DEFAULT_BUDGET_USD = 0.05;
-/** At most this many works are fetched per search topic (3 pages). */
-export const CAP_PER_TOPIC = 300;
+/** At most this many works are fetched per search topic by default (10 pages, about $0.001). */
+export const CAP_PER_TOPIC = 1000;
 export const PAGE_SIZE = 100;
+/** The most the window allows per topic (OpenAlex pages through 10 000 results; a request of 100 costs $0.0001). */
+export const MAX_CAP_PER_TOPIC = 2000;
 /** Papers in the prompt: the default, and the most the window allows. */
 export const DEFAULT_PROMPT_PAPERS = 60;
 export const MAX_PROMPT_PAPERS = 150;

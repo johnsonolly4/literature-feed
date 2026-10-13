@@ -1,5 +1,8 @@
 # Literature Feed: changelog
 
+## 0.1.1 (2026-10-13)
+- The plugin description no longer contains the word "Obsidian" (a requirement of the community plugin review). Nothing else changed.
+
 ## 0.1.0 (2026-10-13)
 First release. Desktop only (Windows, macOS, Linux); tried so far on Windows, and not every feature has been checked yet. Weekly OpenAlex feeds into a reading-inbox note with a table and per-search cards, Zotero sync, read state and archive, dismissing papers, a search-effectiveness report, and an automatic weekly scan. You need an OpenAlex key and, for sync, a Zotero key; see the README.
 

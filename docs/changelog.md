@@ -1,5 +1,8 @@
 # Literature Feed: changelog
 
+## Next version (not released)
+- LLM prompts by copy and paste: **Review a search with an LLM**, **Tweak search terms with an LLM** and **New search from a description with an LLM** (commands and Settings → LLM prompts). Each copies a prompt that states the JSON format the answer must have, and takes the pasted answer back; suggestions are accepted or rejected one by one, and decisions are remembered in `decisions.json` for the next review. The plugin sends nothing and has no LLM key.
+
 ## 0.1.1 (2026-10-13)
 - The plugin description no longer contains the word "Obsidian" (a requirement of the community plugin review). Nothing else changed.
 

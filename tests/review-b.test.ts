@@ -322,7 +322,7 @@ describe("network text, canvas and note", () => {
       answer: { themes: [], priorities: [{ paper: "P1", level: "must", reason: "close" }, { paper: "M1", level: "should", reason: "foundational" }], gaps: [], searchSuggestions: [] },
       networkMarkdown: md.split("\n"), extraRows: [...rows.missing, ...rows.alsoCite],
     });
-    expect(note).toContain("| Should read | [Foundational](https://doi.org/10.1000/99) (M1) | 2010 | 900 |");
+    expect(note).toContain("| Should read | [Foundational](https://doi.org/10.1000/99) (M1) |  | 2010 | 900 |");
     expect(note).toContain("| Must read | Paper 1 |".replace("Paper 1", "[Paper 1](https://doi.org/10.1000/1)"));
     expect(note.indexOf("## Reading priorities")).toBeLessThan(note.indexOf("## Citation network"));
   });

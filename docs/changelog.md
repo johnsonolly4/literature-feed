@@ -1,5 +1,8 @@
 # Literature Feed: changelog
 
+## Next version (not released)
+- Literature review: **Generate literature review** runs your searches over a wider window within a spending limit (estimate first, cap per topic, stop at the limit, 24-hour result cache, a monthly tally of the plugin's OpenAlex requests with an optional soft limit), flags papers already in Zotero (a local read-only index of the library), already in the vault and listed before, builds a prompt for an LLM to group and prioritise them, and makes a review note from the pasted answer. Settings → Literature review has the limits.
+
 ## 0.2.0 (2026-10-13)
 LLM prompts you copy and paste, a Check setup window, overlap between searches, and a tidier reading inbox. Desktop only, as 0.1.x.
 - The Reading inbox tile on a Home note or hub is a `[!reading-inbox]` callout: a book icon and a title that is a link (`obsidian://literature-feed-inbox`) opening the newest weekly note; Check setup's integration step writes it that way, with no marker comments in your notes (a tile is found again by its title link, the Vault spec section by its heading), and it does not offer a second tile where you already made a reading inbox card. The tile's title looks like Lab Kit's other tile titles (plain text, underlined on hover). The same link works anywhere in a note.

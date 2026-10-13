@@ -7,7 +7,7 @@ import type { Settings } from "../settings/data";
 import { DEFAULT_LIMIT, buildCards, countsLine, homeSummary, parseLimit, type FeedCard } from "./cards";
 import { describeCounts, describeFeedRow, localDay } from "./scan";
 import {
-  DEFAULT_SORT, STATUS_LABEL, TIER_LABEL, agesOutSoon, countsByStatus, filterRows, makeRows, orderRows, takeawayFilled,
+  DEFAULT_SORT, STATUS_LABEL, TIER_LABEL, agesOutSoon, countsByStatus, filterRows, makeRows, orderRows, sharedPapers, takeawayFilled,
   type FilterKey, type SortKey, type SortSetting, type TableRow,
 } from "./table";
 import { NOTE_NAME_PATTERN, doiUrl, parseInbox, waitingByFeed, waitingByTier, type DismissReason, type ListedTier, type ParsedPaper } from "./write";
@@ -226,6 +226,7 @@ class StatusBlock extends MarkdownRenderChild {
     const counts = countsByStatus(this.feedFilter === null ? rows : rows.filter((r) => r.paper.feedId === this.feedFilter));
     const names = new Map(this.host.settings.feeds.map((f) => [f.id, f.name]));
     const today = localDay(new Date());
+    const shared = sharedPapers(rows);
     const wrap = el.createDiv({ cls: "literature-feed-list" });
 
     const chips = wrap.createDiv({ cls: "literature-feed-filters" });
@@ -321,7 +322,8 @@ class StatusBlock extends MarkdownRenderChild {
           void this.host.toggleTick(note.path, paper.feedId, paper.openalexId, !paper.ticked);
         });
       }
-      const found = [names.get(paper.feedId) ?? paper.feedId, paper.topics.length > 0 ? `topic${paper.topics.length === 1 ? "" : "s"} ${paper.topics.join(", ")}` : ""].filter((m) => m !== "");
+      const alsoIn = (shared.get(paper.openalexId) ?? []).filter((f) => f !== paper.feedId).map((f) => names.get(f) ?? f);
+      const found = [names.get(paper.feedId) ?? paper.feedId, alsoIn.length > 0 ? `also in ${alsoIn.join(", ")}` : "", paper.topics.length > 0 ? `topic${paper.topics.length === 1 ? "" : "s"} ${paper.topics.join(", ")}` : ""].filter((m) => m !== "");
       links.createDiv({ cls: "literature-feed-meta", text: found.join(" · ") });
 
       const act = tr.createEl("td", { cls: "literature-feed-act" });

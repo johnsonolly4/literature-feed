@@ -9,6 +9,8 @@ import type { DismissReason, ListedTier, ParsedPaper } from "../inbox/write";
 
 /** Scan records kept (the oldest are dropped beyond this). */
 export const SCAN_CAP = 300;
+/** Ids of dropped candidates kept per search (the oldest go first). */
+export const DROPPED_CAP = 4000;
 
 export interface LedgerPaper {
   title: string;
@@ -63,10 +65,12 @@ export interface Ledger {
   defs: Record<string, DefRecord[]>;
   /** Feed names as of the last scan, for the report. */
   names: Record<string, string>;
+  /** Per search, the short OpenAlex ids of new candidates its rules dropped (ids only, newest last), to compare with other searches' lists. */
+  droppedIds: Record<string, string[]>;
 }
 
 export function emptyLedger(): Ledger {
-  return { version: 1, papers: {}, scans: [], defs: {}, names: {} };
+  return { version: 1, papers: {}, scans: [], defs: {}, names: {}, droppedIds: {} };
 }
 
 export function ledgerKey(feedId: string, openalexId: string): string {
@@ -142,6 +146,12 @@ export function normaliseLedger(raw: unknown): Ledger {
   }
   if (isRecord(raw.names)) {
     for (const [id, name] of Object.entries(raw.names)) if (typeof name === "string") out.names[id] = name;
+  }
+  if (isRecord(raw.droppedIds)) {
+    for (const [feedId, ids] of Object.entries(raw.droppedIds)) {
+      const list = [...new Set(strings(ids).filter((id) => /^W\d+$/.test(id)))].slice(-DROPPED_CAP);
+      if (list.length > 0) out.droppedIds[feedId] = list;
+    }
   }
   return out;
 }
@@ -233,6 +243,19 @@ export function recordScan(ledger: Ledger, at: string, stats: readonly { feedId:
   return true;
 }
 
+/** Adds the ids a scan's rules dropped, per search, without repeats and up to the cap. True if anything was added. */
+export function recordDropped(ledger: Ledger, stats: readonly { feedId: string; ids: readonly string[] }[]): boolean {
+  let changed = false;
+  for (const s of stats) {
+    const known = new Set(ledger.droppedIds[s.feedId] ?? []);
+    const fresh = [...new Set(s.ids)].filter((id) => !known.has(id));
+    if (fresh.length === 0) continue;
+    ledger.droppedIds[s.feedId] = [...(ledger.droppedIds[s.feedId] ?? []), ...fresh].slice(-DROPPED_CAP);
+    changed = true;
+  }
+  return changed;
+}
+
 // ---- filling the papers from the notes --------------------------------------------------------------------------------
 
 /**
@@ -288,6 +311,7 @@ export function forgetFeeds(ledger: Ledger, keep: ReadonlySet<string>): number {
   ledger.scans = ledger.scans.filter((s) => keep.has(s.feedId));
   for (const id of Object.keys(ledger.defs)) if (!keep.has(id)) delete ledger.defs[id];
   for (const id of Object.keys(ledger.names)) if (!keep.has(id)) delete ledger.names[id];
+  for (const id of Object.keys(ledger.droppedIds)) if (!keep.has(id)) delete ledger.droppedIds[id];
   return removed;
 }
 

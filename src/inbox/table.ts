@@ -77,6 +77,18 @@ export function filterRows(rows: readonly TableRow[], filter: FilterKey, feedId:
   return rows.filter((r) => (filter === "all" || r.status === filter) && (feedId === null || r.paper.feedId === feedId));
 }
 
+/** For each OpenAlex id, the searches that list it (only ids listed under more than one search are kept). */
+export function sharedPapers(rows: readonly TableRow[]): Map<string, string[]> {
+  const all = new Map<string, string[]>();
+  for (const { paper } of rows) {
+    const feeds = all.get(paper.openalexId) ?? [];
+    if (!feeds.includes(paper.feedId)) feeds.push(paper.feedId);
+    all.set(paper.openalexId, feeds);
+  }
+  for (const [id, feeds] of all) if (feeds.length < 2) all.delete(id);
+  return all;
+}
+
 export function countsByStatus(rows: readonly TableRow[]): Record<FilterKey, number> {
   const counts: Record<FilterKey, number> = { all: rows.length, new: 0, ticked: 0, "in-zotero": 0, read: 0, processed: 0, dismissed: 0 };
   for (const r of rows) counts[r.status]++;

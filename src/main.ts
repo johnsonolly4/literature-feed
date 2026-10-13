@@ -4,7 +4,7 @@ import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./
 import { describeSync, findPending, runSync } from "./inbox/sync";
 import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, type LiteratureNote, type RefreshReport } from "./inbox/state";
 import { NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setDismissed, setTick, tidySynced, type DismissReason, type ParsedPaper } from "./inbox/write";
-import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordScan, updateFromNotes, type Ledger } from "./ledger/ledger";
+import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordDropped, recordScan, updateFromNotes, type Ledger } from "./ledger/ledger";
 import { topicStatRows, titlesByVerdict, type TopicStatRow } from "./prompts/build";
 import { emptyDecisions, normaliseDecisions, type Decisions } from "./prompts/decisions";
 import { PromptModal, type PromptHost, type PromptKind } from "./prompts/modals";
@@ -153,7 +153,11 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       const now = new Date();
       const outcome = await runScan(this.settings, { client, now });
       const scanned = this.settings.feeds.filter((f) => outcome.topicStats.some((s) => s.feedId === f.id));
-      const ledgerChanged = recordDefinitions(this.ledger, scanned, localDay(now)) || recordScan(this.ledger, localDay(now), outcome.topicStats);
+      const ledgerChanged = [
+        recordDefinitions(this.ledger, scanned, localDay(now)),
+        recordScan(this.ledger, localDay(now), outcome.topicStats),
+        recordDropped(this.ledger, outcome.droppedIds),
+      ].some(Boolean);
       if (ledgerChanged) await this.saveLedger();
       const path = outcome.note ? await this.writeNote(outcome.note) : null;
       this.settings.lastScan = outcome.lastScan;
@@ -400,7 +404,14 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
 
   reportFor(feedId: string): string {
     const report = buildReport(this.ledger, this.settings.feeds, localDay(new Date()), this.settings.dismissAfterWeeks);
-    const own = { ...report, feeds: report.feeds.filter((f) => f.feedId === feedId) };
+    const own = {
+      ...report,
+      feeds: report.feeds.filter((f) => f.feedId === feedId),
+      overlap: {
+        pairs: report.overlap.pairs.filter((p) => p.a === feedId || p.b === feedId),
+        topics: report.overlap.topics.filter((t) => t.feedId === feedId),
+      },
+    };
     return reportMarkdown(own);
   }
 

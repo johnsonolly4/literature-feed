@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agesOutSoon, countsByStatus, filterRows, makeRows, orderRows, paperStatus, takeawayFilled, type TableRow } from "../src/inbox/table";
+import { agesOutSoon, countsByStatus, filterRows, makeRows, orderRows, paperStatus, sharedPapers, takeawayFilled, type TableRow } from "../src/inbox/table";
 import type { ParsedPaper } from "../src/inbox/write";
 
 function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
@@ -112,5 +112,16 @@ describe("takeawayFilled", () => {
 
   it("is true if any takeaway field in the note has text", () => {
     expect(takeawayFilled("[takeaway:: ]" + String.fromCharCode(10) + "[takeaway:: filled]")).toBe(true);
+  });
+});
+
+describe("sharedPapers", () => {
+  it("keeps only the papers listed under more than one search, with those searches in order", () => {
+    const rows = makeRows([
+      paper("W1", { feedId: "a" }), paper("W1", { feedId: "b" }), paper("W2", { feedId: "a" }), paper("W3", { feedId: "b" }),
+      paper("W3", { feedId: "c" }), paper("W3", { feedId: "b", list: "synced" }),
+    ], new Set());
+    expect([...sharedPapers(rows)]).toEqual([["W1", ["a", "b"]], ["W3", ["b", "c"]]]);
+    expect(sharedPapers([]).size).toBe(0);
   });
 });

@@ -61,6 +61,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.addCommand({ id: "llm-new-search", name: "New search from a description with an LLM", callback: () => void this.openPrompt("new") });
     this.addCommand({ id: "open-inbox", name: "Open reading inbox", callback: () => void this.openInbox() });
     this.addRibbonIcon("book-open", "Open reading inbox", () => void this.openInbox());
+    // A link a note can hold: [Reading inbox](obsidian://literature-feed-inbox) opens the newest weekly note (its name changes every week).
+    this.registerObsidianProtocolHandler("literature-feed-inbox", () => void this.openInbox());
     this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
     this.addCommand({ id: "update-read-archive", name: "Update read state and archive", callback: () => void this.refreshAndReport(true) });
     this.addCommand({ id: "search-effectiveness", name: "Show search effectiveness", callback: () => void this.showEffectiveness() });

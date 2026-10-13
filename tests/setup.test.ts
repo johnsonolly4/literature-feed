@@ -85,7 +85,7 @@ describe("planIntegration and removeIntegration", () => {
   it("adds the Home card at the end of the note, once, with the markers", () => {
     const plan = planIntegration("home-tile", HOME, ctx);
     expect(plan.state).toBe("addable");
-    expect(plan.next).toBe(`${HOME.trimEnd()}\n\n${startMarker("home-tile")}\n\`\`\`literature-feed\nshow: home\nlimit: 3\n\`\`\`\n${endMarker("home-tile")}\n`);
+    expect(plan.next).toBe(`${HOME.trimEnd()}\n\n${startMarker("home-tile")}\n> [!reading-inbox] [Reading inbox](obsidian://literature-feed-inbox)\n> \`\`\`literature-feed\n> show: home\n> limit: 3\n> \`\`\`\n${endMarker("home-tile")}\n`);
     expect(plan.anchor).toBe("after: > > [!planning] This week");
     expect(planIntegration("home-tile", plan.next ?? "", ctx).state).toBe("already-added");
   });
@@ -95,7 +95,7 @@ describe("planIntegration and removeIntegration", () => {
     expect(plan.state).toBe("addable");
     const next = plan.next ?? "";
     expect(next.indexOf(startMarker("literature-tile"))).toBeLessThan(next.indexOf("> [!columns]"));
-    expect(next).toContain("> [!focus] Reading inbox\n> ```literature-feed\n> show: home\n> limit: 5\n> ```\n");
+    expect(next).toContain("> [!reading-inbox] [Reading inbox](obsidian://literature-feed-inbox)\n> ```literature-feed\n> show: home\n> limit: 5\n> ```\n");
     expect(next.indexOf("How I read")).toBeLessThan(next.indexOf(startMarker("literature-tile")));
     expect(plan.anchor).toBe("before: > [!columns]");
   });

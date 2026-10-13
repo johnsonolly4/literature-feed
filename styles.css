@@ -66,6 +66,12 @@
   margin-bottom: var(--size-4-2);
 }
 
+/* A tile for the reading inbox on a Home note or hub: [!reading-inbox] [Reading inbox](obsidian://literature-feed-inbox) */
+.callout[data-callout="reading-inbox"] {
+  --callout-color: var(--vt-neutral-text, 148, 163, 184);
+  --callout-icon: lucide-book-open;
+}
+
 /* Status line and Home card made by the literature-feed code block.
    Fill, border and corners use Lab Kit's theme variables when that theme is on, and Obsidian's own otherwise. */
 .literature-feed-status,
@@ -570,4 +576,39 @@ textarea.literature-feed-wide {
 .literature-feed-setup-text pre {
   white-space: pre-wrap;
   font-size: var(--font-ui-small);
+}
+
+/* Table headers: one look for every column (small, muted capitals; the sort buttons carry no button box of their own) */
+table.literature-feed-papers th {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 2px solid var(--vt-card-border, var(--background-modifier-border));
+  white-space: nowrap;
+}
+
+table.literature-feed-papers th button.literature-feed-sort {
+  height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+table.literature-feed-papers th button.literature-feed-sort:hover {
+  color: var(--text-normal);
+  background: transparent;
+}
+
+table.literature-feed-papers th.is-sorted,
+table.literature-feed-papers th.is-sorted button.literature-feed-sort {
+  color: var(--text-normal);
 }

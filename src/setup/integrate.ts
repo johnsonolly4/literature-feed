@@ -19,12 +19,12 @@ export const INTEGRATIONS: IntegrationInfo[] = [
   {
     id: "home-tile", noteName: "00 Home", where: "at the end of the note",
     label: "Reading inbox card on the Home note",
-    description: "The summary card (papers to read, the first three titles, Scan now and Sync buttons) as a block at the end of the Home note.",
+    description: "A Reading inbox tile (book icon, a title that opens the newest weekly note, papers to read with the first three titles, Scan now and Sync buttons) at the end of the Home note.",
   },
   {
     id: "literature-tile", noteName: "Literature", where: "before the first columns callout",
     label: "Reading inbox card on the Literature hub",
-    description: "The same card, in a callout, above the hub's To process and Key papers lists.",
+    description: "The same tile above the hub's To process and Key papers lists.",
   },
   {
     id: "vault-spec", noteName: "Vault spec", where: "at the end of the note",
@@ -40,6 +40,9 @@ export const BY_HAND = [
   "Moving the card inside one of the Home note's columns.",
 ];
 
+/** The tile's title: a link that opens the newest weekly note (the plugin handles this address). */
+const TITLE_LINK = "[Reading inbox](obsidian://literature-feed-inbox)";
+
 export const startMarker = (id: IntegrationId): string => `%%literature-feed:${id}%%`;
 export const endMarker = (id: IntegrationId): string => `%%/literature-feed:${id}%%`;
 
@@ -51,9 +54,9 @@ export interface IntegrationContext {
 function block(id: IntegrationId, ctx: IntegrationContext): string[] {
   switch (id) {
     case "home-tile":
-      return [startMarker(id), "```literature-feed", "show: home", "limit: 3", "```", endMarker(id)];
+      return [startMarker(id), "> [!reading-inbox] " + TITLE_LINK, "> ```literature-feed", "> show: home", "> limit: 3", "> ```", endMarker(id)];
     case "literature-tile":
-      return [startMarker(id), "> [!focus] Reading inbox", "> ```literature-feed", "> show: home", "> limit: 5", "> ```", endMarker(id)];
+      return [startMarker(id), "> [!reading-inbox] " + TITLE_LINK, "> ```literature-feed", "> show: home", "> limit: 5", "> ```", endMarker(id)];
     case "vault-spec": {
       const folder = ctx.inboxFolder === "" ? "the vault root" : `\`${ctx.inboxFolder}/\``;
       return [

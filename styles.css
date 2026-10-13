@@ -531,3 +531,43 @@ textarea.literature-feed-wide {
   flex: 1;
   min-width: 12em;
 }
+
+/* Check setup: one row per check, a mark, the text, and a fix button when there is one */
+.literature-feed-setup-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-4-3);
+  padding: var(--size-4-2) 0;
+  border-top: 1px solid var(--vt-divider, var(--background-modifier-border));
+}
+
+.literature-feed-setup-mark {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  text-align: center;
+  line-height: 22px;
+  font-size: var(--font-ui-small);
+  color: rgb(var(--vt-neutral-text, 148, 163, 184));
+  background: rgba(var(--vt-neutral, 100, 116, 139), var(--vt-tint, 0.2));
+}
+
+.literature-feed-setup-row.is-ok .literature-feed-setup-mark {
+  color: rgb(var(--vt-done-text, 110, 231, 183));
+  background: rgba(var(--vt-done, 16, 185, 129), var(--vt-tint, 0.2));
+}
+
+.literature-feed-setup-row.is-todo .literature-feed-setup-mark {
+  color: rgb(var(--vt-waiting-text, 252, 211, 77));
+  background: rgba(var(--vt-waiting, 245, 158, 11), var(--vt-tint, 0.2));
+}
+
+.literature-feed-setup-text {
+  flex: 1;
+}
+
+.literature-feed-setup-text pre {
+  white-space: pre-wrap;
+  font-size: var(--font-ui-small);
+}

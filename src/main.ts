@@ -8,6 +8,9 @@ import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordSca
 import { topicStatRows, titlesByVerdict, type TopicStatRow } from "./prompts/build";
 import { emptyDecisions, normaliseDecisions, type Decisions } from "./prompts/decisions";
 import { PromptModal, type PromptHost, type PromptKind } from "./prompts/modals";
+import type { FixAction, SetupSnapshot } from "./setup/checks";
+import type { IntegrationInfo } from "./setup/integrate";
+import { SetupModal, type SetupHost } from "./setup/setup-modal";
 import { buildReport, reportMarkdown } from "./ledger/report";
 import { ReportModal } from "./ledger/report-modal";
 import { OpenAlexClient } from "./openalex/client";
@@ -28,7 +31,7 @@ const START_DELAY_MS = 15_000;
 /** While Obsidian stays open the schedule is checked this often. */
 const CHECK_EVERY_MS = 60 * 60 * 1000;
 
-export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost {
+export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
@@ -50,6 +53,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
+    this.addCommand({ id: "check-setup", name: "Check setup", callback: () => void this.openSetup() });
     this.addCommand({ id: "llm-review", name: "Review a search with an LLM", callback: () => void this.openPrompt("review") });
     this.addCommand({ id: "llm-topics", name: "Tweak search terms with an LLM", callback: () => void this.openPrompt("topics") });
     this.addCommand({ id: "llm-new-search", name: "New search from a description with an LLM", callback: () => void this.openPrompt("new") });
@@ -335,6 +339,57 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   /** Where the ledger is kept: next to `data.json`, in the plugin's folder. Null when Obsidian does not say where that is. */
   private ledgerPath(): string | null {
     return this.manifest.dir ? normalizePath(`${this.manifest.dir}/ledger.json`) : null;
+  }
+
+  async openSetup(): Promise<void> {
+    new SetupModal(this).open();
+  }
+
+  /** The facts Check setup needs about this vault (folders, notes, other plugins) and the settings. */
+  async buildSnapshot(): Promise<SetupSnapshot> {
+    const { vault } = this.app;
+    const adapter = vault.adapter;
+    const configDir = vault.configDir;
+    let enabled: string[] = [];
+    try {
+      const raw: unknown = JSON.parse(await adapter.read(normalizePath(`${configDir}/community-plugins.json`)));
+      enabled = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+    } catch {
+      // No list of enabled plugins: treat every other plugin as off.
+    }
+    const installed = new Set<string>();
+    for (const id of ["zotlit", "lab-kit"]) {
+      if (await adapter.exists(normalizePath(`${configDir}/plugins/${id}/manifest.json`))) installed.add(id);
+    }
+    const notes = new Set(vault.getMarkdownFiles().map((f) => f.basename));
+    return {
+      settings: this.settings,
+      keyReadable: { openAlex: this.getSecret("openAlexKey") !== "", zotero: this.getSecret("zoteroKey") !== "" },
+      folderExists: (path) => vault.getFolderByPath(normalizePath(path)) !== null,
+      noteExists: (name) => notes.has(name),
+      pluginInstalled: (id) => installed.has(id),
+      pluginEnabled: (id) => enabled.includes(id),
+    };
+  }
+
+  async applyFix(fix: FixAction): Promise<void> {
+    if (fix.kind === "create-folder") {
+      const path = normalizePath(fix.path);
+      if (!this.app.vault.getFolderByPath(path)) await this.app.vault.createFolder(path);
+      return;
+    }
+    this.settings.literatureFolder = normalizePath(fix.path);
+    await this.saveSettings();
+  }
+
+  async readTarget(info: IntegrationInfo): Promise<{ path: string; text: string } | null> {
+    const file = this.app.vault.getMarkdownFiles().find((f) => f.basename === info.noteName);
+    return file ? { path: file.path, text: await this.app.vault.read(file) } : null;
+  }
+
+  async editTarget(path: string, change: (text: string) => string): Promise<void> {
+    const file = this.app.vault.getFileByPath(path);
+    if (file) await this.app.vault.process(file, change);
   }
 
   /** Opens the window of one LLM prompt feature, after bringing the ledger up to date (the review prompts print its numbers). */

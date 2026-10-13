@@ -1,10 +1,11 @@
 # Status
-_Updated: 2026-10-13 (Phase 7 session). Cap 40 lines. History lives in git and `docs/changelog.md`, not here._
+_Updated: 2026-10-13 (LLM prompts and Check setup session). Cap 40 lines. History lives in git and `docs/changelog.md`, not here._
 
 **Version:** 0.1.1 (moves only at `/release`; TypeScript in `src/`)
 
 ## Now
 Release 0.1.1 (2026-10-13): PR #3 squash-merged (manifest description without the word Obsidian, for the store review), tag `0.1.1` pushed. Work on `feat/llm-prompts-check-setup` (LLM prompts, Check setup) is still unmerged and was cut from the branch of PR #3, so it needs a rebase onto `main` before its PR.
+Branch `feat/llm-prompts-check-setup` (cut from `docs/backlog-ideas`, not pushed): LLM prompts by copy and paste (`src/prompts/`) and Check setup with the Lab Kit integration step (`src/setup/`) **code done, never seen in Obsidian**; 419 tests pass, lint and build clean; check lists in BACKLOG → Not yet tested. PR #3 (manifest description fix for the store review) waits for CI and the owner's go, then the 0.1.1 release.
 Release 0.1.0 (2026-10-13, desktop only): PR johnsonolly4/literature-feed#2 squash-merged into `main` (Phases 1-7), tag `0.1.0` pushed; the GitHub release is built by `.github/workflows/release.yml`. Next: owner installs it on a Mac and phone via BRAT, then the store pull request. The older per-phase notes below are history.
 Phases 0 and 1 done (matching engine, `feat/matching-engine`, pushed, PR johnsonolly4/literature-feed#1 open). Phase 2 (OpenAlex client, `feat/openalex-client`) done except the late-indexing run, which needs a run on or after 2026-10-19 (BACKLOG). Phase 3 (settings tab, keys in Obsidian's secret storage, `feat/settings-tab`): the owner confirmed Test works; the rest of its checklist is still open (BACKLOG → Not yet tested). None of these three branches is pushed.
 Phase 4 (weekly reading-inbox note, `feat/inbox-note`) seen working in Obsidian 2026-10-12 (dark theme): scan, note, ticking, rescan, Home card; later changes (card styling, last-scan line, per-feed rows, light theme, Unchecked list) not yet checked (BACKLOG).

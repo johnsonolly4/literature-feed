@@ -25,6 +25,12 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
     return [
       {
         type: "group",
+        items: [
+          { name: "Check setup", desc: "Lists what this plugin needs (keys, folders, a search switched on, ZotLit, Lab Kit) with a fix for each, and lets you choose parts to put into Lab Kit's notes.", action: () => void this.host.openSetup() },
+        ],
+      },
+      {
+        type: "group",
         heading: "Accounts",
         items: [
           this.secretRow("OpenAlex API key", "Sent only to OpenAlex. Kept in Obsidian's secret storage, not in your vault.", "openAlexKeySecret"),

@@ -18,6 +18,8 @@ export interface SettingsHost {
   getSecret(name: SecretName): string;
   /** Opens one of the LLM prompt windows (copy a prompt, paste the answer back). */
   openPrompt(kind: "review" | "topics" | "new"): Promise<void>;
+  /** Opens the Check setup window. */
+  openSetup(): Promise<void>;
 }
 
 const ROLE_LABELS: Record<GroupRole, string> = {

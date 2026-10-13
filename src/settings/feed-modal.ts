@@ -20,6 +20,10 @@ export interface SettingsHost {
   openPrompt(kind: "review" | "topics" | "new" | "compare"): Promise<void>;
   /** Opens the Check setup window. */
   openSetup(): Promise<void>;
+  /** Opens the literature review window. */
+  openReview(): Promise<void>;
+  /** Adds an OpenAlex request's cost to the monthly tally. */
+  recordSpend(usd: number): void;
 }
 
 const ROLE_LABELS: Record<GroupRole, string> = {
@@ -172,6 +176,7 @@ export class FeedModal extends Modal {
         request: obsidianRequester,
         apiKey: this.host.getSecret("openAlexKey") || undefined,
         sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+        onCost: (usd) => this.host.recordSpend(usd),
       });
       this.showSummary(await runFeedTest(client, this.draft));
     } catch (e) {

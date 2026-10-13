@@ -640,3 +640,308 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
   border-color: rgb(var(--vt-overdue, 239, 68, 68));
   color: rgb(var(--vt-overdue-text, 252, 165, 165));
 }
+
+/* Charts drawn from ```literature-feed-chart blocks (review notes and the review window) */
+.literature-feed-chart {
+  margin: var(--size-4-3) 0;
+}
+
+.literature-feed-chart-title {
+  margin-bottom: var(--size-4-1);
+  font-weight: var(--font-semibold);
+}
+
+.literature-feed-chart svg {
+  max-width: 640px;
+}
+
+.literature-feed-chart-bar {
+  fill: rgb(var(--vt-doing, 59, 130, 246));
+}
+
+.literature-feed-chart-label,
+.literature-feed-chart-value {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+
+/* The review graph view */
+.literature-feed-graph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.literature-feed-graph-controls { display: flex; flex-direction: column; gap: var(--size-4-2); }
+.literature-feed-chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); }
+.literature-feed-chip-label { color: var(--text-muted); font-size: var(--font-ui-smaller); min-width: 5.5em; }
+.literature-feed-chip {
+  height: auto;
+  padding: 2px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-hover);
+  box-shadow: none;
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.literature-feed-chip.is-active { background: var(--interactive-accent); border-color: transparent; color: var(--text-on-accent); }
+.literature-feed-chip.is-disabled { opacity: 0.5; }
+.literature-feed-explain {
+  padding: 6px 10px;
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.literature-feed-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.sw-kind-set { background: rgb(var(--vt-doing, 59, 130, 246)); }
+.sw-kind-missing { background: rgb(var(--vt-waiting, 245, 158, 11)); }
+.sw-kind-citing { background: rgb(var(--vt-project, 168, 85, 247)); }
+.sw-none { background: var(--text-faint); }
+.sw-lvl-must { background: rgb(var(--vt-done, 16, 185, 129)); }
+.sw-lvl-should { background: rgb(var(--vt-doing, 59, 130, 246)); }
+.sw-lvl-skim { background: var(--text-muted); }
+.sw-lvl-skip { background: var(--text-faint); opacity: 0.5; }
+.sw-lvl-none { background: transparent; border: 1px solid var(--text-faint); }
+.sw-y0 { background: #dbeafe; }
+.sw-y2 { background: #93c5fd; }
+.sw-y4 { background: #3b82f6; }
+.sw-y5 { background: #1d4ed8; }
+
+/* The references and gaps screens: text can be selected and copied (Obsidian panes block it by default), rows look like Check setup */
+.literature-feed-review { -webkit-user-select: text; user-select: text; }
+.literature-feed-review button { -webkit-user-select: none; user-select: none; }
+.literature-feed-ref { align-items: center; }
+.literature-feed-ref .literature-feed-title a { color: var(--text-normal); text-decoration: underline; text-decoration-color: var(--text-faint); }
+.literature-feed-ref-use { flex: none; }
+.literature-feed-ref-links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-3); }
+.literature-feed-ref-actions { flex: none; display: flex; flex-direction: column; gap: var(--size-4-1); align-items: flex-end; min-width: 14em; }
+.literature-feed-ref-actions input[type="text"] { width: 100%; }
+.literature-feed-setup-row.is-bad .literature-feed-setup-mark { color: rgb(252, 165, 165); background: rgba(239, 68, 68, 0.2); }
+a.literature-feed-status { text-decoration: none; cursor: pointer; }
+
+.literature-feed-status { padding: 1px 8px; border-radius: 999px; font-size: var(--font-ui-smaller); background: var(--background-modifier-hover); }
+.literature-feed-status.status-ok { background: rgba(var(--vt-done, 16, 185, 129), 0.25); }
+.literature-feed-status.status-check { background: rgba(var(--vt-waiting, 245, 158, 11), 0.25); }
+table.literature-feed-authors tr { cursor: pointer; }
+table.literature-feed-authors tr.is-selected td { background: rgba(var(--vt-doing, 59, 130, 246), 0.15); }
+.literature-feed-status.status-over { background: rgba(var(--vt-doing, 59, 130, 246), 0.25); }
+.literature-feed-narrow { width: 5em; }
+.literature-feed-status.status-not-found, .literature-feed-status.status-error { background: rgba(239, 68, 68, 0.25); }
+.literature-feed-refs td input[type="text"] { width: 100%; min-width: 14em; }
+
+.literature-feed-guide { stroke: var(--background-modifier-border); stroke-dasharray: 4 6; stroke-width: 1; }
+.literature-feed-guidelabel { fill: var(--text-faint); font-size: 12px; pointer-events: none; }
+
+.literature-feed-graph-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-4-3);
+}
+
+.literature-feed-graph-svg {
+  width: 100%;
+  height: 65vh;
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+  background: var(--vt-card-bg, var(--background-secondary));
+  touch-action: none;
+  cursor: grab;
+}
+
+.literature-feed-graph.is-embedded .literature-feed-graph-svg {
+  height: 520px;
+  touch-action: pan-y pinch-zoom;
+}
+
+.literature-feed-graph-svg.is-inline {
+  height: auto;
+  cursor: default;
+  touch-action: auto;
+}
+
+.literature-feed-graph-inline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  margin-block: var(--size-4-2);
+}
+
+.literature-feed-edge {
+  stroke: var(--text-faint);
+  stroke-width: 1;
+  opacity: 0.35;
+}
+
+.literature-feed-edge.is-touching {
+  stroke: rgb(var(--vt-doing, 59, 130, 246));
+  stroke-width: 2;
+  opacity: 0.95;
+}
+
+.literature-feed-node { cursor: pointer; }
+.literature-feed-node.is-top .literature-feed-nodelabel,
+.literature-feed-node.is-hovered .literature-feed-nodelabel,
+.literature-feed-node.is-named .literature-feed-nodelabel { display: block; }
+.is-hovering .literature-feed-node { opacity: 0.2; }
+.is-hovering .literature-feed-node.is-hovered,
+.is-hovering .literature-feed-node.is-neighbour { opacity: 1; }
+.literature-feed-edge.is-lit { stroke: var(--text-normal); opacity: 0.9; stroke-width: 2; }
+.literature-feed-grouplabel {
+  fill: var(--text-normal);
+  font-size: 15px;
+  font-weight: 600;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--background-primary);
+  stroke-width: 4px;
+}
+.literature-feed-legend-item { display: inline-flex; align-items: center; gap: 4px; margin-right: var(--size-4-3); }
+.literature-feed-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.sw-0, .mode-theme.t-0 .literature-feed-dotnode { fill: #3b82f6; background: #3b82f6; }
+.sw-1, .mode-theme.t-1 .literature-feed-dotnode { fill: #10b981; background: #10b981; }
+.sw-2, .mode-theme.t-2 .literature-feed-dotnode { fill: #f59e0b; background: #f59e0b; }
+.sw-3, .mode-theme.t-3 .literature-feed-dotnode { fill: #a855f7; background: #a855f7; }
+.sw-4, .mode-theme.t-4 .literature-feed-dotnode { fill: #ef4444; background: #ef4444; }
+.sw-5, .mode-theme.t-5 .literature-feed-dotnode { fill: #06b6d4; background: #06b6d4; }
+.sw-6, .mode-theme.t-6 .literature-feed-dotnode { fill: #ec4899; background: #ec4899; }
+.sw-7, .mode-theme.t-7 .literature-feed-dotnode { fill: #84cc16; background: #84cc16; }
+.mode-theme.t-none .literature-feed-dotnode { fill: var(--text-faint); }
+.literature-feed-node.is-dim { opacity: 0.15; }
+.literature-feed-dotnode { stroke: var(--background-primary); stroke-width: 1.5; fill: var(--text-faint); }
+.literature-feed-node.is-selected .literature-feed-dotnode { stroke: var(--text-normal); stroke-width: 2.5; }
+.literature-feed-ring { fill: none; stroke: rgb(var(--vt-done, 16, 185, 129)); stroke-width: 2; }
+.literature-feed-vaultdot { fill: rgb(var(--vt-waiting, 245, 158, 11)); stroke: var(--background-primary); stroke-width: 1; }
+
+.literature-feed-nodelabel {
+  fill: var(--text-muted);
+  font-size: 10px;
+  pointer-events: none;
+  display: none;
+}
+
+.literature-feed-graph-svg.show-labels .literature-feed-nodelabel,
+.literature-feed-graph-svg.is-zoomed .literature-feed-nodelabel,
+.literature-feed-node.is-selected .literature-feed-nodelabel {
+  display: block;
+}
+
+/* Colours by group */
+.mode-group.k-set .literature-feed-dotnode { fill: rgb(var(--vt-doing, 59, 130, 246)); }
+.mode-group.k-missing .literature-feed-dotnode { fill: rgb(var(--vt-waiting, 245, 158, 11)); }
+.mode-group.k-citing .literature-feed-dotnode { fill: rgb(var(--vt-project, 168, 85, 247)); }
+
+/* Colours by group of papers that cite each other (eight, repeating) */
+.mode-cluster.c-0 .literature-feed-dotnode { fill: #3b82f6; }
+.mode-cluster.c-1 .literature-feed-dotnode { fill: #10b981; }
+.mode-cluster.c-2 .literature-feed-dotnode { fill: #f59e0b; }
+.mode-cluster.c-3 .literature-feed-dotnode { fill: #a855f7; }
+.mode-cluster.c-4 .literature-feed-dotnode { fill: #ef4444; }
+.mode-cluster.c-5 .literature-feed-dotnode { fill: #06b6d4; }
+.mode-cluster.c-6 .literature-feed-dotnode { fill: #ec4899; }
+.mode-cluster.c-7 .literature-feed-dotnode { fill: #84cc16; }
+.mode-cluster.c-none .literature-feed-dotnode { fill: var(--text-faint); }
+
+/* Colours by year: light (old) to dark (new) */
+.mode-year.y-0 .literature-feed-dotnode { fill: #dbeafe; }
+.mode-year.y-1 .literature-feed-dotnode { fill: #bfdbfe; }
+.mode-year.y-2 .literature-feed-dotnode { fill: #93c5fd; }
+.mode-year.y-3 .literature-feed-dotnode { fill: #60a5fa; }
+.mode-year.y-4 .literature-feed-dotnode { fill: #3b82f6; }
+.mode-year.y-5 .literature-feed-dotnode { fill: #1d4ed8; }
+.mode-year.y--1 .literature-feed-dotnode { fill: var(--text-faint); }
+
+/* Colours by the LLM's reading level */
+.mode-level.l-must .literature-feed-dotnode { fill: rgb(var(--vt-done, 16, 185, 129)); }
+.mode-level.l-should .literature-feed-dotnode { fill: rgb(var(--vt-doing, 59, 130, 246)); }
+.mode-level.l-skim .literature-feed-dotnode { fill: var(--text-muted); }
+.mode-level.l-skip .literature-feed-dotnode { fill: var(--text-faint); opacity: 0.5; }
+.mode-level.l-none .literature-feed-dotnode { fill: transparent; stroke: var(--text-faint); }
+
+.literature-feed-gaps-picks .literature-feed-suggestion { cursor: pointer; }
+.literature-feed-gaps-picks .literature-feed-suggestion.is-picked { outline: 2px solid var(--interactive-accent); }
+
+.literature-feed-graph-panel {
+  min-height: 3em;
+}
+
+/* ---- The report kit (src/ui): sections, tables with chips, split pane, report bar. One look for every search. ---- */
+.literature-feed-section {
+  margin: var(--size-4-3) 0;
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+  background: var(--vt-card-bg, var(--background-secondary));
+}
+.literature-feed-section-head {
+  display: flex;
+  align-items: center;
+  padding: var(--size-4-2) var(--size-4-3);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  list-style: none;
+}
+.literature-feed-section-head::-webkit-details-marker { display: none; }
+.literature-feed-section.is-fixed > .literature-feed-section-head { cursor: default; }
+.literature-feed-section:not(.is-fixed) > .literature-feed-section-head::before { content: "\25b8"; margin-inline-end: var(--size-4-2); color: var(--text-muted); }
+.literature-feed-section[open]:not(.is-fixed) > .literature-feed-section-head::before { content: "\25be"; }
+.literature-feed-section-desc { padding: 0 var(--size-4-3); color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.literature-feed-section-body { padding: var(--size-4-2) var(--size-4-3) var(--size-4-3); }
+.literature-feed-section-body .setting-item { padding: var(--size-4-2) 0; }
+.literature-feed-formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14em, 1fr)); gap: var(--size-4-2) var(--size-4-4); }
+.literature-feed-formgrid .setting-item { flex-direction: column; align-items: stretch; border-top: none; }
+.literature-feed-formgrid .setting-item-control { justify-content: flex-start; }
+
+.literature-feed-reportbar { margin: var(--size-4-2) 0; }
+
+.literature-feed-tablebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--size-4-2); margin-bottom: var(--size-4-2); }
+.literature-feed-tablebar .literature-feed-filters { margin-bottom: 0; }
+.literature-feed-tabletools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); }
+.literature-feed-search { width: 14em; max-width: 100%; }
+.literature-feed-tablefoot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); margin-top: var(--size-4-2); }
+.literature-feed-tablewrap { overflow-x: auto; }
+.literature-feed-datatable table.literature-feed-papers th.is-num,
+.literature-feed-datatable table.literature-feed-papers td.is-num { text-align: end; font-variant-numeric: tabular-nums; }
+.literature-feed-datatable tr.is-pickable { cursor: pointer; }
+.literature-feed-datatable tr.is-pickable:hover { background: var(--background-modifier-hover); }
+.literature-feed-datatable tr.is-selected { background: var(--background-modifier-hover); box-shadow: inset 3px 0 0 var(--interactive-accent); }
+
+/* Chip tones by meaning (the same palette as the inbox statuses) */
+.literature-feed-filter.tone-neutral, .literature-feed-filter.tone-doing, .literature-feed-filter.tone-waiting,
+.literature-feed-filter.tone-done, .literature-feed-filter.tone-overdue { background: rgba(var(--literature-feed-rgb), var(--vt-tint, 0.2)); }
+.literature-feed-filter.tone-neutral { --literature-feed-rgb: var(--vt-neutral, 100, 116, 139); color: rgb(var(--vt-neutral-text, 203, 213, 225)); }
+.literature-feed-filter.tone-doing { --literature-feed-rgb: var(--vt-doing, 59, 130, 246); color: rgb(var(--vt-doing-text, 147, 197, 253)); }
+.literature-feed-filter.tone-waiting { --literature-feed-rgb: var(--vt-waiting, 245, 158, 11); color: rgb(var(--vt-waiting-text, 252, 211, 77)); }
+.literature-feed-filter.tone-done { --literature-feed-rgb: var(--vt-done, 16, 185, 129); color: rgb(var(--vt-done-text, 110, 231, 183)); }
+.literature-feed-filter.tone-overdue { --literature-feed-rgb: var(--vt-overdue, 239, 68, 68); color: rgb(var(--vt-overdue-text, 252, 165, 165)); }
+
+/* Master and detail: side by side with room, stacked in a narrow tab */
+.literature-feed-split { container-type: inline-size; display: block; }
+.literature-feed-split.has-detail { display: grid; grid-template-columns: minmax(0, 3fr) minmax(18em, 2fr); gap: var(--size-4-3); align-items: start; }
+.literature-feed-split-side { display: none; }
+.literature-feed-split.has-detail > .literature-feed-split-side {
+  display: block;
+  position: sticky;
+  top: 0;
+  max-height: 80vh;
+  overflow: auto;
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+  background: var(--vt-card-bg, var(--background-secondary));
+}
+.literature-feed-split-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--size-4-2); margin-bottom: var(--size-4-2); }
+@container (max-width: 760px) {
+  .literature-feed-split.has-detail { grid-template-columns: minmax(0, 1fr); }
+  .literature-feed-split.has-detail > .literature-feed-split-side { position: static; max-height: none; }
+  .literature-feed-datatable .is-secondary { display: none; }
+}
+
+.literature-feed-hidden { display: none; }
+.literature-feed-detailwork { padding: var(--size-4-2) 0; border-bottom: 1px solid var(--vt-divider, var(--background-modifier-border)); }
+.literature-feed-detailwork:last-child { border-bottom: none; }
+.literature-feed-authorlinks { display: flex; flex-wrap: wrap; gap: 2px var(--size-4-3); }
+.literature-feed-split-body h5 { margin: var(--size-4-3) 0 var(--size-4-1); }
+.literature-feed-section-body .literature-feed-gaps-picks { max-height: 16em; overflow: auto; }

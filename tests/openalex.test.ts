@@ -75,6 +75,7 @@ describe("toCandidate", () => {
       isPreprint: false,
       openalexId: "https://openalex.org/W1000000001",
       authors: ["A. Author", "B. Writer"],
+      authorIds: ["", ""],
       venue: "Example Polymer Journal",
       publicationDate: "2026-09-30",
     });

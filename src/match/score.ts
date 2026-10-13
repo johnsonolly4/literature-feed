@@ -42,6 +42,16 @@ export function termVariants(term: string): string[] {
   return [...new Set(phrases.flatMap((p) => [p, `${p}s`, `${p}es`]))];
 }
 
+/** The term written both ways (-ise/-ize, -yse/-yze), without plurals: what to put in an OpenAlex search that does not know spellings. */
+export function spellingForms(term: string): string[] {
+  let phrases = [""];
+  for (const word of term.trim().split(/\s+/).filter(Boolean)) {
+    const forms = wordSpellings(word.toLowerCase());
+    phrases = phrases.flatMap((phrase) => forms.map((f) => (phrase ? `${phrase} ${f}` : f)));
+  }
+  return [...new Set(phrases)];
+}
+
 function pad(text: string): string {
   return ` ${normaliseText(text)} `;
 }

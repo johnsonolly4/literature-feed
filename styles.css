@@ -309,6 +309,14 @@ table.literature-feed-papers td {
   border: 1px solid var(--vt-card-border, var(--background-modifier-border));
   border-radius: var(--vt-card-radius, var(--radius-m));
   background-color: var(--vt-card-bg, var(--background-secondary));
+  /* the grid makes the cards of a row equally tall; the button row sits at the bottom of each */
+  display: flex;
+  flex-direction: column;
+}
+
+.literature-feed-feedcard .literature-feed-buttons {
+  margin-top: auto;
+  padding-top: var(--size-4-2);
 }
 
 .literature-feed-feedcard.is-selected {

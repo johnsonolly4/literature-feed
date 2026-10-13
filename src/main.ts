@@ -119,7 +119,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         return graph !== null;
       },
     });
-    this.registerMarkdownCodeBlockProcessor(GRAPH_BLOCK, (source, el) => graphBlockProcessor(source, el, (g) => void this.openGraph(g)));
+    this.registerMarkdownCodeBlockProcessor(GRAPH_BLOCK, (source, el, ctx) => graphBlockProcessor(source, el, ctx, this.app, (g) => void this.openGraph(g)));
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
     registerInboxBlock(this);

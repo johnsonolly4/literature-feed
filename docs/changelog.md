@@ -1,6 +1,8 @@
 # Literature Feed: changelog
 
 ## Next version (not released)
+- Review graph in a review note: the same chips, legend and details as the tab (hold Ctrl or Cmd to zoom, so scrolling the note still works), and an Open in a tab chip. Pointing at a paper names only its ten most cited neighbours.
+- The canvas is now a reading board instead of a copy of the network: a labelled group per theme (or per group of papers that cite each other), a readable card per paper with its link, citations, what you have and the LLM's advice, colours by reading level, and one line per paper to the most cited paper in the set that it cites.
 - Review graph: chips instead of a drop-down, each explained; a **Timeline** layout with the year on the vertical axis; groups laid out on their own so small ones sit beside the main one; papers with no link hidden at first; the view fits the window; older saved graphs get the current layout when opened.
 - Review graph: the 12 most cited papers are always labelled, pointing at a paper lights its neighbours, big groups carry a name, a new colour mode by the LLM's themes, bigger papers, zoom buttons and a legend.
 - Citation gaps of one paper as its own tab: a DOI, link or OpenAlex id, an item picked from your Zotero library, or a pasted reference list; the cost is shown first (about $0.0003 for a paper, $0.001 per pasted reference without a DOI); a note records how it was made.

@@ -579,7 +579,7 @@ export class ReviewPanel {
   private renderGraphRow(): void {
     new Setting(this.out)
       .setName("Citation graph")
-      .setDesc("Opens in a tab (pan, zoom, click a paper). It is also put in the review note. The canvas is a file with a card per paper by year, and the citations between them.")
+      .setDesc("Opens in a tab (pan, zoom, click a paper). It is also put in the review note. The canvas is a reading board: a group per theme (or per group of papers that cite each other), a card per paper with its advice, and a line from each paper to the most cited one it builds on.")
       .addButton((b) => b.setButtonText("Open graph").setCta().onClick(() => void this.openGraph()))
       .addButton((b) => b.setButtonText("Save canvas").onClick(() => void this.saveCanvas()));
   }
@@ -696,7 +696,8 @@ export class ReviewPanel {
     const result = this.result;
     const net = this.network;
     if (!result || !net) return;
-    const file = buildCanvas(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, this.citationLinks());
+    const answer = this.checked && this.checked.ok ? { themes: this.checked.value.themes, priorities: this.checked.value.priorities } : null;
+    const file = buildCanvas(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, answer);
     const folder = this.host.reviewFolder();
     const path = await this.host.createReviewNote(`${folder === "" ? "" : `${folder}/`}Literature review network ${today()}.canvas`, JSON.stringify(file), false);
     new Notice(`Canvas saved: ${path}`);

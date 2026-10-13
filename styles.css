@@ -730,6 +730,11 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
   cursor: grab;
 }
 
+.literature-feed-graph.is-embedded .literature-feed-graph-svg {
+  height: 520px;
+  touch-action: pan-y pinch-zoom;
+}
+
 .literature-feed-graph-svg.is-inline {
   height: auto;
   cursor: default;
@@ -758,7 +763,7 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
 .literature-feed-node { cursor: pointer; }
 .literature-feed-node.is-top .literature-feed-nodelabel,
 .literature-feed-node.is-hovered .literature-feed-nodelabel,
-.literature-feed-node.is-neighbour .literature-feed-nodelabel { display: block; }
+.literature-feed-node.is-named .literature-feed-nodelabel { display: block; }
 .is-hovering .literature-feed-node { opacity: 0.2; }
 .is-hovering .literature-feed-node.is-hovered,
 .is-hovering .literature-feed-node.is-neighbour { opacity: 1; }

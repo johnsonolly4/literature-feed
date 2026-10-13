@@ -2,7 +2,7 @@
 // and citing papers are circles sized by citations, coloured by group, group of papers that cite each other, year or the LLM's reading
 // level; a ring means the paper is in Zotero and a dot that you have a literature note. Pan by dragging, zoom with the wheel or two
 // fingers, click a paper for its details. Colours come from CSS classes in styles.css. The layout is worked out beforehand (graph-data.ts).
-import { ItemView, type WorkspaceLeaf, type App } from "obsidian";
+import { ItemView, MarkdownRenderChild, type App, type MarkdownPostProcessorContext, type WorkspaceLeaf } from "obsidian";
 import { doiUrl } from "../inbox/write";
 import { graphBounds, parseGraphBlock, type GraphData, type GraphNode } from "./graph-data";
 import { timelineLayout } from "./timeline";
@@ -164,16 +164,19 @@ export function drawGraph(viewport: SVGGElement, graph: GraphData, o: DrawOption
     const el = els.get(n.id);
     if (!el) continue;
     const near = neighbours.get(n.id) ?? new Set<string>();
+    // A paper with many neighbours would bury the picture in labels: only the most cited of them are named.
+    const named = new Set([...near].sort((p, q) => (byId.get(q)?.citedBy ?? 0) - (byId.get(p)?.citedBy ?? 0) || p.localeCompare(q)).slice(0, 10));
     el.addEventListener("pointerenter", () => {
       viewport.classList.add("is-hovering");
       el.classList.add("is-hovered");
       for (const id of near) els.get(id)?.classList.add("is-neighbour");
+      for (const id of named) els.get(id)?.classList.add("is-named");
       for (const e of lines) if (e.from === n.id || e.to === n.id) e.el.classList.add("is-lit");
     });
     el.addEventListener("pointerleave", () => {
       viewport.classList.remove("is-hovering");
       el.classList.remove("is-hovered");
-      for (const id of near) els.get(id)?.classList.remove("is-neighbour");
+      for (const id of near) els.get(id)?.classList.remove("is-neighbour", "is-named");
       for (const e of lines) e.el.classList.remove("is-lit");
     });
   }
@@ -199,25 +202,21 @@ function drawGroupNames(viewport: SVGGElement, graph: GraphData, nodes: readonly
   }
 }
 
-/** The code block `literature-feed-graph` in a review note: the graph drawn in place, with a button for the full view. */
-export function graphBlockProcessor(source: string, el: HTMLElement, open: (graph: GraphData) => void): void {
+/**
+ * The code block `literature-feed-graph` in a review note: the same panel as the tab (chips, legend, details), drawn in the note,
+ * with a button for the full view. Scrolling over it scrolls the note; hold Ctrl (or Cmd) to zoom.
+ */
+export function graphBlockProcessor(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext, app: App, open: (graph: GraphData) => void): void {
   const graph = parseGraphBlock(source);
   if (graph === null) {
     el.createEl("p", { cls: "literature-feed-warning", text: "This graph block is not valid." });
     return;
   }
-  const box = el.createDiv({ cls: "literature-feed-graph-inline" });
-  const svg = svgEl(box, "svg", "literature-feed-graph-svg is-inline", { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" });
-  const nodes = drawGraph(svgEl(svg, "g", ""), graph, { mode: "group", showExtras: true, showUnlinked: false, filter: "", selected: null });
-  const area = graphBounds(nodes, 30);
-  if (area) {
-    svg.setAttribute("viewBox", `${area.x} ${area.y} ${area.w} ${area.h}`);
-  }
-  svg.toggleClass("show-labels", nodes.length <= 20);
-  const hidden = graph.nodes.length - nodes.length;
-  box.createDiv({ cls: "literature-feed-meta", text: `Blue: in your set. Amber: cited by several of them, not in the set. Purple: cites several of them. Bigger: cited more.${hidden > 0 ? ` ${hidden} papers with no link to another are not shown.` : ""}` });
-  const buttons = box.createDiv({ cls: "literature-feed-buttons" });
-  buttons.createEl("button", { text: "Open full graph", cls: "mod-cta" }).addEventListener("click", () => open(graph));
+  const panel = new GraphPanel(el.createDiv(), graph, { app, embedded: true, open: () => open(graph) });
+  panel.mount();
+  const child = new MarkdownRenderChild(el);
+  child.onunload = (): void => panel.dispose();
+  ctx.addChild(child);
 }
 
 /** What the view needs from the plugin. */
@@ -226,7 +225,16 @@ export interface GraphHost {
   graph: GraphData | null;
 }
 
-export class GraphView extends ItemView {
+interface PanelOptions {
+  app: App;
+  /** In a note: shorter, scrolling the page does not zoom. */
+  embedded: boolean;
+  /** Shows an "Open in a tab" chip. */
+  open?: () => void;
+}
+
+/** The graph with its chips, legend and details, in any container: the tab, or a review note. */
+export class GraphPanel {
   private mode: ColourMode = "group";
   private layout: LayoutMode = "network";
   private timeline: { graph: GraphData; guides: { y: number; label: string }[] } | null = null;
@@ -234,6 +242,7 @@ export class GraphView extends ItemView {
   private showUnlinked = false;
   private shown: GraphNode[] = [];
   private resizer: ResizeObserver | null = null;
+  private fitted = false;
   private filter = "";
   private selected: string | null = null;
   private scale = 1;
@@ -244,44 +253,21 @@ export class GraphView extends ItemView {
   private panel: HTMLElement | null = null;
   private readonly pointers = new Map<number, { x: number; y: number }>();
 
-  constructor(leaf: WorkspaceLeaf, private readonly host: GraphHost) {
-    super(leaf);
-  }
+  constructor(private readonly root: HTMLElement, private readonly graph: GraphData, private readonly opts: PanelOptions) {}
 
-  getViewType(): string {
-    return GRAPH_VIEW;
-  }
-
-  getDisplayText(): string {
-    return "Review graph";
-  }
-
-  getIcon(): string {
-    return "network";
-  }
-
-  onOpen(): Promise<void> {
-    this.render();
-    return Promise.resolve();
-  }
-
-  onClose(): Promise<void> {
+  dispose(): void {
     this.resizer?.disconnect();
     this.resizer = null;
-    return Promise.resolve();
   }
 
-  /** Draws the graph again from the plugin's current data (after a new review). */
-  render(): void {
-    const root = this.contentEl;
+  /** Draws the controls and the picture. */
+  mount(): void {
+    const root = this.root;
     root.empty();
     root.addClass("literature-feed-graph");
+    if (this.opts.embedded) root.addClass("is-embedded");
     this.resizer?.disconnect();
-    const graph = this.host.graph;
-    if (!graph) {
-      root.createEl("p", { text: "No review graph yet. Make a literature review first, then open its graph from the review window." });
-      return;
-    }
+    const graph = this.graph;
     const available: Record<ColourMode, boolean> = { group: true, cluster: true, theme: (graph.themes?.length ?? 0) > 0, year: true, level: graph.nodes.some((n) => n.level !== null) };
     if (!available[this.mode]) this.mode = "group";
     const linked = new Set(graph.edges.flatMap((e) => [e.from, e.to]));
@@ -289,7 +275,7 @@ export class GraphView extends ItemView {
     const unlinkedCount = graph.nodes.filter((n) => !linked.has(n.id)).length;
 
     const controls = root.createDiv({ cls: "literature-feed-graph-controls" });
-    controls.createDiv({ cls: "literature-feed-meta", text: "Each circle is a paper and each line a citation. Bigger circles are cited more often. Drag to move, scroll or pinch to zoom, point at a paper to light up its neighbours, click it for details." });
+    controls.createDiv({ cls: "literature-feed-meta", text: `Each circle is a paper and each line a citation. Bigger circles are cited more often. ${this.opts.embedded ? "Drag to move, hold Ctrl (or Cmd) and scroll to zoom," : "Drag to move, scroll or pinch to zoom,"} point at a paper to light up its neighbours, click it for details.` });
     this.timeline = null;
     const layoutRow = controls.createDiv({ cls: "literature-feed-chip-row" });
     layoutRow.createSpan({ cls: "literature-feed-chip-label", text: "Layout" });
@@ -361,6 +347,8 @@ export class GraphView extends ItemView {
     showRow.createEl("button", { cls: "literature-feed-chip", text: "+", attr: { title: "Zoom in" } }).addEventListener("click", () => this.zoomCentre(1.3, graph));
     showRow.createEl("button", { cls: "literature-feed-chip", text: "−", attr: { title: "Zoom out" } }).addEventListener("click", () => this.zoomCentre(1 / 1.3, graph));
     showRow.createEl("button", { cls: "literature-feed-chip", text: "Fit", attr: { title: "Fit all the papers on the screen" } }).addEventListener("click", () => this.fit());
+    const openFull = this.opts.open;
+    if (openFull) showRow.createEl("button", { cls: "literature-feed-chip", text: "Open in a tab", attr: { title: "Open this graph in its own tab, with more room" } }).addEventListener("click", () => openFull());
     controls.createDiv({ cls: "literature-feed-meta", text: "Missing and citing papers are outside your set. Papers with no link neither cite nor are cited by another paper in the set; they are hidden at first." });
 
     this.svg = svgEl(root, "svg", "literature-feed-graph-svg", { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" });
@@ -370,9 +358,15 @@ export class GraphView extends ItemView {
     refresh();
     refreshLayout();
     this.draw();
-    this.resizer = new ResizeObserver(() => this.syncViewBox());
+    this.resizer = new ResizeObserver(() => {
+      this.syncViewBox();
+      if (!this.fitted && this.svg && this.svg.clientWidth > 0) {
+        this.fitted = true;
+        this.fit();
+      }
+    });
     this.resizer.observe(this.svg);
-    window.requestAnimationFrame(() => { this.syncViewBox(); this.fit(); });
+    window.requestAnimationFrame(() => { this.syncViewBox(); if (this.svg && this.svg.clientWidth > 0) { this.fitted = true; this.fit(); } });
   }
 
   /** The graph as it is drawn: the network layout as saved, or the same papers placed on a timeline. */
@@ -395,8 +389,8 @@ export class GraphView extends ItemView {
   /** Zooms and moves so all the papers shown fill the picture. */
   private fit(): void {
     const svg = this.svg;
-    const graph = this.host.graph;
-    if (!svg || !graph) return;
+    const graph = this.graph;
+    if (!svg) return;
     const area = graphBounds(this.shown, 50);
     if (!area) return;
     const w = svg.clientWidth || graph.width;
@@ -408,9 +402,9 @@ export class GraphView extends ItemView {
   }
 
   private draw(): void {
-    const graph = this.host.graph;
+    const graph = this.graph;
     const viewport = this.viewport;
-    if (!graph || !viewport || !this.svg) return;
+    if (!viewport || !this.svg) return;
     const active = this.activeGraph(graph);
     const nodes = drawGraph(viewport, active.graph, {
       guides: active.guides,
@@ -468,6 +462,7 @@ export class GraphView extends ItemView {
     svg.addEventListener("pointerup", end);
     svg.addEventListener("pointercancel", end);
     svg.addEventListener("wheel", (e) => {
+      if (this.opts.embedded && !(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       this.zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15, graph);
       this.applyTransform();
@@ -511,6 +506,53 @@ export class GraphView extends ItemView {
     const url = doiUrl(n.doi);
     if (url) buttons.createEl("button", { text: "Open paper" }).addEventListener("click", () => window.open(url));
     if (n.zotero) buttons.createEl("button", { text: "Show in Zotero" }).addEventListener("click", () => window.open(`zotero://select/library/items/${n.zotero}`));
-    if (n.vault) buttons.createEl("button", { text: "Open note" }).addEventListener("click", () => { void this.host.app.workspace.openLinkText(n.vault as string, "", "tab"); });
+    if (n.vault) buttons.createEl("button", { text: "Open note" }).addEventListener("click", () => { void this.opts.app.workspace.openLinkText(n.vault as string, "", "tab"); });
+  }
+}
+
+/** The graph in a tab. */
+export class GraphView extends ItemView {
+  private panel: GraphPanel | null = null;
+
+  constructor(leaf: WorkspaceLeaf, private readonly host: GraphHost) {
+    super(leaf);
+  }
+
+  getViewType(): string {
+    return GRAPH_VIEW;
+  }
+
+  getDisplayText(): string {
+    return "Review graph";
+  }
+
+  getIcon(): string {
+    return "network";
+  }
+
+  onOpen(): Promise<void> {
+    this.render();
+    return Promise.resolve();
+  }
+
+  onClose(): Promise<void> {
+    this.panel?.dispose();
+    this.panel = null;
+    return Promise.resolve();
+  }
+
+  /** Draws the graph again from the plugin's current data (after a new review). */
+  render(): void {
+    this.panel?.dispose();
+    this.panel = null;
+    const root = this.contentEl;
+    root.empty();
+    const graph = this.host.graph;
+    if (!graph) {
+      root.createEl("p", { text: "No review graph yet. Make a literature review first, then open its graph from the review window." });
+      return;
+    }
+    this.panel = new GraphPanel(root, graph, { app: this.host.app, embedded: false });
+    this.panel.mount();
   }
 }

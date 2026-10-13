@@ -270,26 +270,45 @@ describe("network text, canvas and note", () => {
     expect(networkText(papers, net, { missing: [], alsoCite: [] }, label)).not.toContain("Rate the M and C works");
   });
 
-  it("builds a canvas: a card per paper by year, colours, and an edge per citation", () => {
-    const missingCiters = new Map([["W99", ["W1", "W3"]]]);
-    const citingCites = new Map([["W60", ["W1", "W2", "W3"]]]);
-    const file = buildCanvas(papers, papers.map(() => noFlags), net, rows, (id) => label(id) ?? id, { missingCiters, citingCites });
-    expect(file.nodes).toHaveLength(5);
-    expect(new Set(file.nodes.map((n) => n.id)).size).toBe(5);
-    expect(file.nodes.find((n) => n.id === "m-W99")?.color).toBe("1");
+  it("builds a reading board: a group per citing group, a card per paper, and one line per paper", () => {
+    const file = buildCanvas(papers, papers.map(() => noFlags), net, rows, (id) => label(id) ?? id);
+    const groups = file.nodes.filter((n) => n.type === "group");
+    const cards = file.nodes.filter((n) => n.type === "text");
+    expect(groups.map((g) => g.label)).toEqual(["Group 1: cited together, led by P2", "No citation to or from another paper here", "Possibly missing: cited by several of these papers", "Cite several of these papers"]);
+    expect(cards).toHaveLength(5);
+    expect(new Set(file.nodes.map((n) => n.id)).size).toBe(file.nodes.length);
+    expect(file.nodes.find((n) => n.id === "m-W99")?.color).toBe("2");
     expect(file.nodes.find((n) => n.id === "c-W60")?.color).toBe("6");
-    expect(file.nodes.find((n) => n.id === "p-W1")?.color).toBe("5");
-    const x = (id: string): number => file.nodes.find((n) => n.id === id)?.x ?? -1;
-    expect(x("m-W99")).toBe(0); // 2010 is the first year
-    expect(x("p-W1")).toBe(9 * 420);
-    expect(file.edges).toHaveLength(1 + 2 + 3);
+    expect(file.nodes.find((n) => n.id === "p-W1")?.color).toBeUndefined();
+    // every card lies inside its group
+    for (const c of cards) expect(groups.some((g) => c.x >= g.x && c.y >= g.y && c.x + c.width <= g.x + g.width && c.y + c.height <= g.y + g.height)).toBe(true);
+    // W1 cites W2 (in the set) and W99 (not): one line, W1 to W2
+    expect(file.edges).toHaveLength(1);
+    expect([file.edges[0].fromNode, file.edges[0].toNode]).toEqual(["p-W1", "p-W2"]);
     const ids = new Set(file.nodes.map((n) => n.id));
     for (const e of file.edges) {
       expect(ids.has(e.fromNode)).toBe(true);
       expect(ids.has(e.toNode)).toBe(true);
     }
     expect(JSON.parse(JSON.stringify(file))).toEqual(file);
-    expect(buildCanvas([], [], buildNetwork([]), { missing: [], alsoCite: [] }, (id) => id, { missingCiters: new Map(), citingCites: new Map() })).toEqual({ nodes: [], edges: [] });
+    expect(buildCanvas([], [], buildNetwork([]), { missing: [], alsoCite: [] }, (id) => id)).toEqual({ nodes: [], edges: [] });
+  });
+
+  it("groups the board by the LLM's themes and colours and explains each card with its advice", () => {
+    const answer = { themes: [{ name: "Methods", papers: ["P1", "P3"] }], priorities: [{ paper: "P1", level: "must" as const, reason: "The foundation of the topic." }, { paper: "M1", level: "skim" as const, reason: "Background." }] };
+    const file = buildCanvas(papers, papers.map(() => noFlags), net, rows, (id) => label(id) ?? id, answer);
+    expect(file.nodes.filter((n) => n.type === "group").map((g) => g.label)).toEqual(["Methods", "Other", "Possibly missing: cited by several of these papers", "Cite several of these papers"]);
+    const p1 = file.nodes.find((n) => n.id === "p-W1");
+    expect(p1?.color).toBe("4");
+    expect(p1?.text).toContain("**Must read.** The foundation of the topic.");
+    expect(file.nodes.find((n) => n.id === "m-W99")?.color).toBe("3");
+    expect(file.nodes.find((n) => n.id === "p-W2")?.color).toBeUndefined();
+    const groups = file.nodes.filter((n) => n.type === "group");
+    const methods = groups[0];
+    const other = groups[1];
+    expect(p1 && p1.x >= methods.x && p1.x < methods.x + methods.width).toBe(true);
+    const p2 = file.nodes.find((n) => n.id === "p-W2");
+    expect(p2 && p2.y >= other.y && p2.x >= other.x).toBe(true);
   });
 
   it("puts the network section in the note, and lets the answer's priorities name M and C works", () => {

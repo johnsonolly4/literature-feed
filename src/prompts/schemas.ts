@@ -181,6 +181,42 @@ export function checkTopicAnswer(value: unknown): Checked<Suggestion[]> {
   return out.length > 0 ? { ok: true, value: out } : { ok: false, errors };
 }
 
+/** Advice on how several searches relate: read, not applied (merging or splitting searches is done by hand). */
+export interface Advice {
+  search: string;
+  action: "keep" | "narrow" | "broaden" | "merge" | "split" | "remove";
+  /** The other search it concerns (for merge), or "". */
+  with: string;
+  advice: string;
+  reason: string;
+}
+
+export const ADVICE_ACTIONS: Advice["action"][] = ["keep", "narrow", "broaden", "merge", "split", "remove"];
+
+/** The compare answer: `{"advice": [{"search", "action", "with", "advice", "reason"}]}`. */
+export function checkCompareAnswer(value: unknown): Checked<Advice[]> {
+  if (!isRecord(value) || !Array.isArray(value.advice)) return { ok: false, errors: ['The answer must be an object with an "advice" list.'] };
+  const errors: string[] = [];
+  const out: Advice[] = [];
+  value.advice.forEach((raw, i) => {
+    const where = `Advice ${i + 1}`;
+    if (!isRecord(raw)) {
+      errors.push(`${where}: not an object.`);
+      return;
+    }
+    const action = ADVICE_ACTIONS.find((a) => a === raw.action);
+    const search = str(raw.search);
+    const text = str(raw.advice);
+    if (search === "" || action === undefined || text === "") {
+      errors.push(`${where}: needs "search", an "action" (${ADVICE_ACTIONS.join(", ")}) and "advice".`);
+      return;
+    }
+    out.push({ search, action, with: str(raw.with), advice: text, reason: str(raw.reason) });
+  });
+  if (out.length === 0 && errors.length === 0) errors.push("The list of advice is empty.");
+  return out.length > 0 ? { ok: true, value: out } : { ok: false, errors };
+}
+
 // ---- the examples the prompts print ------------------------------------------------------------------------------------
 
 export const REVIEW_EXAMPLE = {
@@ -201,6 +237,14 @@ export const TOPIC_EXAMPLE = {
     { action: "change", index: 2, query: "(\"lipoic acid\" OR \"thioctic acid\") AND (acrylate OR acrylamide)", reason: "Too broad: 60% of what it returns is dropped." },
     { action: "add", query: "(\"lipoic acid\" OR dithiolane) AND \"ring-opening\"", reason: "Covers a gap in the other topics." },
     { action: "remove", index: 4, reason: "Never returned a paper that was listed." },
+  ],
+};
+
+export const COMPARE_EXAMPLE = {
+  advice: [
+    { search: "Lipoic acid copolymers", action: "narrow", with: "", advice: "Drop the broad 'polymer' topic: Flow screening already finds its papers.", reason: "Every paper of topic 3 was also found by topic 1." },
+    { search: "Flow chemistry", action: "merge", with: "Lipoic acid copolymers", advice: "Fold this search into the other one as an extra topic.", reason: "They list 40% of the same papers and the shared ones are wanted more often." },
+    { search: "Ring-opening", action: "keep", with: "", advice: "Leave it as it is.", reason: "No overlap and a good wanted rate." },
   ],
 };
 

@@ -124,6 +124,7 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
         items: [
           { name: "Review a search", desc: "Copies a prompt for an LLM chat with a search, how it has done and what you decided before; paste the JSON answer back to accept or reject each change. The plugin sends nothing.", action: () => void this.host.openPrompt("review") },
           { name: "Tweak search terms", desc: "Copies a prompt that asks an LLM to review and tweak one search's topics.", action: () => void this.host.openPrompt("topics") },
+          { name: "Compare searches", desc: "Copies a prompt that gives an LLM all your searches and how they overlap (shared papers, papers one drops that another lists, topics that add nothing) and asks for advice, shown for you to read.", action: () => void this.host.openPrompt("compare") },
           { name: "New search from a description", desc: "Copies a prompt that asks an LLM to write a new search from your description and the example papers you attach to the chat.", action: () => void this.host.openPrompt("new") },
         ],
       },

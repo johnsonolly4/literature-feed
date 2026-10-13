@@ -3,7 +3,7 @@
 import type { FeedConfig } from "../settings/data";
 import { verdictOf, type Ledger, type ScanRecord } from "../ledger/ledger";
 import type { Decision } from "./decisions";
-import { NEW_FEED_EXAMPLE, REVIEW_EXAMPLE, TOPIC_EXAMPLE, printJson } from "./schemas";
+import { COMPARE_EXAMPLE, NEW_FEED_EXAMPLE, REVIEW_EXAMPLE, TOPIC_EXAMPLE, printJson } from "./schemas";
 
 const MEANING = [
   "How this tool ranks papers (a plain word and phrase match, no AI):",
@@ -101,6 +101,8 @@ export interface TopicPromptInput {
   stats: readonly TopicStatRow[];
   /** What the user is after, in their own words (may be empty). */
   note: string;
+  /** How the topics overlap (Markdown from the report), when there is anything to show. */
+  topicOverlap?: string;
 }
 
 export function buildTopicPrompt(input: TopicPromptInput): string {
@@ -113,9 +115,32 @@ export function buildTopicPrompt(input: TopicPromptInput): string {
     QUERY_RULES,
     "THE SEARCH\n" + describeFeed(input.feed),
     "WHAT EACH TOPIC DID (summed over the recorded scans; a paper several topics return counts under each; \"dropped\" means the group rules above removed it, so a high dropped share means the topic is too broad)\n" + stats,
+    ...(input.topicOverlap && input.topicOverlap.trim() !== "" ? ["HOW THE TOPICS OVERLAP (papers listed so far; a topic that adds nothing beyond another can be removed)\n" + input.topicOverlap.trim()] : []),
     "WHAT I AM AFTER\n" + (input.note.trim() === "" ? "(nothing added: judge from the search itself)" : input.note.trim()),
     "YOUR TASK\nReview each topic and say whether to keep it, change it, or remove it, and add topics only for angles the others miss. Prefer narrower strings for topics that return many dropped papers, and say when you have no evidence either way.",
     'ANSWER FORMAT\nOne object with a "topics" list; one entry per existing topic, plus any new ones. Each entry has an "action": "keep", "change", "add" or "remove"; "index" (the topic number) for keep, change and remove; "query" (the full new search string) for change and add; and a short "reason".\n\nExample of the whole answer:\n```json\n' + printJson(TOPIC_EXAMPLE) + "\n```\n" + ONLY_JSON,
+  ].join("\n\n");
+}
+
+// ---- compare the searches ----------------------------------------------------------------------------------------------
+
+export interface ComparePromptInput {
+  feeds: readonly FeedConfig[];
+  /** One line per search: how many papers listed and the wanted rate. */
+  summary: string;
+  /** The overlap section of the report, as Markdown. */
+  overlapMarkdown: string;
+}
+
+export function buildComparePrompt(input: ComparePromptInput): string {
+  return [
+    "You are helping me tidy a set of literature searches that each feed a weekly reading list. Look at how the searches relate: whether they list the same papers (duplication), whether one search's rules drop papers another lists (exclusion), and whether any topic adds nothing.",
+    MEANING,
+    "THE SEARCHES\n" + input.feeds.map((f) => describeFeed(f)).join("\n\n"),
+    "HOW EACH HAS DONE\n" + (input.summary.trim() === "" ? "(no numbers yet)" : input.summary.trim()),
+    "OVERLAP (papers listed since the history began; \"wanted\" = I ticked, sent or read it; \"dropped\" = removed by a search's rules)\n" + (input.overlapMarkdown.trim() === "" ? "(no overlap data yet)" : input.overlapMarkdown.trim()),
+    "YOUR TASK\nFor each search say whether to keep it, narrow it (it lists too much that is also found elsewhere or is rarely wanted), broaden it (its rules drop papers another search lists and I wanted), merge it into another, split it, or remove it. Base every piece of advice on the numbers above and cite them in the reason; say when the data is too thin to tell. I will make the changes by hand.",
+    'ANSWER FORMAT\nOne object with an "advice" list; one entry per search (more when a search needs several pieces of advice). Each entry has "search" (its name exactly as above), "action" (one of: keep, narrow, broaden, merge, split, remove), "with" (the name of the other search for a merge, otherwise ""), "advice" (what to do, in one or two sentences) and "reason" (the numbers behind it).\n\nExample of the whole answer:\n```json\n' + printJson(COMPARE_EXAMPLE) + "\n```\n" + ONLY_JSON,
   ].join("\n\n");
 }
 

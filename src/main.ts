@@ -11,6 +11,7 @@ import { PromptModal, type PromptHost, type PromptKind } from "./prompts/modals"
 import type { FixAction, SetupSnapshot } from "./setup/checks";
 import type { IntegrationInfo } from "./setup/integrate";
 import { SetupModal, type SetupHost } from "./setup/setup-modal";
+import { buildOverlap, overlapMarkdown } from "./ledger/overlap";
 import { buildReport, reportMarkdown } from "./ledger/report";
 import { ReportModal } from "./ledger/report-modal";
 import { OpenAlexClient } from "./openalex/client";
@@ -56,6 +57,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.addCommand({ id: "check-setup", name: "Check setup", callback: () => void this.openSetup() });
     this.addCommand({ id: "llm-review", name: "Review a search with an LLM", callback: () => void this.openPrompt("review") });
     this.addCommand({ id: "llm-topics", name: "Tweak search terms with an LLM", callback: () => void this.openPrompt("topics") });
+    this.addCommand({ id: "llm-compare", name: "Compare searches with an LLM", callback: () => void this.openPrompt("compare") });
     this.addCommand({ id: "llm-new-search", name: "New search from a description with an LLM", callback: () => void this.openPrompt("new") });
     this.addCommand({ id: "open-inbox", name: "Open reading inbox", callback: () => void this.openInbox() });
     this.addRibbonIcon("book-open", "Open reading inbox", () => void this.openInbox());
@@ -417,6 +419,21 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
 
   titlesFor(feedId: string): { wanted: string[]; dismissed: string[] } {
     return titlesByVerdict(this.ledger, feedId, localDay(new Date()), this.settings.dismissAfterWeeks);
+  }
+
+  topicOverlapFor(feedId: string): string {
+    const overlap = buildOverlap(this.ledger, this.settings.feeds, localDay(new Date()), this.settings.dismissAfterWeeks);
+    return overlapMarkdown({ pairs: [], topics: overlap.topics.filter((t) => t.feedId === feedId) }).join("\n");
+  }
+
+  compareContext(): { summary: string; overlapMarkdown: string } {
+    const today = localDay(new Date());
+    const report = buildReport(this.ledger, this.settings.feeds, today, this.settings.dismissAfterWeeks);
+    const summary = report.feeds.map((f) => {
+      const decided = f.totals.interested + f.totals.dismissed;
+      return `- ${f.name}: ${f.totals.listed} papers listed, ${decided} decided, ${f.rate === null ? "no wanted rate yet" : `${Math.round(f.rate * 100)}% wanted`}`;
+    }).join("\n");
+    return { summary, overlapMarkdown: overlapMarkdown(report.overlap).join("\n") };
   }
 
   topicStatsFor(feedId: string): TopicStatRow[] {

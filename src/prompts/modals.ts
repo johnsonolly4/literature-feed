@@ -3,11 +3,11 @@
 import { Modal, Notice, Setting, type App } from "obsidian";
 import { parseFeedJson, type FeedConfig, type Settings } from "../settings/data";
 import { applySuggestions, describeSuggestion } from "./apply";
-import { buildNewFeedPrompt, buildReviewPrompt, buildTopicPrompt, type TopicStatRow } from "./build";
+import { buildComparePrompt, buildNewFeedPrompt, buildReviewPrompt, buildTopicPrompt, type TopicStatRow } from "./build";
 import { decisionsForPrompt, recordDecisions, type Decision, type Decisions } from "./decisions";
-import { checkReviewAnswer, checkTopicAnswer, extractJson, type Suggestion } from "./schemas";
+import { checkCompareAnswer, checkReviewAnswer, checkTopicAnswer, extractJson, type Advice, type Suggestion } from "./schemas";
 
-export type PromptKind = "review" | "topics" | "new";
+export type PromptKind = "review" | "topics" | "new" | "compare";
 
 /** What the windows need from the plugin. */
 export interface PromptHost {
@@ -21,18 +21,24 @@ export interface PromptHost {
   /** Titles of one search's wanted and dismissed papers. */
   titlesFor(feedId: string): { wanted: string[]; dismissed: string[] };
   topicStatsFor(feedId: string): TopicStatRow[];
+  /** How one search's topics overlap, as Markdown ("" when there is nothing to show). */
+  topicOverlapFor(feedId: string): string;
+  /** For the compare prompt: a line per search and the overlap section of the report. */
+  compareContext(): { summary: string; overlapMarkdown: string };
 }
 
 const TITLES: Record<PromptKind, string> = {
   review: "Review a search with an LLM",
   topics: "Tweak search terms with an LLM",
   new: "New search from a description with an LLM",
+  compare: "Compare searches with an LLM",
 };
 
 const INTRO: Record<PromptKind, string> = {
   review: "Copies a prompt that gives an LLM this search, how it has done so far and what you decided before, and asks for changes as JSON. Nothing is sent from here: you paste the prompt into your own chat, and the answer back.",
   topics: "Copies a prompt that asks an LLM to review and tweak the search strings (topics) of one search, using what each topic returned and had dropped. Nothing is sent from here.",
   new: "Copies a prompt that asks an LLM to write a complete new search from your description. Attach your example papers (PDFs or pages) to the chat yourself: the plugin never reads them. Nothing is sent from here.",
+  compare: "Copies a prompt that gives an LLM all your searches and how they overlap (papers listed under more than one, papers one search drops that another lists, topics that add nothing) and asks for advice. The advice is shown to you to read; you make any change by hand. Nothing is sent from here.",
 };
 
 function today(): string {
@@ -61,7 +67,11 @@ export class PromptModal extends Modal {
     this.setTitle(TITLES[this.kind]);
     contentEl.createEl("p", { cls: "setting-item-description", text: INTRO[this.kind] });
 
-    if (this.kind !== "new") {
+    if (this.kind === "compare" && this.host.settings.feeds.length < 2) {
+      contentEl.createEl("p", { text: "Comparing needs at least two searches. Add or import another first." });
+      return;
+    }
+    if (this.kind !== "new" && this.kind !== "compare") {
       if (this.host.settings.feeds.length === 0) {
         contentEl.createEl("p", { text: "There is no search yet. Add or import one in the settings first." });
         return;
@@ -140,9 +150,10 @@ export class PromptModal extends Modal {
 
   private build(): string {
     if (this.kind === "new") return buildNewFeedPrompt({ description: this.description, exampleCount: this.exampleCount });
+    if (this.kind === "compare") return buildComparePrompt({ feeds: this.host.settings.feeds, ...this.host.compareContext() });
     const feed = this.feed();
     if (!feed) return "";
-    if (this.kind === "topics") return buildTopicPrompt({ feed, stats: this.host.topicStatsFor(feed.id), note: this.note });
+    if (this.kind === "topics") return buildTopicPrompt({ feed, stats: this.host.topicStatsFor(feed.id), note: this.note, topicOverlap: this.host.topicOverlapFor(feed.id) });
     const { accepted, rejected } = decisionsForPrompt(this.host.decisions, feed.id);
     return buildReviewPrompt({
       feed, reportMarkdown: this.host.reportFor(feed.id), accepted, rejected,
@@ -186,9 +197,28 @@ export class AnswerModal extends Modal {
     const json = extractJson(this.text);
     if (!json.ok) return this.problems(json.errors);
     if (this.kind === "new") return this.checkNewFeed(json.value);
+    if (this.kind === "compare") return this.showAdvice(json.value);
     const checked = this.kind === "review" ? checkReviewAnswer(json.value) : checkTopicAnswer(json.value);
     if (!checked.ok) return this.problems(checked.errors);
     this.showSuggestions(checked.value);
+  }
+
+  /** The compare answer is advice to read, not changes to apply. */
+  private showAdvice(value: unknown): void {
+    const checked = checkCompareAnswer(value);
+    if (!checked.ok) return this.problems(checked.errors);
+    this.result.empty();
+    this.result.createEl("p", { text: "Advice from the LLM. Nothing here is applied: change the searches by hand in the settings if you agree." });
+    for (const a of checked.value) {
+      const row = this.result.createDiv({ cls: "literature-feed-suggestion" });
+      row.createDiv({ cls: "literature-feed-title", text: `${a.search}: ${a.action}${a.with !== "" ? ` (with ${a.with})` : ""}` });
+      row.createDiv({ text: a.advice });
+      if (a.reason !== "") row.createDiv({ cls: "literature-feed-meta", text: a.reason });
+    }
+    const text = checked.value.map((a: Advice) => `- ${a.search}: ${a.action}${a.with !== "" ? ` (with ${a.with})` : ""}. ${a.advice}${a.reason !== "" ? ` (${a.reason})` : ""}`).join("\n");
+    new Setting(this.result).addButton((b) => b.setButtonText("Copy advice").onClick(() => {
+      navigator.clipboard.writeText(text).then(() => new Notice("Advice copied."), () => new Notice("Could not copy the advice."));
+    }));
   }
 
   private checkNewFeed(value: unknown): void {

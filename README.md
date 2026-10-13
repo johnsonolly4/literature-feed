@@ -6,7 +6,7 @@ An Obsidian plugin that finds new papers on your topics each week, lists them in
 
 ## What it does
 
-1. **Scan.** Once a week the plugin searches [OpenAlex](https://openalex.org) for each feed you define (search topics, concept groups, exclusions, start year).
+1. **Scan.** Once a week (on the scan day you choose, when Obsidian is open; see Schedule below) the plugin searches [OpenAlex](https://openalex.org) for each feed you define (search topics, concept groups, exclusions, start year).
 2. **Reading inbox.** The papers it finds go into one weekly note, a collapsible section per feed, each paper with a checkbox, ranked by tier (priority, strong, possible). The note has `kind: reading-inbox` in its properties.
 3. **Sync.** You tick the papers you want and press **Sync**. They are created in your Zotero library, in an inbox collection for the feed and (optionally) a project collection, with a `feed/<name>` tag. Only ticked papers go to Zotero.
 4. From there your usual Zotero → ZotLit → Obsidian reading workflow takes over. Making literature notes is not this plugin's job.
@@ -65,7 +65,8 @@ Open **Settings → Literature Feed**. Needs Obsidian 1.14 or later.
 
 - **Accounts:** OpenAlex API key, Zotero API key and Zotero user ID. Each key row is a picker for a secret in Obsidian's secret storage: you choose or create the secret there, and the plugin's data file keeps only its name (see Network use).
 - **Folders:** inbox folder (weekly notes) and archive folder (finished notes).
-- **Schedule:** the weekday of the weekly scan.
+- **Schedule:** the weekday of the weekly scan; **Scan on start-up when due** (on by default); **Send ticked papers to Zotero once a day** (off by default). A scan is due when none has completed since the latest scan day: when Obsidian starts (about 15 seconds after it is ready) and then hourly while it stays open, the plugin checks, and scans if it is due and at least one feed is switched on. A scan by hand counts for that week, and a scan that failed for any feed is tried again, at most once a day. Automatic scans do not open the note and say nothing when there is nothing to do; the result appears as a notice ("12 new: 3 priority, …, cost $0.01"). Automatic sync, if switched on, sends the papers you have ticked at most once a day, only with both Zotero settings filled in, and says nothing when there is nothing to send. Nothing runs while Obsidian is closed.
+- **Opening the inbox:** the command **Open reading inbox** and the book icon in the ribbon open the newest weekly note.
 - **Zotero:** two switches, "Create missing inbox collections" and "Create missing project collections" (both off by default); see Sync to Zotero.
 - **Feeds:** one row per feed with an on / off switch, edit, duplicate and export; **Add feed** and **Import feed** below. A feed has a name, a start year, a Zotero collection and an optional project (the first four fields of the editor), then search topics (one OpenAlex search per line), concept groups, drop terms and lower terms.
   - A concept group has a role. **Required:** a paper without a match is dropped. **Boost:** a match raises it to Strong. **Priority:** a match raises it to Priority. A paper counts as matching a group when any of the group's terms is in its title or abstract.
@@ -76,7 +77,7 @@ Open **Settings → Literature Feed**. Needs Obsidian 1.14 or later.
 
 ## Network use
 
-The plugin talks to two services, and nothing else. There is no telemetry, no analytics and no other server.
+The plugin talks to two services, and nothing else. There is no telemetry, no analytics and no other server. Requests to OpenAlex are made when you scan, and, unless you switch **Scan on start-up when due** off, by themselves once a week while at least one feed is switched on; requests to Zotero are made when you sync, and by themselves only if you switch on **Send ticked papers to Zotero once a day**.
 
 | Service | Host | What is sent | What it is for |
 |---|---|---|---|

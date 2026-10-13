@@ -11,6 +11,7 @@ export class Plugin extends Component {
   app = (() => {
     const secrets = new Map<string, string>();
     return {
+      workspace: { onLayoutReady: (_cb: () => void): void => { /* the schedule is not run in tests */ } },
       secretStorage: {
         getSecret: (id: string): string | null => secrets.get(id) ?? null,
         setSecret: (id: string, secret: string): void => { secrets.set(id, secret); },
@@ -22,6 +23,9 @@ export class Plugin extends Component {
   async saveData(_data: unknown): Promise<void> { /* ignored */ }
   addSettingTab(_tab: unknown): void { /* ignored */ }
   addCommand(_command: unknown): void { /* ignored */ }
+  addRibbonIcon(_icon: string, _title: string, _callback: unknown): void { /* ignored */ }
+  register(_cleanup: () => void): void { /* ignored */ }
+  registerInterval(_id: number): number { return 0; }
   registerMarkdownCodeBlockProcessor(_language: string, _handler: unknown): void { /* ignored */ }
 }
 

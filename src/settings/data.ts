@@ -45,6 +45,12 @@ export interface Settings {
   archiveFinished: boolean;
   /** An unticked paper counts as dismissed once its note's week ended this many weeks ago. 1 to 52. */
   dismissAfterWeeks: number;
+  /** Scan by itself when Obsidian starts (and hourly while it is open) once the scan day has passed since the last scan. */
+  autoScan: boolean;
+  /** Once a day, send the ticked papers to Zotero by itself. Off: only the Sync button and command do. */
+  autoSync: boolean;
+  /** Day a sync last ran with papers to send, `YYYY-MM-DD`; "" = never. */
+  lastSync: string;
 }
 
 /** One feed's part of a scan. */
@@ -84,7 +90,7 @@ export function defaultSettings(): Settings {
   return {
     openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
     lastScan: "", seen: [], lastScanResult: null, createInboxCollections: false, createProjectCollections: false,
-    literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4,
+    literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4, autoScan: true, autoSync: false, lastSync: "",
   };
 }
 
@@ -205,6 +211,9 @@ export function normaliseSettings(raw: unknown): Settings {
   out.archiveFinished = raw.archiveFinished !== false;
   const weeks = raw.dismissAfterWeeks;
   if (typeof weeks === "number" && Number.isInteger(weeks) && weeks >= 1 && weeks <= 52) out.dismissAfterWeeks = weeks;
+  out.autoScan = raw.autoScan !== false;
+  out.autoSync = raw.autoSync === true;
+  out.lastSync = typeof raw.lastSync === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastSync) ? raw.lastSync : "";
   const taken = new Set<string>();
   if (Array.isArray(raw.feeds)) {
     for (const entry of raw.feeds) {

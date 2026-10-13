@@ -49,6 +49,16 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
             desc: "The weekday of the weekly scan.",
             control: { type: "dropdown", key: "scanDay", options: Object.fromEntries(WEEKDAYS.map((day, i) => [String(i), day])) },
           },
+          {
+            name: "Scan on start-up when due",
+            desc: "When Obsidian starts (and hourly while it is open), scan once the scan day has passed since the last scan. Each scan asks OpenAlex for every switched-on feed, about $0.004 to $0.01 each. Does nothing while no feed is switched on.",
+            control: { type: "toggle", key: "autoScan" },
+          },
+          {
+            name: "Send ticked papers to Zotero once a day",
+            desc: "Sends the papers you have ticked to your Zotero library by itself, at most once a day, as the Sync button does. Off: only the Sync button and command send.",
+            control: { type: "toggle", key: "autoSync" },
+          },
         ],
       },
       {
@@ -116,6 +126,8 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       case "createProjectCollections": return s.createProjectCollections;
       case "literatureFolder": return s.literatureFolder;
       case "archiveFinished": return s.archiveFinished;
+      case "autoScan": return s.autoScan;
+      case "autoSync": return s.autoSync;
       case "dismissAfterWeeks": return s.dismissAfterWeeks;
       default: return undefined;
     }
@@ -137,6 +149,8 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       case "createProjectCollections": s.createProjectCollections = value === true; break;
       case "literatureFolder": s.literatureFolder = normaliseFolder(text === "" ? "" : normalizePath(text)); break;
       case "archiveFinished": s.archiveFinished = value === true; break;
+      case "autoScan": s.autoScan = value === true; break;
+      case "autoSync": s.autoSync = value === true; break;
       case "dismissAfterWeeks": {
         const weeks = Number(value);
         if (Number.isInteger(weeks) && weeks >= 1 && weeks <= 52) s.dismissAfterWeeks = weeks;

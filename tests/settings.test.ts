@@ -27,7 +27,7 @@ describe("normaliseSettings", () => {
   it("defaults hold no secrets, no paths and no feeds", () => {
     expect(defaultSettings()).toEqual({
       openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [], lastScan: "", seen: [], lastScanResult: null, createInboxCollections: false, createProjectCollections: false,
-      literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4,
+      literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4, autoScan: true, autoSync: false, lastSync: "",
     });
   });
 
@@ -69,6 +69,14 @@ describe("normaliseSettings", () => {
     }
     const saved = normaliseSettings({ createProjectCollections: true });
     expect(normaliseSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
+  });
+
+  it("reads the schedule settings: scan on by default, sync off by default, a bad day is ignored", () => {
+    expect(normaliseSettings({})).toMatchObject({ autoScan: true, autoSync: false, lastSync: "" });
+    expect(normaliseSettings({ autoScan: false, autoSync: true, lastSync: "2026-10-13" })).toMatchObject({ autoScan: false, autoSync: true, lastSync: "2026-10-13" });
+    for (const odd of ["no", 0, null]) expect(normaliseSettings({ autoScan: odd }).autoScan, String(odd)).toBe(true);
+    for (const odd of ["yes", 1, null]) expect(normaliseSettings({ autoSync: odd }).autoSync, String(odd)).toBe(false);
+    for (const bad of ["yesterday", "2026-10-13T10:00", 3, null]) expect(normaliseSettings({ lastSync: bad }).lastSync, String(bad)).toBe("");
   });
 
   it("reads the read-state and archive settings, with safe fallbacks", () => {

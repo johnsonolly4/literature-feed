@@ -99,6 +99,7 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 - Files: `src/main.ts`, `src/schedule.ts`.
 - Scan on start-up when the scan day has passed since the last scan; sync on start-up once a day; commands **Scan now**, **Sync ticked papers**, **Open reading inbox**; ribbon icon; a Notice with the result ("12 new, 3 priority, cost $0.01").
 - Done when: tests on the "is it due" rules; seen on Windows and Mac; phone checked (status bar not used).
+- Built 2026-10-13 (not yet seen in Obsidian): `src/schedule.ts` (due rules, tested), `checkSchedule` in `src/main.ts` (15 s after layout ready, then hourly, once a day per kind), settings **Scan on start-up when due** (on) and **Send ticked papers to Zotero once a day** (off), the command **Open reading inbox** and a ribbon icon. See `docs/decisions.md`.
 
 ### Phase 8 — Lab Kit side (in the Lab Kit repo, its own session, its own plan)
 - Files: `src/kit/setup-check.ts` (`literature-feed` as an optional plugin), `kits/planning/07 How-tos/Obsidian/Vault spec.md` (kind `reading-inbox`, the `Suggested` folder), optional guide note with `needs: "plugin:literature-feed"`.

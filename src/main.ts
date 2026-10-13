@@ -9,6 +9,7 @@ import { buildReport, reportMarkdown } from "./ledger/report";
 import { ReportModal } from "./ledger/report-modal";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
+import { scanDue, syncDue } from "./schedule";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
 import type { SettingsHost } from "./settings/feed-modal";
 import { LiteratureFeedSettingTab } from "./settings/tab";
@@ -19,11 +20,18 @@ import { zoteroRequester } from "./zotero/request";
 /** An inbox note in the archive folder; a number after the name is added when a note of that name was already there. */
 const ARCHIVED_NOTE_PATTERN = /^\d{4}-W\d{2} Reading inbox( \d+)?\.md$/;
 
+/** The first automatic check waits this long after Obsidian's layout is ready, so the vault is indexed and the start-up is not slowed. */
+const START_DELAY_MS = 15_000;
+/** While Obsidian stays open the schedule is checked this often. */
+const CHECK_EVERY_MS = 60 * 60 * 1000;
+
 export default class LiteratureFeedPlugin extends Plugin implements SettingsHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
   private syncing = false;
+  /** The day of the last automatic attempt of each kind in this session: at most one a day, so a failure is not retried hourly. */
+  private readonly autoTried = { scan: "", sync: "" };
   /** The long-term record of how each search does (`ledger.json` in the plugin folder). */
   private ledger: Ledger = emptyLedger();
   /** Open status blocks and cards; they redraw after a scan. */
@@ -36,11 +44,41 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
+    this.addCommand({ id: "open-inbox", name: "Open reading inbox", callback: () => void this.openInbox() });
+    this.addRibbonIcon("book-open", "Open reading inbox", () => void this.openInbox());
     this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
     this.addCommand({ id: "update-read-archive", name: "Update read state and archive", callback: () => void this.refreshAndReport(true) });
     this.addCommand({ id: "search-effectiveness", name: "Show search effectiveness", callback: () => void this.showEffectiveness() });
     this.addCommand({ id: "show-zotero-collections", name: "Show Zotero collections", callback: () => void this.showCollections() });
-    // The weekly schedule, the ribbon icon and the Zotero sync come in later phases (see docs/plans/literature-feed.md).
+    this.app.workspace.onLayoutReady(() => {
+      const first = window.setTimeout(() => void this.checkSchedule(), START_DELAY_MS);
+      this.register(() => window.clearTimeout(first));
+      this.registerInterval(window.setInterval(() => void this.checkSchedule(), CHECK_EVERY_MS));
+    });
+  }
+
+  /** The automatic scan (when the scan day has passed since the last one) and sync (once a day), if their settings are on. */
+  async checkSchedule(): Promise<void> {
+    const today = localDay(new Date());
+    const s = this.settings;
+    if (s.autoScan && this.autoTried.scan !== today && s.feeds.some((f) => f.enabled && f.topics.length > 0) && scanDue(s.lastScan, today, s.scanDay)) {
+      this.autoTried.scan = today;
+      await this.scanNow(true);
+    }
+    if (s.autoSync && this.autoTried.sync !== today && syncDue(s.lastSync, today)) {
+      this.autoTried.sync = today;
+      await this.syncNow(true);
+    }
+  }
+
+  /** Opens the newest weekly inbox note, or says there is none yet. */
+  async openInbox(): Promise<void> {
+    const newest = this.inboxFiles().sort((a, b) => b.name.localeCompare(a.name))[0];
+    if (!newest) {
+      new Notice("No reading inbox yet. Scan for papers first.");
+      return;
+    }
+    await this.app.workspace.getLeaf(false).openFile(newest);
   }
 
   async loadSettings(): Promise<void> {
@@ -78,16 +116,19 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.tab?.update();
   }
 
-  /** One scan of every enabled feed; writes or extends this week's inbox note and says what it found. */
-  async scanNow(): Promise<void> {
+  /**
+   * One scan of every enabled feed; writes or extends this week's inbox note and says what it found. `auto` (the schedule):
+   * does not open the note and stays silent when there is nothing to do.
+   */
+  async scanNow(auto = false): Promise<void> {
     if (this.scanning) {
-      new Notice("A scan is already running.");
+      if (!auto) new Notice("A scan is already running.");
       return;
     }
     this.scanning = true;
     try {
       if (!this.settings.feeds.some((f) => f.enabled && f.topics.length > 0)) {
-        new Notice("No feed is switched on. Turn one on in the settings first.");
+        if (!auto) new Notice("No feed is switched on. Turn one on in the settings first.");
         return;
       }
       new Notice("Scanning for new papers…");
@@ -109,18 +150,18 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       for (const redraw of this.scanListeners) redraw();
       new Notice(describeOutcome(outcome), outcome.failures.length > 0 ? 10_000 : 6_000);
       await this.refreshAndReport();
-      if (path && this.app.vault.getFileByPath(path)) await this.app.workspace.openLinkText(path, "", "tab");
+      if (!auto && path && this.app.vault.getFileByPath(path)) await this.app.workspace.openLinkText(path, "", "tab");
     } catch (e) {
-      new Notice(`The scan failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+      new Notice(`The ${auto ? "automatic " : ""}scan failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
     } finally {
       this.scanning = false;
     }
   }
 
   /** Sends every ticked paper in the inbox notes to Zotero and links the note lines to the new items. */
-  async syncNow(): Promise<void> {
+  async syncNow(auto = false): Promise<void> {
     if (this.syncing) {
-      new Notice("A sync is already running.");
+      if (!auto) new Notice("A sync is already running.");
       return;
     }
     this.syncing = true;
@@ -128,7 +169,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       const apiKey = this.getSecret("zoteroKey");
       const userId = this.settings.zoteroUserId;
       if (apiKey === "" || userId === "") {
-        new Notice("Add your Zotero API key and user ID in the settings first.");
+        if (!auto) new Notice("Add your Zotero API key and user ID in the settings first.");
         return;
       }
       await this.saveOpenInboxNotes();
@@ -143,7 +184,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       }
       const pending = findPending(notes.map((n) => ({ path: n.file.path, text: n.text })));
       if (pending.length === 0) {
-        new Notice("Nothing to sync: tick the papers you want first.");
+        if (!auto) new Notice("Nothing to sync: tick the papers you want first.");
         return;
       }
       new Notice(`Sending ${pending.length} paper${pending.length === 1 ? "" : "s"} to Zotero…`);
@@ -156,11 +197,13 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         const marks = result.synced.filter((s) => s.path === note.file.path);
         if (marks.length > 0) await this.app.vault.process(note.file, (current) => markSynced(current, marks));
       }
+      this.settings.lastSync = localDay(new Date());
+      await this.saveSettings();
       new Notice(describeSync(result), result.failed.length > 0 || result.blocked.length > 0 ? 15_000 : 8_000);
       await this.refreshAndReport();
       for (const redraw of this.scanListeners) redraw();
     } catch (e) {
-      new Notice(`The sync failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+      new Notice(`The ${auto ? "automatic " : ""}sync failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
     } finally {
       this.syncing = false;
     }
@@ -365,10 +408,14 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
 
   /** The inbox notes (by their file name) in the inbox folder, with their text. */
   private async readInboxNotes(): Promise<{ file: TFile; text: string }[]> {
+    return Promise.all(this.inboxFiles().map(async (file) => ({ file, text: await this.app.vault.read(file) })));
+  }
+
+  /** The weekly notes (by file name) in the inbox folder. */
+  private inboxFiles(): TFile[] {
     const { vault } = this.app;
     const folder = this.settings.inboxFolder === "" ? vault.getRoot() : vault.getFolderByPath(this.settings.inboxFolder);
-    const files = (folder?.children ?? []).filter((f): f is TFile => f instanceof TFile && NOTE_NAME_PATTERN.test(f.name));
-    return Promise.all(files.map(async (file) => ({ file, text: await vault.read(file) })));
+    return (folder?.children ?? []).filter((f): f is TFile => f instanceof TFile && NOTE_NAME_PATTERN.test(f.name));
   }
 
   /** Creates this week's note, or adds to it inside `vault.process`, so a tick made meanwhile is kept. Returns its path. */

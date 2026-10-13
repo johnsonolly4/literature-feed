@@ -4,20 +4,80 @@
 // fingers, click a paper for its details. Colours come from CSS classes in styles.css. The layout is worked out beforehand (graph-data.ts).
 import { ItemView, type WorkspaceLeaf, type App } from "obsidian";
 import { doiUrl } from "../inbox/write";
-import { parseGraphBlock, type GraphData, type GraphNode } from "./graph-data";
+import { graphBounds, parseGraphBlock, type GraphData, type GraphNode } from "./graph-data";
+import { timelineLayout } from "./timeline";
 
 export const GRAPH_VIEW = "literature-feed-graph";
 
 export type ColourMode = "group" | "cluster" | "theme" | "year" | "level";
 
-const MODES: Record<ColourMode, string> = { group: "In the set, missing, citing", cluster: "Papers that cite each other", theme: "Themes (from the LLM)", year: "Year", level: "Reading level" };
-const LEGEND: Record<ColourMode, string> = {
-  group: "Blue: in the set. Amber: cited by several of them but not in it. Purple: cites several of them.",
-  cluster: "One colour per group of papers that cite each other; grey: no link to another paper.",
-  theme: "One colour per theme in the LLM's answer; grey: not in a theme.",
-  year: "Light to dark: older to newer.",
-  level: "Green: must read. Blue: should read. Grey: skim. Faint: skip. Outlined: not rated.",
+/** `network`: papers that cite each other are pulled together. `timeline`: the vertical axis is the publication year. */
+export type LayoutMode = "network" | "timeline";
+
+const LAYOUT_INFO: Record<LayoutMode, { label: string; hint: string; text: string }> = {
+  network: {
+    label: "Network",
+    hint: "Papers that cite each other sit together",
+    text: "Papers that cite each other are pulled together, so the busy middle is the heart of the topic and loose papers drift to the edge.",
+  },
+  timeline: {
+    label: "Timeline",
+    hint: "Vertical axis: publication year",
+    text: "The vertical axis is the publication year, oldest at the top. A line runs from a paper down to the older ones it cites, so heavily cited foundations sit near the top with the papers that built on them below. Sideways, linked papers stay close.",
+  },
 };
+
+interface ModeInfo {
+  label: string;
+  /** The tooltip. */
+  hint: string;
+  /** What the colours mean, shown under the chips. */
+  text: string;
+  /** Why the chip is not available yet. */
+  needs: string;
+}
+
+const MODE_INFO: Record<ColourMode, ModeInfo> = {
+  group: {
+    label: "Kind",
+    hint: "Where each paper comes from",
+    text: "Blue papers are in your review. Amber papers are cited by several of them but are not in your set: papers you may have missed. Purple papers cite several of yours: newer follow-ups and reviews.",
+    needs: "",
+  },
+  cluster: {
+    label: "Groups",
+    hint: "Papers that cite each other",
+    text: "Papers joined by citations form a group. Each group has its own colour and a name tag (its most cited paper). Papers in one group usually deal with the same thing, so these are your sub-topics. Grey papers have no citation to or from another paper here.",
+    needs: "",
+  },
+  theme: {
+    label: "Themes",
+    hint: "The LLM's themes",
+    text: "Colours follow the themes the LLM gave in its answer. A theme is a topic it grouped papers under, such as a method or an application. Grey papers are in no theme.",
+    needs: "Themes come from the LLM's answer. Paste the answer in the review tab and press Check answer, then open the graph again.",
+  },
+  level: {
+    label: "Reading level",
+    hint: "The LLM's reading advice",
+    text: "Colours follow the LLM's reading advice: green must read, blue should read, grey skim, faint skip. An outline means the LLM did not rate the paper.",
+    needs: "Reading levels come from the LLM's answer. Paste the answer in the review tab and press Check answer, then open the graph again.",
+  },
+  year: {
+    label: "Year",
+    hint: "Older to newer",
+    text: "Darker is newer. Old, heavily cited papers near the middle are the foundations of the topic; recent ones are usually at the edge.",
+    needs: "",
+  },
+};
+
+/** The swatches under the chips: a class (see styles.css) and what it means. */
+function legendItems(mode: ColourMode, graph: GraphData): { cls: string; label: string }[] {
+  if (mode === "group") return [{ cls: "sw-kind-set", label: "In your set" }, { cls: "sw-kind-missing", label: "Missing: cited by several of your set" }, { cls: "sw-kind-citing", label: "Cites several of your set" }];
+  if (mode === "cluster") return [{ cls: "sw-0", label: "One colour per group (named on the picture)" }, { cls: "sw-none", label: "No link to another paper" }];
+  if (mode === "theme") return [...(graph.themes ?? []).slice(0, 8).map((name, i) => ({ cls: `sw-${i}`, label: name })), { cls: "sw-none", label: "No theme" }];
+  if (mode === "level") return [{ cls: "sw-lvl-must", label: "Must read" }, { cls: "sw-lvl-should", label: "Should read" }, { cls: "sw-lvl-skim", label: "Skim" }, { cls: "sw-lvl-skip", label: "Skip" }, { cls: "sw-lvl-none", label: "Not rated" }];
+  return [{ cls: "sw-y0", label: "Older" }, { cls: "sw-y2", label: "" }, { cls: "sw-y4", label: "" }, { cls: "sw-y5", label: "Newer" }];
+}
 
 /**
  * An SVG element with a class. The class is set as an attribute afterwards: the `cls` option of `createSvg` does not take several
@@ -41,17 +101,30 @@ interface DrawnLine {
 export interface DrawOptions {
   mode: ColourMode;
   showExtras: boolean;
+  /** False hides the papers that no other paper cites or is cited by (default: shown). */
+  showUnlinked?: boolean;
   filter: string;
   selected: string | null;
   onSelect?: (n: GraphNode) => void;
+  /** Horizontal guide lines with a label (the years of a timeline). */
+  guides?: { y: number; label: string }[];
 }
 
 /** Draws the edges and papers into `viewport` (emptied first) and returns the papers drawn. Shared by the tab and the note's block. */
 export function drawGraph(viewport: SVGGElement, graph: GraphData, o: DrawOptions): GraphNode[] {
   viewport.empty();
   viewport.removeAttribute("class");
-  const nodes = graph.nodes.filter((n) => o.showExtras || n.kind === "set");
+  const linked = new Set(graph.edges.flatMap((e) => [e.from, e.to]));
+  const nodes = graph.nodes.filter((n) => (o.showExtras || n.kind === "set") && (o.showUnlinked !== false || linked.has(n.id)));
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  if (o.guides && o.guides.length > 0 && nodes.length > 0) {
+    const left = Math.min(...nodes.map((n) => n.x)) - 40;
+    const right = Math.max(...nodes.map((n) => n.x)) + 40;
+    for (const gd of o.guides) {
+      svgEl(viewport, "line", "literature-feed-guide", { x1: String(left), y1: String(gd.y), x2: String(right), y2: String(gd.y) });
+      svgEl(viewport, "text", "literature-feed-guidelabel", { x: String(left), y: String(gd.y - 5) }).textContent = gd.label;
+    }
+  }
   const edges = svgEl(viewport, "g", "");
   const lines: DrawnLine[] = [];
   for (const e of graph.edges) {
@@ -135,9 +208,14 @@ export function graphBlockProcessor(source: string, el: HTMLElement, open: (grap
   }
   const box = el.createDiv({ cls: "literature-feed-graph-inline" });
   const svg = svgEl(box, "svg", "literature-feed-graph-svg is-inline", { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" });
-  const nodes = drawGraph(svgEl(svg, "g", ""), graph, { mode: "group", showExtras: true, filter: "", selected: null });
+  const nodes = drawGraph(svgEl(svg, "g", ""), graph, { mode: "group", showExtras: true, showUnlinked: false, filter: "", selected: null });
+  const area = graphBounds(nodes, 30);
+  if (area) {
+    svg.setAttribute("viewBox", `${area.x} ${area.y} ${area.w} ${area.h}`);
+  }
   svg.toggleClass("show-labels", nodes.length <= 20);
-  box.createDiv({ cls: "literature-feed-meta", text: LEGEND.group });
+  const hidden = graph.nodes.length - nodes.length;
+  box.createDiv({ cls: "literature-feed-meta", text: `Blue: in your set. Amber: cited by several of them, not in the set. Purple: cites several of them. Bigger: cited more.${hidden > 0 ? ` ${hidden} papers with no link to another are not shown.` : ""}` });
   const buttons = box.createDiv({ cls: "literature-feed-buttons" });
   buttons.createEl("button", { text: "Open full graph", cls: "mod-cta" }).addEventListener("click", () => open(graph));
 }
@@ -150,7 +228,12 @@ export interface GraphHost {
 
 export class GraphView extends ItemView {
   private mode: ColourMode = "group";
+  private layout: LayoutMode = "network";
+  private timeline: { graph: GraphData; guides: { y: number; label: string }[] } | null = null;
   private showExtras = true;
+  private showUnlinked = false;
+  private shown: GraphNode[] = [];
+  private resizer: ResizeObserver | null = null;
   private filter = "";
   private selected: string | null = null;
   private scale = 1;
@@ -182,64 +265,159 @@ export class GraphView extends ItemView {
     return Promise.resolve();
   }
 
+  onClose(): Promise<void> {
+    this.resizer?.disconnect();
+    this.resizer = null;
+    return Promise.resolve();
+  }
+
   /** Draws the graph again from the plugin's current data (after a new review). */
   render(): void {
     const root = this.contentEl;
     root.empty();
     root.addClass("literature-feed-graph");
+    this.resizer?.disconnect();
     const graph = this.host.graph;
     if (!graph) {
       root.createEl("p", { text: "No review graph yet. Make a literature review first, then open its graph from the review window." });
       return;
     }
-    const bar = root.createDiv({ cls: "literature-feed-graph-bar" });
-    const colour = bar.createEl("select");
-    for (const [k, label] of Object.entries(MODES)) {
-      if (k === "theme" && !(graph.themes && graph.themes.length > 0)) continue;
-      colour.createEl("option", { value: k, text: label });
-    }
-    if (this.mode === "theme" && !(graph.themes && graph.themes.length > 0)) this.mode = "group";
-    colour.value = this.mode;
-    const legend = root.createDiv({ cls: "literature-feed-meta" });
-    const drawLegend = (): void => {
-      legend.empty();
-      if (this.mode === "theme" && graph.themes) {
-        graph.themes.slice(0, 8).forEach((name, i) => {
-          const item = legend.createSpan({ cls: "literature-feed-legend-item" });
-          item.createSpan({ cls: `literature-feed-swatch sw-${i}` });
-          item.appendText(` ${name}`);
-        });
-      } else {
-        legend.appendText(LEGEND[this.mode]);
-      }
-      legend.createDiv({ text: "Size: citations. Ring: in Zotero. Dot: you have a literature note. Point at a paper to light its neighbours." });
+    const available: Record<ColourMode, boolean> = { group: true, cluster: true, theme: (graph.themes?.length ?? 0) > 0, year: true, level: graph.nodes.some((n) => n.level !== null) };
+    if (!available[this.mode]) this.mode = "group";
+    const linked = new Set(graph.edges.flatMap((e) => [e.from, e.to]));
+    const extraCount = graph.nodes.filter((n) => n.kind !== "set").length;
+    const unlinkedCount = graph.nodes.filter((n) => !linked.has(n.id)).length;
+
+    const controls = root.createDiv({ cls: "literature-feed-graph-controls" });
+    controls.createDiv({ cls: "literature-feed-meta", text: "Each circle is a paper and each line a citation. Bigger circles are cited more often. Drag to move, scroll or pinch to zoom, point at a paper to light up its neighbours, click it for details." });
+    this.timeline = null;
+    const layoutRow = controls.createDiv({ cls: "literature-feed-chip-row" });
+    layoutRow.createSpan({ cls: "literature-feed-chip-label", text: "Layout" });
+    const layoutExplain = controls.createDiv({ cls: "literature-feed-explain" });
+    const layoutChips = new Map<LayoutMode, HTMLElement>();
+    const refreshLayout = (): void => {
+      for (const [m, el] of layoutChips) el.toggleClass("is-active", m === this.layout);
+      layoutExplain.setText(LAYOUT_INFO[this.layout].text);
     };
-    drawLegend();
-    colour.addEventListener("change", () => { this.mode = colour.value as ColourMode; drawLegend(); this.draw(); });
-    const extras = bar.createEl("label");
-    const box = extras.createEl("input", { type: "checkbox" });
-    box.checked = this.showExtras;
-    extras.appendText(" Missing and citing papers");
-    box.addEventListener("change", () => { this.showExtras = box.checked; this.draw(); });
-    const search = bar.createEl("input", { type: "text", placeholder: "Filter by title" });
+    for (const m of Object.keys(LAYOUT_INFO) as LayoutMode[]) {
+      const chip = layoutRow.createEl("button", { cls: "literature-feed-chip", text: LAYOUT_INFO[m].label, attr: { title: LAYOUT_INFO[m].hint } });
+      chip.addEventListener("click", () => {
+        this.layout = m;
+        refreshLayout();
+        this.draw();
+        this.fit();
+      });
+      layoutChips.set(m, chip);
+    }
+    const colourRow = controls.createDiv({ cls: "literature-feed-chip-row" });
+    colourRow.createSpan({ cls: "literature-feed-chip-label", text: "Colour by" });
+    const explain = controls.createDiv({ cls: "literature-feed-explain" });
+    const legend = controls.createDiv({ cls: "literature-feed-legend" });
+    const chips = new Map<ColourMode, HTMLElement>();
+    const refresh = (): void => {
+      for (const [m, el] of chips) el.toggleClass("is-active", m === this.mode);
+      explain.setText(MODE_INFO[this.mode].text);
+      legend.empty();
+      for (const item of legendItems(this.mode, graph)) {
+        const li = legend.createSpan({ cls: "literature-feed-legend-item" });
+        li.createSpan({ cls: `literature-feed-swatch ${item.cls}` });
+        if (item.label !== "") li.appendText(item.label);
+      }
+    };
+    for (const m of Object.keys(MODE_INFO) as ColourMode[]) {
+      const chip = colourRow.createEl("button", { cls: "literature-feed-chip", text: MODE_INFO[m].label, attr: { title: MODE_INFO[m].hint } });
+      if (!available[m]) chip.addClass("is-disabled");
+      chip.addEventListener("click", () => {
+        if (!available[m]) {
+          explain.setText(MODE_INFO[m].needs);
+          return;
+        }
+        this.mode = m;
+        refresh();
+        this.draw();
+      });
+      chips.set(m, chip);
+    }
+
+    const showRow = controls.createDiv({ cls: "literature-feed-chip-row" });
+    showRow.createSpan({ cls: "literature-feed-chip-label", text: "Show" });
+    const toggle = (label: string, count: number, hint: string, get: () => boolean, set: (v: boolean) => void): void => {
+      const chip = showRow.createEl("button", { cls: "literature-feed-chip", text: `${label} (${count})`, attr: { title: hint } });
+      chip.toggleClass("is-active", get() && count > 0);
+      if (count === 0) chip.addClass("is-disabled");
+      chip.addEventListener("click", () => {
+        if (count === 0) return;
+        set(!get());
+        chip.toggleClass("is-active", get());
+        this.draw();
+        this.fit();
+      });
+    };
+    toggle("Missing and citing papers", extraCount, "Papers outside your set: cited by several of yours (missing) or citing several of yours. They appear after Find missing papers in the review tab.", () => this.showExtras, (v) => { this.showExtras = v; });
+    toggle("Papers with no link", unlinkedCount, "Papers in your set that no other paper in the set cites or is cited by. Hidden at first so the connected core is easier to read.", () => this.showUnlinked, (v) => { this.showUnlinked = v; });
+    const search = showRow.createEl("input", { type: "text", placeholder: "Filter by title" });
     search.value = this.filter;
     search.addEventListener("input", () => { this.filter = search.value.trim().toLowerCase(); this.draw(); });
-    bar.createEl("button", { text: "+" }).addEventListener("click", () => this.zoomCentre(1.3, graph));
-    bar.createEl("button", { text: "−" }).addEventListener("click", () => this.zoomCentre(1 / 1.3, graph));
-    bar.createEl("button", { text: "Fit" }).addEventListener("click", () => { this.scale = 1; this.tx = 0; this.ty = 0; this.applyTransform(); });
+    showRow.createEl("button", { cls: "literature-feed-chip", text: "+", attr: { title: "Zoom in" } }).addEventListener("click", () => this.zoomCentre(1.3, graph));
+    showRow.createEl("button", { cls: "literature-feed-chip", text: "−", attr: { title: "Zoom out" } }).addEventListener("click", () => this.zoomCentre(1 / 1.3, graph));
+    showRow.createEl("button", { cls: "literature-feed-chip", text: "Fit", attr: { title: "Fit all the papers on the screen" } }).addEventListener("click", () => this.fit());
+    controls.createDiv({ cls: "literature-feed-meta", text: "Missing and citing papers are outside your set. Papers with no link neither cite nor are cited by another paper in the set; they are hidden at first." });
 
     this.svg = svgEl(root, "svg", "literature-feed-graph-svg", { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" });
     this.viewport = svgEl(this.svg, "g", "");
     this.panel = root.createDiv({ cls: "literature-feed-graph-panel" });
     this.bindPointers(this.svg, graph);
+    refresh();
+    refreshLayout();
     this.draw();
+    this.resizer = new ResizeObserver(() => this.syncViewBox());
+    this.resizer.observe(this.svg);
+    window.requestAnimationFrame(() => { this.syncViewBox(); this.fit(); });
+  }
+
+  /** The graph as it is drawn: the network layout as saved, or the same papers placed on a timeline. */
+  private activeGraph(graph: GraphData): { graph: GraphData; guides?: { y: number; label: string }[] } {
+    if (this.layout !== "timeline") return { graph };
+    if (!this.timeline) {
+      const t = timelineLayout(graph.nodes.map((n) => ({ id: n.id, year: n.year })), graph.edges, { width: graph.width, height: graph.height });
+      this.timeline = { graph: { ...graph, nodes: graph.nodes.map((n) => ({ ...n, x: t.at.get(n.id)?.x ?? n.x, y: t.at.get(n.id)?.y ?? n.y })) }, guides: t.guides };
+    }
+    return this.timeline;
+  }
+
+  /** The picture's coordinates are screen pixels, so zooming and fitting work in the shape of the window. */
+  private syncViewBox(): void {
+    const svg = this.svg;
+    if (!svg || svg.clientWidth === 0 || svg.clientHeight === 0) return;
+    svg.setAttribute("viewBox", `0 0 ${svg.clientWidth} ${svg.clientHeight}`);
+  }
+
+  /** Zooms and moves so all the papers shown fill the picture. */
+  private fit(): void {
+    const svg = this.svg;
+    const graph = this.host.graph;
+    if (!svg || !graph) return;
+    const area = graphBounds(this.shown, 50);
+    if (!area) return;
+    const w = svg.clientWidth || graph.width;
+    const h = svg.clientHeight || graph.height;
+    this.scale = Math.min(2.5, Math.max(0.3, Math.min(w / area.w, h / area.h)));
+    this.tx = w / 2 - (area.x + area.w / 2) * this.scale;
+    this.ty = h / 2 - (area.y + area.h / 2) * this.scale;
+    this.applyTransform();
   }
 
   private draw(): void {
     const graph = this.host.graph;
     const viewport = this.viewport;
     if (!graph || !viewport || !this.svg) return;
-    const nodes = drawGraph(viewport, graph, { mode: this.mode, showExtras: this.showExtras, filter: this.filter, selected: this.selected, onSelect: (n) => { this.selected = n.id; this.draw(); this.showPanel(n); } });
+    const active = this.activeGraph(graph);
+    const nodes = drawGraph(viewport, active.graph, {
+      guides: active.guides,
+      mode: this.mode, showExtras: this.showExtras, showUnlinked: this.showUnlinked, filter: this.filter, selected: this.selected,
+      onSelect: (n) => { this.selected = n.id; this.draw(); this.showPanel(n); },
+    });
+    this.shown = nodes;
     const byId = new Map(nodes.map((n) => [n.id, n]));
     this.svg.toggleClass("show-labels", nodes.length <= 30);
     this.applyTransform();
@@ -253,10 +431,13 @@ export class GraphView extends ItemView {
     this.svg?.toggleClass("is-zoomed", this.scale >= 1.6);
   }
 
-  /** How many graph units one screen pixel is. */
+  /** How many picture units one screen pixel is (1 once the view box follows the window). */
   private unit(graph: GraphData): number {
     const rect = this.svg?.getBoundingClientRect();
-    return rect && rect.width > 0 && rect.height > 0 ? Math.max(graph.width / rect.width, graph.height / rect.height) : 1;
+    const box = this.svg?.viewBox.baseVal;
+    const w = box && box.width > 0 ? box.width : graph.width;
+    const h = box && box.height > 0 ? box.height : graph.height;
+    return rect && rect.width > 0 && rect.height > 0 ? Math.max(w / rect.width, h / rect.height) : 1;
   }
 
   private bindPointers(svg: SVGSVGElement, graph: GraphData): void {

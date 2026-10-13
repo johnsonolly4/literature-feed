@@ -115,23 +115,49 @@ export function forceLayout(nodes: readonly LayoutNode[], edges: readonly Layout
   const core = ids.map((_, i) => i).filter((i) => linked.has(i));
   const loose = ids.map((_, i) => i).filter((i) => !linked.has(i));
 
-  if (core.length === 0 || loose.length === 0) {
-    // Everything is linked, or nothing is: one simulation over the whole box.
+  if (core.length === 0) {
+    // Nothing is linked: one simulation over the whole box (the papers push each other apart).
     const { x, y } = simulate(n, links, width, height, iterations);
     for (let i = 0; i < n; i++) out.set(ids[i], { x: round1(x[i]), y: round1(y[i]) });
     return out;
   }
 
-  // Unlinked papers in a grid along the bottom, the rest above it.
+  // Unlinked papers in a grid along the bottom (if there are any), the rest above it.
   const margin = Math.min(width, height) * 0.05;
   const perRow = Math.max(1, Math.floor((width - 2 * margin) / GRID_STEP) + 1);
   const rows = Math.ceil(loose.length / perRow);
-  const strip = rows * GRID_STEP + margin;
-  const top = Math.max(height - strip, height * 0.4);
+  const strip = loose.length === 0 ? 0 : rows * GRID_STEP + margin;
+  const top = loose.length === 0 ? height : Math.max(height - strip, height * 0.4);
   const at = new Map(core.map((id, c) => [id, c]));
   const coreLinks = links.map(([a, b]): [number, number] => [at.get(a) as number, at.get(b) as number]);
-  const { x, y } = simulate(core.length, coreLinks, width, top, iterations);
-  core.forEach((id, c) => out.set(ids[id], { x: round1(x[c]), y: round1(y[c]) }));
+
+  // Each group of papers that cite each other is laid out on its own: the biggest in the main area, the small ones in boxes beside it,
+  // so a few separate pairs do not spread over the whole picture.
+  const groups = componentsOf(core.length, coreLinks).sort((p, q) => q.length - p.length || p[0] - q[0]);
+  const place = (members: number[], w: number, h: number, ox: number, oy: number): void => {
+    const local = new Map(members.map((m, k) => [m, k]));
+    const sub = coreLinks.filter(([a, b]) => local.has(a) && local.has(b)).map(([a, b]): [number, number] => [local.get(a) as number, local.get(b) as number]);
+    const { x, y } = simulate(members.length, sub, w, h, iterations);
+    members.forEach((m, k) => out.set(ids[core[m]], { x: round1(ox + x[k]), y: round1(oy + y[k]) }));
+  };
+  const [main, ...rest] = groups;
+  const mainWidth = rest.length === 0 ? width : width * 0.68;
+  place(main, mainWidth, top, 0, 0);
+  let colX = mainWidth + 20;
+  let colY = 0;
+  let colWidth = 0;
+  for (const members of rest) {
+    const side = Math.min(260, Math.max(90, Math.sqrt(members.length) * 85 + 50));
+    if (colY + side > top && colY > 0) {
+      colX += colWidth + 20;
+      colY = 0;
+      colWidth = 0;
+    }
+    place(members, side, side, colX, colY);
+    colY += side + 16;
+    colWidth = Math.max(colWidth, side);
+  }
+
   const first = Math.min(perRow, loose.length);
   const left = (width - (first - 1) * GRID_STEP) / 2;
   loose.forEach((id, i) => {
@@ -140,4 +166,27 @@ export function forceLayout(nodes: readonly LayoutNode[], edges: readonly Layout
     out.set(ids[id], { x: round1(left + col * GRID_STEP), y: round1(top + margin + r * GRID_STEP) });
   });
   return out;
+}
+
+/** The connected groups of `count` nodes joined by `links`: lists of node numbers, each in ascending order. */
+function componentsOf(count: number, links: readonly [number, number][]): number[][] {
+  const parent = Array.from({ length: count }, (_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+  for (const [a, b] of links) {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+  }
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < count; i++) {
+    const r = find(i);
+    groups.set(r, [...(groups.get(r) ?? []), i]);
+  }
+  return [...groups.values()];
 }

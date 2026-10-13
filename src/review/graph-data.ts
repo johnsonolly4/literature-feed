@@ -112,6 +112,15 @@ export function normaliseGraph(raw: unknown): GraphData | null {
     const x = e as { from?: unknown; to?: unknown };
     return typeof x.from === "string" && typeof x.to === "string" && ids.has(x.from) && ids.has(x.to);
   });
+  // The layout is worked out again, so a graph saved with an older layout (or in an older note) gets the current one.
+  const at = forceLayout(nodes, edges, { width: r.width, height: r.height });
+  for (const n of nodes) {
+    const p = at.get(n.id);
+    if (p) {
+      n.x = p.x;
+      n.y = p.y;
+    }
+  }
   const themes = Array.isArray((r as { themes?: unknown }).themes) ? ((r as { themes: unknown[] }).themes.filter((t): t is string => typeof t === "string")) : [];
   return nodes.length === 0 ? null : { ...(themes.length > 0 ? { themes } : {}), nodes, edges, width: r.width, height: r.height };
 }
@@ -138,4 +147,14 @@ export function parseGraphBlock(source: string): GraphData | null {
 export function graphFromNote(text: string): GraphData | null {
   const m = new RegExp("```" + GRAPH_BLOCK + "\\s*\\r?\\n([\\s\\S]*?)\\r?\\n```").exec(text);
   return m ? parseGraphBlock(m[1]) : null;
+}
+
+/** The box around some papers, with room for their circles and labels; null when there are none. */
+export function graphBounds(nodes: readonly { x: number; y: number }[], pad = 40): { x: number; y: number; w: number; h: number } | null {
+  if (nodes.length === 0) return null;
+  const xs = nodes.map((n) => n.x);
+  const ys = nodes.map((n) => n.y);
+  const x = Math.min(...xs) - pad;
+  const y = Math.min(...ys) - pad;
+  return { x, y, w: Math.max(Math.max(...xs) + pad - x, 1), h: Math.max(Math.max(...ys) + pad - y, 1) };
 }

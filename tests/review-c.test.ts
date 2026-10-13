@@ -1,7 +1,7 @@
 // Phase C of the literature review: the force-directed layout and the graph data the view draws. The view itself is checked by hand.
 import { describe, expect, it } from "vitest";
 import type { ReviewPaper } from "../src/review/collect";
-import { GRAPH_HEIGHT, GRAPH_WIDTH, buildGraphData, graphBlock, graphFromNote, normaliseGraph, parseGraphBlock } from "../src/review/graph-data";
+import { GRAPH_HEIGHT, GRAPH_WIDTH, buildGraphData, graphBlock, graphBounds, graphFromNote, normaliseGraph, parseGraphBlock } from "../src/review/graph-data";
 import { forceLayout } from "../src/review/layout";
 import { buildNetwork } from "../src/review/network";
 import { buildExtraRows, networkMarkdown } from "../src/review/network-text";
@@ -123,14 +123,13 @@ describe("the graph in a review note", () => {
   const noFlag = { zotero: null, vault: null, listedBefore: [] as string[] };
   const g = buildGraphData(papers, papers.map(() => noFlag), net, { missing: [], alsoCite: [] }, (id) => `P${id.slice(1)}`, { missingCiters: new Map(), citingCites: new Map() });
 
-  it("writes the graph as a code block and reads it back (positions rounded)", () => {
+  it("writes the graph as a code block and reads it back (positions are worked out again on reading)", () => {
     const block = graphBlock(g);
     expect(block[0]).toBe("```literature-feed-graph");
     expect(block[2]).toBe("```");
     const back = parseGraphBlock(block[1]);
     expect(back?.nodes.map((n) => n.id)).toEqual(g.nodes.map((n) => n.id));
     expect(back?.edges).toEqual(g.edges);
-    for (const n of back?.nodes ?? []) expect(Number.isInteger(n.x)).toBe(true);
     expect(parseGraphBlock("not json")).toBeNull();
     expect(parseGraphBlock("{}")).toBeNull();
   });
@@ -197,5 +196,26 @@ describe("themes in the graph", () => {
   it("puts a paper outside every theme at -1", () => {
     const g = buildGraphData(papers, papers.map(() => noFlag), net, { missing: [], alsoCite: [] }, label, links, new Map(), [{ name: "Only", papers: ["P1"] }]);
     expect(g.nodes.map((n) => n.theme)).toEqual([0, -1, -1]);
+  });
+});
+
+describe("reading a graph lays it out again; bounds", () => {
+  it("replaces the positions of an older save with the current layout", () => {
+    const stale = {
+      width: 1000, height: 700,
+      nodes: [1, 2, 3].map((i) => ({ id: `W${i}`, label: `P${i}`, title: `t${i}`, year: 2020, citedBy: i, kind: "set", cluster: -1, yearBucket: 0, zotero: null, vault: null, doi: null, level: null, x: 1, y: 1 })),
+      edges: [{ from: "W1", to: "W2" }],
+    };
+    const g = normaliseGraph(stale);
+    expect(g).not.toBeNull();
+    const at = forceLayout(g?.nodes ?? [], g?.edges ?? [], BOX);
+    for (const n of g?.nodes ?? []) expect({ x: n.x, y: n.y }).toEqual(at.get(n.id));
+    expect(new Set((g?.nodes ?? []).map((n) => `${n.x},${n.y}`)).size).toBe(3);
+  });
+
+  it("gives the box around some points with room around them", () => {
+    expect(graphBounds([])).toBeNull();
+    expect(graphBounds([{ x: 100, y: 50 }, { x: 300, y: 250 }], 10)).toEqual({ x: 90, y: 40, w: 220, h: 220 });
+    expect(graphBounds([{ x: 5, y: 5 }], 0)).toEqual({ x: 5, y: 5, w: 1, h: 1 });
   });
 });

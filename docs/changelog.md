@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## Next version (not released)
+- Review graph: chips instead of a drop-down, each explained; a **Timeline** layout with the year on the vertical axis; groups laid out on their own so small ones sit beside the main one; papers with no link hidden at first; the view fits the window; older saved graphs get the current layout when opened.
 - Review graph: the 12 most cited papers are always labelled, pointing at a paper lights its neighbours, big groups carry a name, a new colour mode by the LLM's themes, bigger papers, zoom buttons and a legend.
 - Citation gaps of one paper as its own tab: a DOI, link or OpenAlex id, an item picked from your Zotero library, or a pasted reference list; the cost is shown first (about $0.0003 for a paper, $0.001 per pasted reference without a DOI); a note records how it was made.
 - Literature review graph: papers are drawn again (they were missing from the graph tab, so its controls did nothing), and papers with no link to another sit in a row along the bottom instead of against the walls.

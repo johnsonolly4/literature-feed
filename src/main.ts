@@ -4,7 +4,14 @@ import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./
 import { describeSync, findPending, runSync } from "./inbox/sync";
 import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, type LiteratureNote, type RefreshReport } from "./inbox/state";
 import { NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setDismissed, setTick, tidySynced, type DismissReason, type ParsedPaper } from "./inbox/write";
-import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordScan, updateFromNotes, type Ledger } from "./ledger/ledger";
+import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordDropped, recordScan, updateFromNotes, type Ledger } from "./ledger/ledger";
+import { topicStatRows, titlesByVerdict, type TopicStatRow } from "./prompts/build";
+import { emptyDecisions, normaliseDecisions, type Decisions } from "./prompts/decisions";
+import { PromptModal, type PromptHost, type PromptKind } from "./prompts/modals";
+import type { FixAction, SetupSnapshot } from "./setup/checks";
+import type { IntegrationInfo } from "./setup/integrate";
+import { SetupModal, type SetupHost } from "./setup/setup-modal";
+import { buildOverlap, overlapMarkdown } from "./ledger/overlap";
 import { buildReport, reportMarkdown } from "./ledger/report";
 import { ReportModal } from "./ledger/report-modal";
 import { OpenAlexClient } from "./openalex/client";
@@ -25,7 +32,7 @@ const START_DELAY_MS = 15_000;
 /** While Obsidian stays open the schedule is checked this often. */
 const CHECK_EVERY_MS = 60 * 60 * 1000;
 
-export default class LiteratureFeedPlugin extends Plugin implements SettingsHost {
+export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
@@ -34,18 +41,28 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   private readonly autoTried = { scan: "", sync: "" };
   /** The long-term record of how each search does (`ledger.json` in the plugin folder). */
   private ledger: Ledger = emptyLedger();
+  /** Earlier LLM suggestions and what the user decided (`decisions.json` in the plugin folder). */
+  decisions: Decisions = emptyDecisions();
   /** Open status blocks and cards; they redraw after a scan. */
   readonly scanListeners = new Set<() => void>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
     this.ledger = await this.loadLedger();
+    this.decisions = await this.loadDecisions();
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
+    this.addCommand({ id: "check-setup", name: "Check setup", callback: () => void this.openSetup() });
+    this.addCommand({ id: "llm-review", name: "Review a search with an LLM", callback: () => void this.openPrompt("review") });
+    this.addCommand({ id: "llm-topics", name: "Tweak search terms with an LLM", callback: () => void this.openPrompt("topics") });
+    this.addCommand({ id: "llm-compare", name: "Compare searches with an LLM", callback: () => void this.openPrompt("compare") });
+    this.addCommand({ id: "llm-new-search", name: "New search from a description with an LLM", callback: () => void this.openPrompt("new") });
     this.addCommand({ id: "open-inbox", name: "Open reading inbox", callback: () => void this.openInbox() });
     this.addRibbonIcon("book-open", "Open reading inbox", () => void this.openInbox());
+    // A link a note can hold: [Reading inbox](obsidian://literature-feed-inbox) opens the newest weekly note (its name changes every week).
+    this.registerObsidianProtocolHandler("literature-feed-inbox", () => void this.openInbox());
     this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
     this.addCommand({ id: "update-read-archive", name: "Update read state and archive", callback: () => void this.refreshAndReport(true) });
     this.addCommand({ id: "search-effectiveness", name: "Show search effectiveness", callback: () => void this.showEffectiveness() });
@@ -140,7 +157,11 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       const now = new Date();
       const outcome = await runScan(this.settings, { client, now });
       const scanned = this.settings.feeds.filter((f) => outcome.topicStats.some((s) => s.feedId === f.id));
-      const ledgerChanged = recordDefinitions(this.ledger, scanned, localDay(now)) || recordScan(this.ledger, localDay(now), outcome.topicStats);
+      const ledgerChanged = [
+        recordDefinitions(this.ledger, scanned, localDay(now)),
+        recordScan(this.ledger, localDay(now), outcome.topicStats),
+        recordDropped(this.ledger, outcome.droppedIds),
+      ].some(Boolean);
       if (ledgerChanged) await this.saveLedger();
       const path = outcome.note ? await this.writeNote(outcome.note) : null;
       this.settings.lastScan = outcome.lastScan;
@@ -326,6 +347,130 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   /** Where the ledger is kept: next to `data.json`, in the plugin's folder. Null when Obsidian does not say where that is. */
   private ledgerPath(): string | null {
     return this.manifest.dir ? normalizePath(`${this.manifest.dir}/ledger.json`) : null;
+  }
+
+  async openSetup(): Promise<void> {
+    new SetupModal(this).open();
+  }
+
+  /** The facts Check setup needs about this vault (folders, notes, other plugins) and the settings. */
+  async buildSnapshot(): Promise<SetupSnapshot> {
+    const { vault } = this.app;
+    const adapter = vault.adapter;
+    const configDir = vault.configDir;
+    let enabled: string[] = [];
+    try {
+      const raw: unknown = JSON.parse(await adapter.read(normalizePath(`${configDir}/community-plugins.json`)));
+      enabled = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+    } catch {
+      // No list of enabled plugins: treat every other plugin as off.
+    }
+    const installed = new Set<string>();
+    for (const id of ["zotlit", "lab-kit"]) {
+      if (await adapter.exists(normalizePath(`${configDir}/plugins/${id}/manifest.json`))) installed.add(id);
+    }
+    const notes = new Set(vault.getMarkdownFiles().map((f) => f.basename));
+    return {
+      settings: this.settings,
+      keyReadable: { openAlex: this.getSecret("openAlexKey") !== "", zotero: this.getSecret("zoteroKey") !== "" },
+      folderExists: (path) => vault.getFolderByPath(normalizePath(path)) !== null,
+      noteExists: (name) => notes.has(name),
+      pluginInstalled: (id) => installed.has(id),
+      pluginEnabled: (id) => enabled.includes(id),
+    };
+  }
+
+  async applyFix(fix: FixAction): Promise<void> {
+    if (fix.kind === "create-folder") {
+      const path = normalizePath(fix.path);
+      if (!this.app.vault.getFolderByPath(path)) await this.app.vault.createFolder(path);
+      return;
+    }
+    this.settings.literatureFolder = normalizePath(fix.path);
+    await this.saveSettings();
+  }
+
+  async readTarget(info: IntegrationInfo): Promise<{ path: string; text: string } | null> {
+    const file = this.app.vault.getMarkdownFiles().find((f) => f.basename === info.noteName);
+    return file ? { path: file.path, text: await this.app.vault.read(file) } : null;
+  }
+
+  async createNote(name: string, text: string): Promise<void> {
+    const path = normalizePath(`${name}.md`);
+    if (!this.app.vault.getFileByPath(path)) await this.app.vault.create(path, text);
+    await this.app.workspace.openLinkText(path, "", "tab");
+  }
+
+  async editTarget(path: string, change: (text: string) => string): Promise<void> {
+    const file = this.app.vault.getFileByPath(path);
+    if (file) await this.app.vault.process(file, change);
+  }
+
+  /** Opens the window of one LLM prompt feature, after bringing the ledger up to date (the review prompts print its numbers). */
+  async openPrompt(kind: PromptKind): Promise<void> {
+    if (kind !== "new") await this.updateLedgerNow();
+    new PromptModal(this, kind).open();
+  }
+
+  reportFor(feedId: string): string {
+    const report = buildReport(this.ledger, this.settings.feeds, localDay(new Date()), this.settings.dismissAfterWeeks);
+    const own = {
+      ...report,
+      feeds: report.feeds.filter((f) => f.feedId === feedId),
+      overlap: {
+        pairs: report.overlap.pairs.filter((p) => p.a === feedId || p.b === feedId),
+        topics: report.overlap.topics.filter((t) => t.feedId === feedId),
+      },
+    };
+    return reportMarkdown(own);
+  }
+
+  titlesFor(feedId: string): { wanted: string[]; dismissed: string[] } {
+    return titlesByVerdict(this.ledger, feedId, localDay(new Date()), this.settings.dismissAfterWeeks);
+  }
+
+  topicOverlapFor(feedId: string): string {
+    const overlap = buildOverlap(this.ledger, this.settings.feeds, localDay(new Date()), this.settings.dismissAfterWeeks);
+    return overlapMarkdown({ pairs: [], topics: overlap.topics.filter((t) => t.feedId === feedId) }).join("\n");
+  }
+
+  compareContext(): { summary: string; overlapMarkdown: string } {
+    const today = localDay(new Date());
+    const report = buildReport(this.ledger, this.settings.feeds, today, this.settings.dismissAfterWeeks);
+    const summary = report.feeds.map((f) => {
+      const decided = f.totals.interested + f.totals.dismissed;
+      return `- ${f.name}: ${f.totals.listed} papers listed, ${decided} decided, ${f.rate === null ? "no wanted rate yet" : `${Math.round(f.rate * 100)}% wanted`}`;
+    }).join("\n");
+    return { summary, overlapMarkdown: overlapMarkdown(report.overlap).join("\n") };
+  }
+
+  topicStatsFor(feedId: string): TopicStatRow[] {
+    return topicStatRows(this.ledger.scans, feedId);
+  }
+
+  private decisionsPath(): string | null {
+    return this.manifest.dir ? normalizePath(`${this.manifest.dir}/decisions.json`) : null;
+  }
+
+  private async loadDecisions(): Promise<Decisions> {
+    const path = this.decisionsPath();
+    if (path === null) return emptyDecisions();
+    try {
+      if (!(await this.app.vault.adapter.exists(path))) return emptyDecisions();
+      return normaliseDecisions(JSON.parse(await this.app.vault.adapter.read(path)));
+    } catch {
+      return emptyDecisions();
+    }
+  }
+
+  async saveDecisions(): Promise<void> {
+    const path = this.decisionsPath();
+    if (path === null) return;
+    try {
+      await this.app.vault.adapter.write(path, JSON.stringify(this.decisions));
+    } catch (e) {
+      new Notice(`Could not save the decisions: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    }
   }
 
   /** The ledger from disk; an empty one when there is none or it cannot be read (the next refresh rebuilds it from the notes). */

@@ -39,6 +39,8 @@ export interface ScanOutcome {
   perFeed: FeedCounts[];
   /** Per feed that was scanned without failing, in feed order: one entry per search topic. */
   topicStats: { feedId: string; topics: TopicStat[] }[];
+  /** Per feed that was scanned without failing: the short OpenAlex ids of the new candidates its rules dropped. */
+  droppedIds: { feedId: string; ids: string[] }[];
   /** Number of feeds that were scanned (enabled and with topics). */
   feedsScanned: number;
   /** Store these after the note is written. `lastScan` only moves when every feed succeeded. */
@@ -94,6 +96,7 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
   const sections: FeedSection[] = [];
   const seenAdd: string[] = [];
   const topicStats: ScanOutcome["topicStats"] = [];
+  const droppedIds: ScanOutcome["droppedIds"] = [];
   let costUsd = 0;
   let dropped = 0;
 
@@ -119,6 +122,10 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
           dropped: built.droppedCandidates.filter((c) => topicsFor(c, scan.perTopic).includes(i + 1)).length,
         })),
       });
+      droppedIds.push({
+        feedId: feed.id,
+        ids: built.droppedCandidates.map((c) => shortOpenAlexId(c.openalexId)).filter((id): id is string => id !== null),
+      });
       if (built.papers.length === 0) continue;
       for (const p of built.papers) {
         perTier[p.tier]++;
@@ -134,10 +141,10 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
 
   const lastScan = failures.length === 0 && feeds.length > 0 ? today : settings.lastScan;
   if (sections.length === 0) {
-    return { note: null, perTier, dropped, costUsd, failures, perFeed, topicStats, feedsScanned: feeds.length, lastScan, seenAdd };
+    return { note: null, perTier, dropped, costUsd, failures, perFeed, topicStats, droppedIds, feedsScanned: feeds.length, lastScan, seenAdd };
   }
   const note = { path: inboxPath(settings.inboxFolder, deps.now), input: { week: weekLabel(deps.now), scanned: today, sections } };
-  return { note, perTier, dropped, costUsd, failures, perFeed, topicStats, feedsScanned: feeds.length, lastScan, seenAdd };
+  return { note, perTier, dropped, costUsd, failures, perFeed, topicStats, droppedIds, feedsScanned: feeds.length, lastScan, seenAdd };
 }
 
 /** The `seen` list after a scan: new keys added at the end, the oldest dropped beyond the cap. */

@@ -16,6 +16,10 @@ export interface SettingsHost {
   saveSettings(): Promise<void>;
   /** The value of an API key, read from Obsidian's secret storage ("" when none is chosen). */
   getSecret(name: SecretName): string;
+  /** Opens one of the LLM prompt windows (copy a prompt, paste the answer back). */
+  openPrompt(kind: "review" | "topics" | "new" | "compare"): Promise<void>;
+  /** Opens the Check setup window. */
+  openSetup(): Promise<void>;
 }
 
 const ROLE_LABELS: Record<GroupRole, string> = {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  SCAN_CAP, currentDef, describeChange, emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordScan, snapshotOf, updateFromNotes, verdictOf,
+  DROPPED_CAP, SCAN_CAP, currentDef, describeChange, emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordDropped, recordScan, snapshotOf, updateFromNotes, verdictOf,
   type LedgerPaper,
 } from "../src/ledger/ledger";
 import type { FeedConfig } from "../src/settings/data";
@@ -164,5 +164,30 @@ describe("normaliseLedger", () => {
     expect(out.defs.a).toHaveLength(1);
     expect(out.defs.b).toBeUndefined();
     expect(out.names).toEqual({ a: "A" });
+  });
+});
+
+describe("dropped ids", () => {
+  it("adds ids per search without repeats, keeps the newest up to the cap, and says whether anything was added", () => {
+    const ledger = emptyLedger();
+    expect(recordDropped(ledger, [{ feedId: "a", ids: ["W1", "W2", "W1"] }, { feedId: "b", ids: [] }])).toBe(true);
+    expect(ledger.droppedIds).toEqual({ a: ["W1", "W2"] });
+    expect(recordDropped(ledger, [{ feedId: "a", ids: ["W2", "W1"] }])).toBe(false);
+    expect(recordDropped(ledger, [{ feedId: "a", ids: ["W3"] }])).toBe(true);
+    expect(ledger.droppedIds.a).toEqual(["W1", "W2", "W3"]);
+    const many = Array.from({ length: DROPPED_CAP + 5 }, (_, i) => `W${i + 10}`);
+    recordDropped(ledger, [{ feedId: "a", ids: many }]);
+    expect(ledger.droppedIds.a).toHaveLength(DROPPED_CAP);
+    expect(ledger.droppedIds.a[DROPPED_CAP - 1]).toBe(`W${DROPPED_CAP + 14}`);
+  });
+
+  it("is cleared with the search by forgetFeeds, and read back tolerantly", () => {
+    const ledger = emptyLedger();
+    recordDropped(ledger, [{ feedId: "a", ids: ["W1"] }, { feedId: "b", ids: ["W2"] }]);
+    forgetFeeds(ledger, new Set(["a"]));
+    expect(ledger.droppedIds).toEqual({ a: ["W1"] });
+    const back = normaliseLedger({ droppedIds: { a: ["W1", "W1", "x", 3, "W2"], b: "no", c: [] } });
+    expect(back.droppedIds).toEqual({ a: ["W1", "W2"] });
+    expect(normaliseLedger(JSON.parse(JSON.stringify(ledger))).droppedIds).toEqual({ a: ["W1"] });
   });
 });

@@ -189,6 +189,14 @@ describe("per-topic stats", () => {
     expect(out.topicStats).toEqual([{ feedId: "a", topics: [{ returned: 2, listed: 1, dropped: 1 }, { returned: 2, listed: 2, dropped: 0 }] }]);
   });
 
+  it("lists the ids of the candidates a feed's rules dropped", async () => {
+    const { client } = fakeClient(() => scanResult([cand(priorityFlow, 1), cand(droppedNoLipoic, 3)]));
+    const out = await runScan(settings(), { client, now: NOW });
+    expect(out.droppedIds).toEqual([{ feedId: "a", ids: ["W3"] }]);
+    const failing = fakeClient(() => new Error("HTTP 500"));
+    expect((await runScan(settings(), { client: failing.client, now: NOW })).droppedIds).toEqual([]);
+  });
+
   it("has no entry for a feed that failed", async () => {
     const { client } = fakeClient(() => new Error("HTTP 500"));
     expect((await runScan(settings(), { client, now: NOW })).topicStats).toEqual([]);

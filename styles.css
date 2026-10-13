@@ -66,6 +66,24 @@
   margin-bottom: var(--size-4-2);
 }
 
+/* A tile for the reading inbox on a Home note or hub: [!reading-inbox] [Reading inbox](obsidian://literature-feed-inbox) */
+.callout[data-callout="reading-inbox"] {
+  --callout-color: var(--vt-neutral-text, 148, 163, 184);
+  --callout-icon: lucide-book-open;
+}
+
+/* The title link of the reading-inbox tile looks like Lab Kit's callout title links: plain text, underlined on hover, no external icon */
+.callout[data-callout="reading-inbox"] > .callout-title a.external-link {
+  color: var(--text-normal);
+  text-decoration: none;
+  background-image: none;
+  padding-inline-end: 0;
+}
+
+.callout[data-callout="reading-inbox"] > .callout-title a.external-link:hover {
+  text-decoration: underline;
+}
+
 /* Status line and Home card made by the literature-feed code block.
    Fill, border and corners use Lab Kit's theme variables when that theme is on, and Obsidian's own otherwise. */
 .literature-feed-status,
@@ -454,11 +472,11 @@ table.literature-feed-papers input.literature-feed-tick[type="checkbox"] {
 .literature-feed-chip.is-dismissed,
 .literature-feed-filter.is-dismissed {
   --literature-feed-rgb: var(--vt-neutral, 100, 116, 139);
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 table.literature-feed-papers tr.is-dismissed td:not(.literature-feed-act) {
-  opacity: 0.55;
+  opacity: 0.7;
 }
 
 table.literature-feed-papers tr.is-dismissed .literature-feed-title {
@@ -510,4 +528,115 @@ button.literature-feed-icon.is-dismiss {
 
 button.literature-feed-icon.is-dismiss:hover {
   background: rgba(var(--vt-overdue, 239, 68, 68), 0.15);
+}
+
+/* The LLM prompt windows: a wide preview of the prompt, a paste box, and one row per suggestion */
+textarea.literature-feed-prompt,
+textarea.literature-feed-wide {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-suggestion {
+  margin: var(--size-4-2) 0;
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+}
+
+.literature-feed-suggestion input[type="text"] {
+  flex: 1;
+  min-width: 12em;
+}
+
+/* Check setup: one row per check, a mark, the text, and a fix button when there is one */
+.literature-feed-setup-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-4-3);
+  padding: var(--size-4-2) 0;
+  border-top: 1px solid var(--vt-divider, var(--background-modifier-border));
+}
+
+.literature-feed-setup-mark {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  text-align: center;
+  line-height: 22px;
+  font-size: var(--font-ui-small);
+  color: rgb(var(--vt-neutral-text, 148, 163, 184));
+  background: rgba(var(--vt-neutral, 100, 116, 139), var(--vt-tint, 0.2));
+}
+
+.literature-feed-setup-row.is-ok .literature-feed-setup-mark {
+  color: rgb(var(--vt-done-text, 110, 231, 183));
+  background: rgba(var(--vt-done, 16, 185, 129), var(--vt-tint, 0.2));
+}
+
+.literature-feed-setup-row.is-todo .literature-feed-setup-mark {
+  color: rgb(var(--vt-waiting-text, 252, 211, 77));
+  background: rgba(var(--vt-waiting, 245, 158, 11), var(--vt-tint, 0.2));
+}
+
+.literature-feed-setup-text {
+  flex: 1;
+}
+
+.literature-feed-setup-text pre {
+  white-space: pre-wrap;
+  font-size: var(--font-ui-small);
+}
+
+/* Table headers: one look for every column (small, muted capitals; the sort buttons carry no button box of their own) */
+table.literature-feed-papers th {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 2px solid var(--vt-card-border, var(--background-modifier-border));
+  white-space: nowrap;
+}
+
+table.literature-feed-papers th button.literature-feed-sort {
+  height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+table.literature-feed-papers th button.literature-feed-sort:hover {
+  color: var(--text-normal);
+  background: transparent;
+}
+
+table.literature-feed-papers th.is-sorted,
+table.literature-feed-papers th.is-sorted button.literature-feed-sort {
+  color: var(--text-normal);
+}
+
+/* Accept and Reject in the review window: the chosen one goes green or red, and so does the row's edge */
+.literature-feed-suggestion.is-accepted { border-color: rgb(var(--vt-done, 16, 185, 129)); }
+.literature-feed-suggestion.is-rejected { border-color: rgb(var(--vt-overdue, 239, 68, 68)); }
+
+.literature-feed-suggestion .literature-feed-buttons button.is-accepted {
+  background: rgba(var(--vt-done, 16, 185, 129), 0.25);
+  border-color: rgb(var(--vt-done, 16, 185, 129));
+  color: rgb(var(--vt-done-text, 110, 231, 183));
+}
+
+.literature-feed-suggestion .literature-feed-buttons button.is-rejected {
+  background: rgba(var(--vt-overdue, 239, 68, 68), 0.25);
+  border-color: rgb(var(--vt-overdue, 239, 68, 68));
+  color: rgb(var(--vt-overdue-text, 252, 165, 165));
 }

@@ -26,6 +26,7 @@ export class Plugin extends Component {
   addRibbonIcon(_icon: string, _title: string, _callback: unknown): void { /* ignored */ }
   register(_cleanup: () => void): void { /* ignored */ }
   registerInterval(_id: number): number { return 0; }
+  registerObsidianProtocolHandler(_action: string, _handler: unknown): void { /* ignored */ }
   registerMarkdownCodeBlockProcessor(_language: string, _handler: unknown): void { /* ignored */ }
 }
 

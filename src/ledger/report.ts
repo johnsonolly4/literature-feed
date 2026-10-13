@@ -3,6 +3,7 @@
 import type { FeedConfig } from "../settings/data";
 import type { ListedTier } from "../inbox/write";
 import { verdictOf, type Ledger, type LedgerPaper } from "./ledger";
+import { buildOverlap, overlapMarkdown, type Overlap } from "./overlap";
 
 /** A term or title word needs at least this many decided papers before it is ranked. */
 export const MIN_DECIDED = 4;
@@ -70,6 +71,8 @@ export interface Report {
   today: string;
   dismissAfterWeeks: number;
   feeds: FeedReport[];
+  /** Overlap between the searches and between each search's topics. */
+  overlap: Overlap;
 }
 
 const TIER_ORDER: ListedTier[] = ["priority", "strong", "possible", "unchecked"];
@@ -193,7 +196,10 @@ export function buildReport(ledger: Ledger, feeds: readonly FeedConfig[], today:
   ]);
   const known = new Map(feeds.map((f) => [f.id, f]));
   const ids = [...feeds.filter((f) => inLedger.has(f.id)).map((f) => f.id), ...[...inLedger].filter((id) => !known.has(id)).sort()];
-  return { today, dismissAfterWeeks, feeds: ids.map((id) => feedReport(ledger, id, known.get(id), today, dismissAfterWeeks)) };
+  return {
+    today, dismissAfterWeeks, feeds: ids.map((id) => feedReport(ledger, id, known.get(id), today, dismissAfterWeeks)),
+    overlap: buildOverlap(ledger, feeds, today, dismissAfterWeeks),
+  };
 }
 
 // ---- Markdown ---------------------------------------------------------------------------------------------------------
@@ -271,5 +277,6 @@ export function reportMarkdown(report: Report): string {
       out.push(...table(["Version", "From", "Change", ...COUNT_HEAD], f.versions.map((v) => [String(v.n), v.at, v.change, ...countCells(v.counts)])));
     }
   }
+  out.push(...overlapMarkdown(report.overlap));
   return out.join("\n");
 }

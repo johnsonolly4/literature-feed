@@ -25,6 +25,12 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
     return [
       {
         type: "group",
+        items: [
+          { name: "Check setup", desc: "Lists what this plugin needs (keys, folders, a search switched on, ZotLit, Lab Kit) with a fix for each, and lets you choose parts to put into Lab Kit's notes.", action: () => void this.host.openSetup() },
+        ],
+      },
+      {
+        type: "group",
         heading: "Accounts",
         items: [
           this.secretRow("OpenAlex API key", "Sent only to OpenAlex. Kept in Obsidian's secret storage, not in your vault.", "openAlexKeySecret"),
@@ -110,6 +116,16 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
         type: "group",
         items: [
           { name: "Import feed", desc: "Add a feed from a .json file or pasted text. It is added switched off.", action: () => new ImportModal(this.host, () => this.update()).open() },
+        ],
+      },
+      {
+        type: "group",
+        heading: "LLM prompts",
+        items: [
+          { name: "Review a search", desc: "Copies a prompt for an LLM chat with a search, how it has done and what you decided before; paste the JSON answer back to accept or reject each change. The plugin sends nothing.", action: () => void this.host.openPrompt("review") },
+          { name: "Tweak search terms", desc: "Copies a prompt that asks an LLM to review and tweak one search's topics.", action: () => void this.host.openPrompt("topics") },
+          { name: "Compare searches", desc: "Copies a prompt that gives an LLM all your searches and how they overlap (shared papers, papers one drops that another lists, topics that add nothing) and asks for advice, shown for you to read.", action: () => void this.host.openPrompt("compare") },
+          { name: "New search from a description", desc: "Copies a prompt that asks an LLM to write a new search from your description and the example papers you attach to the chat.", action: () => void this.host.openPrompt("new") },
         ],
       },
     ];

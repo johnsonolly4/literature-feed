@@ -30,7 +30,7 @@ describe("reading what the user typed", () => {
 
   it("splits a pasted reference list into DOIs and lines to search, without repeats", () => {
     const text = [
-      "1. Albanese, K. R.; Morris, P. T. Controlled-radical polymerization of lipoic acid. J. Am. Chem. Soc. 2023, 145, 22728. https://doi.org/10.1021/jacs.3c08248",
+      "1. Veldmar, K. R.; Orrinson, P. T. Controlled-radical polymerization of lipoic acid. J. Am. Chem. Soc. 2023, 145, 22728. https://doi.org/10.1021/jacs.3c08248",
       "[2] Smith J, Doe A. Degradable vinyl copolymers made with lipoic acid and RAFT. Macromolecules 2024.",
       "[2] Smith J, Doe A. Degradable vinyl copolymers made with lipoic acid and RAFT. Macromolecules 2024.",
       "",
@@ -48,7 +48,7 @@ describe("reading what the user typed", () => {
   });
 
   it("accepts a work's title when nearly all its words are in the reference line", () => {
-    const line = "Albanese, K. R.; Morris, P. T. Controlled-radical polymerization of lipoic acid: a general route to degradable vinyl copolymers. J. Am. Chem. Soc. 2023";
+    const line = "Veldmar, K. R.; Orrinson, P. T. Controlled-radical polymerization of lipoic acid: a general route to degradable vinyl copolymers. J. Am. Chem. Soc. 2023";
     expect(titleInReference("Controlled-Radical Polymerization of α-Lipoic Acid: A General Route to Degradable Vinyl Copolymers", line)).toBe(true); // one word of fourteen may differ
     expect(titleInReference("Controlled-Radical Polymerization of Lipoic Acid: A General Route to Degradable Vinyl Copolymers", line)).toBe(true);
     expect(titleInReference("Lipoic acid", line)).toBe(false); // too short to trust

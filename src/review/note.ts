@@ -1,6 +1,7 @@
 // The review note: what a literature review found and what the LLM advised, as a Markdown note with links (DOI, Zotero, the
 // literature note in the vault). Pure: the plugin writes it. Properties follow the vault rules: an empty line after them.
 import { doiUrl, escapeMd } from "../inbox/write";
+import { authorsShort } from "./authors-text";
 import type { ReviewPaper } from "./collect";
 import type { ExtraRow } from "./network-text";
 import { countFlags, type Flags } from "./flags";
@@ -89,24 +90,25 @@ export function renderReviewNote(input: NoteInput, searchNames: ReadonlyMap<stri
           const i = indexOf.get(label);
           if (i === undefined) continue;
           const p = input.papers[i];
-          lines.push(`- ${titleLink(p)}${p.year === null ? "" : ` (${p.year})`}`);
+          const who = authorsShort(p.authors);
+          lines.push(`- ${titleLink(p)}${who === "" ? "" : ` — ${escapeMd(who)}`}${p.year === null ? "" : ` (${p.year})`}`);
         }
         lines.push("");
       }
     }
     if (answer.priorities.length > 0) {
-      lines.push("## Reading priorities", "", "| Level | Paper | Year | Cited | Already have | Why |", "| --- | --- | --- | --- | --- | --- |");
+      lines.push("## Reading priorities", "", "| Level | Paper | Authors | Year | Cited | Already have | Why |", "| --- | --- | --- | --- | --- | --- | --- |");
       for (const level of READ_LEVELS) {
         for (const pr of answer.priorities.filter((x) => x.level === level)) {
           const i = indexOf.get(pr.paper);
           const extra = i === undefined ? extraByLabel.get(pr.paper) : undefined;
           if (extra) {
-            lines.push(`| ${LEVEL_LABEL[level]} | ${cell(extraTitle(extra))} (${extra.label}) | ${extra.year ?? ""} | ${extra.citedBy} | ${cell(flagText(extra.flags, searchNames))} | ${cell(escapeMd(pr.reason))} |`);
+            lines.push(`| ${LEVEL_LABEL[level]} | ${cell(extraTitle(extra))} (${extra.label}) | ${cell(escapeMd(authorsShort(extra.authors)))} | ${extra.year ?? ""} | ${extra.citedBy} | ${cell(flagText(extra.flags, searchNames))} | ${cell(escapeMd(pr.reason))} |`);
             continue;
           }
           if (i === undefined) continue;
           const p = input.papers[i];
-          lines.push(`| ${LEVEL_LABEL[level]} | ${cell(titleLink(p))} | ${p.year ?? ""} | ${p.citedByCount} | ${cell(flagText(input.flags[i], searchNames))} | ${cell(escapeMd(pr.reason))} |`);
+          lines.push(`| ${LEVEL_LABEL[level]} | ${cell(titleLink(p))} | ${cell(escapeMd(authorsShort(p.authors)))} | ${p.year ?? ""} | ${p.citedByCount} | ${cell(flagText(input.flags[i], searchNames))} | ${cell(escapeMd(pr.reason))} |`);
         }
       }
       lines.push("");
@@ -122,8 +124,8 @@ export function renderReviewNote(input: NoteInput, searchNames: ReadonlyMap<stri
   const rated = new Set((answer?.priorities ?? []).map((p) => p.paper));
   const rest = input.papers.map((p, i) => ({ p, i })).filter(({ i }) => !rated.has(paperLabel(i)));
   if (rest.length > 0) {
-    lines.push(answer ? "## Papers not rated" : "## Papers", "", "| Paper | Year | Cited | Rank | Already have |", "| --- | --- | --- | --- | --- |");
-    for (const { p, i } of rest) lines.push(`| ${cell(titleLink(p))} | ${p.year ?? ""} | ${p.citedByCount} | ${p.tier} | ${cell(flagText(input.flags[i], searchNames))} |`);
+    lines.push(answer ? "## Papers not rated" : "## Papers", "", "| Paper | Authors | Year | Cited | Rank | Already have |", "| --- | --- | --- | --- | --- | --- |");
+    for (const { p, i } of rest) lines.push(`| ${cell(titleLink(p))} | ${cell(escapeMd(authorsShort(p.authors)))} | ${p.year ?? ""} | ${p.citedByCount} | ${p.tier} | ${cell(flagText(input.flags[i], searchNames))} |`);
     lines.push("");
   }
   if (input.record) lines.push(...renderRecordSection(input.record), "");

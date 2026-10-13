@@ -4,15 +4,15 @@ import { authorKey, authorShares, authorTableCsv, authorTableMarkdown } from "..
 
 describe("authorKey", () => {
   it("matches spellings of one author by family name and first initial", () => {
-    expect(authorKey("Craig J. Hawker")).toBe("hawker|c");
-    expect(authorKey("C. J. Hawker")).toBe("hawker|c");
-    expect(authorKey("Hawker, Craig")).toBe("hawker|c");
-    expect(authorKey("Hawker, C. J.")).toBe("hawker|c");
+    expect(authorKey("Corin J. Halvorn")).toBe("halvorn|c");
+    expect(authorKey("C. J. Halvorn")).toBe("halvorn|c");
+    expect(authorKey("Halvorn, Corin")).toBe("halvorn|c");
+    expect(authorKey("Halvorn, C. J.")).toBe("halvorn|c");
   });
 
   it("drops accents and punctuation, takes the last word as the family name, and gives nothing for no name", () => {
     expect(authorKey("José Álvarez-Peña")).toBe("alvarezpena|j");
-    expect(authorKey("Javier Read de Alaniz")).toBe("alaniz|j");
+    expect(authorKey("Jarvis Fenwick de Laro")).toBe("laro|j");
     expect(authorKey("Madonna")).toBe("madonna|");
     expect(authorKey("  ")).toBe("");
     expect(authorKey("")).toBe("");
@@ -61,8 +61,8 @@ describe("authorShares", () => {
   });
 
   it("shows the most common spelling of a name", () => {
-    const t = authorShares([["Craig J. Hawker"], ["Craig J. Hawker"], ["C. Hawker"]], [], { min: 1 });
-    expect(t.rows[0].name).toBe("Craig J. Hawker");
+    const t = authorShares([["Corin J. Halvorn"], ["Corin J. Halvorn"], ["C. Halvorn"]], [], { min: 1 });
+    expect(t.rows[0].name).toBe("Corin J. Halvorn");
   });
 });
 

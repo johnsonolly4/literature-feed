@@ -12,7 +12,7 @@ function work(doi: string, title: string, family: string, year: number, volume: 
 }
 
 const TEXT = [
-  "1. Albanese, K. R. Controlled radical polymerization of lipoic acid and vinyl monomers. J. Test 2023, 145, 100-110.",
+  "1. Veldmar, K. R. Controlled radical polymerization of lipoic acid and vinyl monomers. J. Test 2023, 145, 100-110.",
   "2. Smith, J. A study of dithiolane ring-opening polymerization for recyclable networks. J. Test 2022, 12, 5-9.",
   "3. Nobody, N. A reference that Crossref knows nothing about at all. J. Test 2021, 1, 1-2.",
   "4. Doe, J. A tool for things. GitHub repository, https://github.com/doe/tool, 2022.",
@@ -24,7 +24,7 @@ function fakeSearch(): { searcher: ReferenceSearcher; calls: string[] } {
   const searcher: ReferenceSearcher = {
     search: (text) => {
       calls.push(text);
-      if (text.startsWith("Albanese")) return Promise.resolve([work("10.1000/ALB.1", "Controlled radical polymerization of lipoic acid and vinyl monomers", "Albanese", 2023, "145", "100-110")]);
+      if (text.startsWith("Veldmar")) return Promise.resolve([work("10.1000/ALB.1", "Controlled radical polymerization of lipoic acid and vinyl monomers", "Veldmar", 2023, "145", "100-110")]);
       if (text.startsWith("Smith")) return Promise.resolve([work("10.1000/smith.2", "A study of dithiolane ring-opening polymerization for recyclable networks", "Smith", 2022, "13", "5-9")]);
       return Promise.resolve([work("10.1000/wrong", "Hydrogels for wound healing in diabetic mice", "Else", 2015, "1", "1")]);
     },
@@ -37,7 +37,7 @@ describe("resolveReferences", () => {
     const { searcher, calls } = fakeSearch();
     const { rows, skipped, cancelled } = await resolveReferences(splitReferences(TEXT), searcher);
     expect(rows.map((r) => r.status)).toEqual(["OK", "CHECK", "NOT FOUND", "MANUAL", "OK"]);
-    expect(rows[0]).toMatchObject({ doi: "10.1000/alb.1", authors: "Albanese A; Other B", journal: "J. Test", year: "2023", citedBy: 7, fromText: false });
+    expect(rows[0]).toMatchObject({ doi: "10.1000/alb.1", authors: "Veldmar A; Other B", journal: "J. Test", year: "2023", citedBy: 7, fromText: false });
     expect(rows[1].reasons).toEqual(["volume differs (12 vs 13)"]);
     expect(rows[1].doi).toBe("10.1000/smith.2");
     expect(rows[2]).toMatchObject({ doi: "", crossrefTitle: "Hydrogels for wound healing in diabetic mice" });
@@ -149,7 +149,7 @@ describe("the results as text", () => {
     const { rows } = await resolveReferences(splitReferences(TEXT), searcher);
     const csv = toCsv(rows).split("\n");
     expect(csv[0]).toBe("n,reference,doi,status,reasons,crossref_title,crossref_authors,crossref_journal,crossref_year,crossref_volume,crossref_pages,crossref_publisher,crossref_cited_by");
-    expect(csv[1].startsWith("1,\"Albanese, K. R.")).toBe(true);
+    expect(csv[1].startsWith("1,\"Veldmar, K. R.")).toBe(true);
     expect(csv[1]).toContain(",10.1000/alb.1,OK,");
     expect(toCsv([])).toBe(csv[0]);
     const md = toMarkdownTable(rows).split("\n");

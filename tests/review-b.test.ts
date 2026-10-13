@@ -315,7 +315,7 @@ describe("network text, canvas and note", () => {
     const md = networkMarkdown(net, rows, label, (id) => papers.find((p) => p.id === id)?.title ?? id).join("\n");
     expect(md).toContain("## Citation network");
     expect(md).toContain("### Possibly missing papers (cited by several of these)");
-    expect(md).toContain("| M1 | [Foundational](https://doi.org/10.1000/99) | 2010 | 900 |");
+    expect(md).toContain("| M1 | [Foundational](https://doi.org/10.1000/99) |  | 2010 | 900 |");
     expect(md).toContain("[in Zotero](zotero://select/library/items/KEY00001)");
     const note = renderReviewNote({
       date: "2026-10-13", searches: ["A"], fromDate: "2020", papers, flags: papers.map(() => noFlags), total: 3, spentUsd: 0.012, stopped: null,

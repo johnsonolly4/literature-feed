@@ -35,7 +35,7 @@ export interface AuthorOptions {
   threshold?: number;
 }
 
-/** The name as "family|initial": accents and punctuation dropped, "Hawker, C. J." and "Craig J. Hawker" alike. */
+/** The name as "family|initial": accents and punctuation dropped, "Halvorn, C. J." and "Corin J. Halvorn" alike. */
 export function authorKey(name: string): string {
   const plain = name.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().trim();
   if (plain === "") return "";

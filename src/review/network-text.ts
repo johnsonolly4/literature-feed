@@ -3,6 +3,7 @@
 // are C1, C2, …. The same labels are used in the answer, the note and the graph.
 import type { Candidate } from "../openalex/client";
 import { shortOpenAlexId } from "../inbox/write";
+import { authorsShort } from "./authors-text";
 import { escapeMd, doiUrl } from "../inbox/write";
 import type { ReviewPaper } from "./collect";
 import type { Flags } from "./flags";
@@ -15,6 +16,7 @@ export interface ExtraRow {
   label: string;
   id: string;
   title: string;
+  authors: string[];
   year: number | null;
   doi: string | null;
   citedBy: number;
@@ -24,7 +26,7 @@ export interface ExtraRow {
 }
 
 function row(label: string, c: Candidate, detail: string, flags: Flags): ExtraRow {
-  return { label, id: shortOpenAlexId(c.openalexId) ?? "", title: c.title, year: c.year ?? null, doi: c.doi ?? null, citedBy: c.citedByCount ?? 0, detail, flags };
+  return { label, id: shortOpenAlexId(c.openalexId) ?? "", title: c.title, authors: c.authors, year: c.year ?? null, doi: c.doi ?? null, citedBy: c.citedByCount ?? 0, detail, flags };
 }
 
 /** The missing and also-citing works as labelled rows. `labelOf` gives the P-label of a paper id in the set. */
@@ -93,11 +95,11 @@ export function networkMarkdown(network: Network, rows: { missing: ExtraRow[]; a
   }
   const table = (title: string, list: ExtraRow[]): void => {
     if (list.length === 0) return;
-    out.push(`### ${title}`, "", "| Label | Paper | Year | Cited | How it relates | Already have |", "| --- | --- | --- | --- | --- | --- |");
+    out.push(`### ${title}`, "", "| Label | Paper | Authors | Year | Cited | How it relates | Already have |", "| --- | --- | --- | --- | --- | --- | --- |");
     for (const r of list) {
       const url = doiUrl(r.doi);
       const name = url ? `[${escapeMd(r.title)}](${url})` : escapeMd(r.title);
-      out.push(`| ${r.label} | ${cell(name)} | ${r.year ?? ""} | ${r.citedBy} | ${cell(escapeMd(r.detail))} | ${cell(flagsMd(r.flags))} |`);
+      out.push(`| ${r.label} | ${cell(name)} | ${cell(escapeMd(authorsShort(r.authors)))} | ${r.year ?? ""} | ${r.citedBy} | ${cell(escapeMd(r.detail))} | ${cell(flagsMd(r.flags))} |`);
     }
     out.push("");
   };

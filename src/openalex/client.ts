@@ -113,7 +113,7 @@ export interface OpenAlexWork {
   type?: string | null;
   abstract_inverted_index?: Record<string, number[]> | null;
   primary_location?: { source?: OpenAlexSource | null } | null;
-  authorships?: { author?: { display_name?: string | null } | null }[] | null;
+  authorships?: { author?: { id?: string | null; display_name?: string | null } | null }[] | null;
   cited_by_count?: number | null;
   referenced_works?: string[] | null;
 }
@@ -122,6 +122,8 @@ export interface OpenAlexWork {
 export interface Candidate extends Paper {
   openalexId: string;
   authors: string[];
+  /** The OpenAlex ids of the authors (`A123`), one for each name in `authors` ("" when there is none); absent in older saved data. */
+  authorIds?: string[];
   venue: string | null;
   publicationDate: string | null;
   /** Only in review requests: times the work is cited, and the short ids (`W123`) of the works it cites. */
@@ -147,6 +149,7 @@ export function toCandidate(work: OpenAlexWork): Candidate | null {
     isPreprint: work.type === "preprint" || source?.type === "repository",
     openalexId: work.id,
     authors: (work.authorships ?? []).map((a) => a.author?.display_name?.trim() ?? "").filter((n) => n !== ""),
+    authorIds: (work.authorships ?? []).filter((a) => (a.author?.display_name?.trim() ?? "") !== "").map((a) => /(A\d+)$/.exec(a.author?.id ?? "")?.[1] ?? ""),
     venue: source?.display_name ?? null,
     publicationDate: work.publication_date ?? null,
     ...(typeof work.cited_by_count === "number" ? { citedByCount: work.cited_by_count } : {}),

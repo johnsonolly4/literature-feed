@@ -4,16 +4,16 @@ import { describe, expect, it } from "vitest";
 import { authorsLine, chooseBest, compact, evaluate, longestCommonSubstring, titleScore, type CrossrefItem } from "../src/refs/match";
 import { cleanText, doiInText, parseReference, splitReferences } from "../src/refs/split";
 
-const R1 = "Albanese, K. R.; Morris, P. T.; Read de Alaniz, J.; Bates, C. M.; Hawker, C. J. Controlled-radical polymerization of lipoic acid: a general route to degradable vinyl copolymers. J. Am. Chem. Soc. 2023, 145, 22728-22734.";
+const R1 = "Veldmar, K. R.; Orrinson, P. T.; Fenwick de Laro, J.; Brennick, C. M.; Halvorn, C. J. Controlled-radical polymerization of lipoic acid: a general route to degradable vinyl copolymers. J. Am. Chem. Soc. 2023, 145, 22728-22734.";
 const R2 = "Smith, J.; Doe, A. Degradable vinyl copolymers made with lipoic acid and RAFT agents. Macromolecules 2024, 57, 100-110.";
 const R3 = "Lee, K. Dithiolane ring-opening polymerisation of thioctic acid for recyclable networks. Green Chem. 2022, 24, 5000-5010.";
 
 describe("splitReferences: numbered lists", () => {
   it("splits on the numbers and joins ragged lines", () => {
-    const text = ["1. Albanese, K. R.; Morris, P. T.; Read de Alaniz,", "J.; Bates, C. M. Controlled-radical polymerization of", "", "lipoic acid. J. Am. Chem. Soc. 2023, 145, 22728-", "22734.", "2. Smith, J.; Doe, A. Degradable vinyl copolymers.", "Macromolecules 2024, 57, 100-110."].join("\n");
+    const text = ["1. Veldmar, K. R.; Orrinson, P. T.; Fenwick de Laro,", "J.; Brennick, C. M. Controlled-radical polymerization of", "", "lipoic acid. J. Am. Chem. Soc. 2023, 145, 22728-", "22734.", "2. Smith, J.; Doe, A. Degradable vinyl copolymers.", "Macromolecules 2024, 57, 100-110."].join("\n");
     const refs = splitReferences(text);
     expect(refs.map((r) => r.n)).toEqual([1, 2]);
-    expect(refs[0].text).toBe("Albanese, K. R.; Morris, P. T.; Read de Alaniz, J.; Bates, C. M. Controlled-radical polymerization of lipoic acid. J. Am. Chem. Soc. 2023, 145, 22728-22734.");
+    expect(refs[0].text).toBe("Veldmar, K. R.; Orrinson, P. T.; Fenwick de Laro, J.; Brennick, C. M. Controlled-radical polymerization of lipoic acid. J. Am. Chem. Soc. 2023, 145, 22728-22734.");
     expect(refs[1].text).toBe("Smith, J.; Doe, A. Degradable vinyl copolymers. Macromolecules 2024, 57, 100-110.");
   });
 
@@ -21,7 +21,7 @@ describe("splitReferences: numbered lists", () => {
     for (const [a, b] of [["[1]", "[2]"], ["(1)", "(2)"], ["1)", "2)"]]) {
       const refs = splitReferences(`${a} ${R1}\n${b} ${R2}`);
       expect(refs).toHaveLength(2);
-      expect(refs[0].text.startsWith("Albanese")).toBe(true);
+      expect(refs[0].text.startsWith("Veldmar")).toBe(true);
     }
   });
 
@@ -58,7 +58,7 @@ describe("splitReferences: no numbering", () => {
 
   it("splits references broken over several lines when the next one starts like an author list", () => {
     const text = [
-      "Albanese, K. R.; Morris, P. T.; Read de Alaniz, J.;", "Bates, C. M.; Hawker, C. J. Controlled-radical polymerization", "of lipoic acid. J. Am. Chem. Soc. 2023, 145,", "22728-22734.",
+      "Veldmar, K. R.; Orrinson, P. T.; Fenwick de Laro, J.;", "Brennick, C. M.; Halvorn, C. J. Controlled-radical polymerization", "of lipoic acid. J. Am. Chem. Soc. 2023, 145,", "22728-22734.",
       "Smith, J.; Doe, A. Degradable vinyl copolymers made with", "lipoic acid. Macromolecules 2024, 57, 100-110.",
     ].join("\n");
     const refs = splitReferences(text);
@@ -68,12 +68,12 @@ describe("splitReferences: no numbering", () => {
   });
 
   it("does not split in the middle of a reference at a stray blank line before the year", () => {
-    const refs = splitReferences("Albanese, K. R.; Morris, P. T. Controlled-radical\n\npolymerization of lipoic acid. J. Am. Chem. Soc. 2023, 145, 22728-22734.");
+    const refs = splitReferences("Veldmar, K. R.; Orrinson, P. T. Controlled-radical\n\npolymerization of lipoic acid. J. Am. Chem. Soc. 2023, 145, 22728-22734.");
     expect(refs).toHaveLength(1);
   });
 
   it("copes with initials first and Vancouver styles", () => {
-    const text = ["K. R. Albanese, P. T. Morris and C. J. Hawker, Controlled polymerization of lipoic acid, J. Am. Chem. Soc., 2023, 145, 22728.", "Smith JA, Doe B. Degradable copolymers of lipoic acid. Macromolecules. 2024;57:100-10."].join("\n");
+    const text = ["K. R. Veldmar, P. T. Orrinson and C. J. Halvorn, Controlled polymerization of lipoic acid, J. Am. Chem. Soc., 2023, 145, 22728.", "Smith JA, Doe B. Degradable copolymers of lipoic acid. Macromolecules. 2024;57:100-10."].join("\n");
     expect(splitReferences(text)).toHaveLength(2);
   });
 
@@ -92,8 +92,8 @@ describe("doiInText and parseReference", () => {
 
   it("reads the first author, year, volume and pages", () => {
     const p = parseReference(`1. ${R1}`);
-    expect(p).toMatchObject({ firstAuthor: "Albanese", year: 2023, volume: "145", pages: "22728-22734", software: false });
-    expect(p.body.startsWith("Albanese")).toBe(true);
+    expect(p).toMatchObject({ firstAuthor: "Veldmar", year: 2023, volume: "145", pages: "22728-22734", software: false });
+    expect(p.body.startsWith("Veldmar")).toBe(true);
   });
 
   it("reads issue numbers, pp. pages and a year in brackets", () => {
@@ -111,7 +111,7 @@ describe("doiInText and parseReference", () => {
 function item(over: Partial<CrossrefItem> = {}): CrossrefItem {
   return {
     DOI: "10.1021/jacs.3c08248", title: ["Controlled-Radical Polymerization of Lipoic Acid: A General Route to Degradable Vinyl Copolymers"],
-    author: [{ given: "Kaitlin R.", family: "Albanese", ORCID: "https://orcid.org/0000-0000-0000-0001" }, { given: "Parker T.", family: "Morris" }, { given: "Craig J.", family: "Hawker" }],
+    author: [{ given: "Kestrel R.", family: "Veldmar", ORCID: "https://orcid.org/0000-0000-0000-0001" }, { given: "Piers T.", family: "Orrinson" }, { given: "Corin J.", family: "Halvorn" }],
     volume: "145", page: "22728-22734", issued: { "date-parts": [[2023, 11, 2]] }, "container-title": ["Journal of the American Chemical Society"], ...over,
   };
 }
@@ -165,7 +165,7 @@ describe("matching a Crossref record", () => {
   });
 
   it("writes the authors as family name and initials", () => {
-    expect(authorsLine(item())).toBe("Albanese KR; Morris PT; Hawker CJ");
+    expect(authorsLine(item())).toBe("Veldmar KR; Orrinson PT; Halvorn CJ");
     expect(authorsLine({ DOI: "x", author: Array.from({ length: 10 }, (_, i) => ({ given: "A", family: `F${i}` })) }, 3)).toBe("F0 A; F1 A; F2 A; et al.");
     expect(authorsLine({ DOI: "x" })).toBe("");
     expect(authorsLine({ DOI: "x", author: [{ name: "The Consortium" }] })).toBe("The Consortium");

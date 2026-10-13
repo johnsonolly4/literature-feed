@@ -87,7 +87,7 @@ function authorOk(firstAuthor: string, item: CrossrefItem): boolean {
   return cit !== "" && fam !== "" && (cit === fam || cit.includes(fam) || fam.includes(cit));
 }
 
-/** "Albanese KR; Morris PT": family names with the initials of the given names. */
+/** "Veldmar KR; Orrinson PT": family names with the initials of the given names. */
 export function authorsLine(item: CrossrefItem, max = 8): string {
   const list = (item.author ?? []).map((a) => {
     const family = a.family ?? a.name ?? "";

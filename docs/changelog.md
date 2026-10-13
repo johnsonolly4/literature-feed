@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
-## Next version (not released)
+## 0.2.0 (2026-10-13)
+LLM prompts you copy and paste, a Check setup window, overlap between searches, and a tidier reading inbox. Desktop only, as 0.1.x.
 - The Reading inbox tile on a Home note or hub is a `[!reading-inbox]` callout: a book icon and a title that is a link (`obsidian://literature-feed-inbox`) opening the newest weekly note; Check setup's integration step writes it that way, with no marker comments in your notes (a tile is found again by its title link, the Vault spec section by its heading), and it does not offer a second tile where you already made a reading inbox card. The tile's title looks like Lab Kit's other tile titles (plain text, underlined on hover). The same link works anywhere in a note.
 - Overlap: the search report gets an Overlap section (papers two searches both list, papers one search's rules dropped that another lists, topics that add nothing beyond another, with plain sentences), the table says "also in <search>" for a paper listed under several searches, the tweak prompt carries the topic overlap, and a new prompt **Compare searches with an LLM** asks for advice on keeping, narrowing, merging or splitting searches (shown to read, never applied). The history now keeps the ids of papers a search's rules dropped (ids only, up to 4000 per search).
 - Check setup now adds its explanation to Lab Kit's How my vault works (a callout at the end of the Reading papers section, marked as an addition from the plugin) instead of the Vault spec, and offers a stand-alone Reading inbox how-to note when Lab Kit is not there. The Accept and Reject buttons in the LLM review window turn green and red.

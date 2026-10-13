@@ -18,6 +18,16 @@ const LEGEND: Record<ColourMode, string> = {
   level: "Green: must read. Blue: should read. Grey: skim. Faint: skip. Outlined: not rated.",
 };
 
+/**
+ * An SVG element with a class. The class is set as an attribute afterwards: the `cls` option of `createSvg` does not take several
+ * classes at once on an SVG element, which is how the first version drew the lines and no papers.
+ */
+function svgEl<K extends keyof SVGElementTagNameMap>(parent: Element, tag: K, cls: string, attr: Record<string, string> = {}): SVGElementTagNameMap[K] {
+  const el = parent.createSvg(tag, { attr });
+  if (cls !== "") el.setAttribute("class", cls);
+  return el;
+}
+
 export interface DrawOptions {
   mode: ColourMode;
   showExtras: boolean;
@@ -31,23 +41,23 @@ export function drawGraph(viewport: SVGGElement, graph: GraphData, o: DrawOption
   viewport.empty();
   const nodes = graph.nodes.filter((n) => o.showExtras || n.kind === "set");
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const edges = viewport.createSvg("g");
+  const edges = svgEl(viewport, "g", "");
   for (const e of graph.edges) {
     const a = byId.get(e.from);
     const b = byId.get(e.to);
     if (!a || !b) continue;
     const touching = o.selected !== null && (e.from === o.selected || e.to === o.selected);
-    edges.createSvg("line", { cls: `literature-feed-edge${touching ? " is-touching" : ""}`, attr: { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y) } });
+    svgEl(edges, "line", `literature-feed-edge${touching ? " is-touching" : ""}`, { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y) });
   }
   for (const n of nodes) {
     const r = 4 + Math.min(14, Math.sqrt(n.citedBy) * 0.5);
     const dim = o.filter !== "" && !n.title.toLowerCase().includes(o.filter);
-    const g = viewport.createSvg("g", { cls: `literature-feed-node mode-${o.mode} k-${n.kind} c-${n.cluster < 0 ? "none" : n.cluster % 8} y-${n.yearBucket} l-${n.level ?? "none"}${dim ? " is-dim" : ""}${n.id === o.selected ? " is-selected" : ""}` });
-    g.createSvg("title").setText(`${n.label}: ${n.title}${n.year === null ? "" : ` (${n.year})`}`);
-    if (n.zotero) g.createSvg("circle", { cls: "literature-feed-ring", attr: { cx: String(n.x), cy: String(n.y), r: String(r + 3) } });
-    g.createSvg("circle", { cls: "literature-feed-dotnode", attr: { cx: String(n.x), cy: String(n.y), r: String(r) } });
-    if (n.vault) g.createSvg("circle", { cls: "literature-feed-vaultdot", attr: { cx: String(n.x + r * 0.7), cy: String(n.y - r * 0.7), r: "3" } });
-    g.createSvg("text", { cls: "literature-feed-nodelabel", attr: { x: String(n.x), y: String(n.y + r + 11), "text-anchor": "middle" } }).setText(n.label);
+    const g = svgEl(viewport, "g", `literature-feed-node mode-${o.mode} k-${n.kind} c-${n.cluster < 0 ? "none" : n.cluster % 8} y-${n.yearBucket} l-${n.level ?? "none"}${dim ? " is-dim" : ""}${n.id === o.selected ? " is-selected" : ""}`);
+    svgEl(g, "title", "").textContent = `${n.label}: ${n.title}${n.year === null ? "" : ` (${n.year})`}`;
+    if (n.zotero) svgEl(g, "circle", "literature-feed-ring", { cx: String(n.x), cy: String(n.y), r: String(r + 3) });
+    svgEl(g, "circle", "literature-feed-dotnode", { cx: String(n.x), cy: String(n.y), r: String(r) });
+    if (n.vault) svgEl(g, "circle", "literature-feed-vaultdot", { cx: String(n.x + r * 0.7), cy: String(n.y - r * 0.7), r: "3" });
+    svgEl(g, "text", "literature-feed-nodelabel", { x: String(n.x), y: String(n.y + r + 11), "text-anchor": "middle" }).textContent = n.label;
     if (o.onSelect) g.addEventListener("click", (ev) => { ev.stopPropagation(); o.onSelect?.(n); });
   }
   return nodes;
@@ -61,8 +71,8 @@ export function graphBlockProcessor(source: string, el: HTMLElement, open: (grap
     return;
   }
   const box = el.createDiv({ cls: "literature-feed-graph-inline" });
-  const svg = box.createSvg("svg", { cls: "literature-feed-graph-svg is-inline", attr: { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" } });
-  const nodes = drawGraph(svg.createSvg("g"), graph, { mode: "group", showExtras: true, filter: "", selected: null });
+  const svg = svgEl(box, "svg", "literature-feed-graph-svg is-inline", { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" });
+  const nodes = drawGraph(svgEl(svg, "g", ""), graph, { mode: "group", showExtras: true, filter: "", selected: null });
   svg.toggleClass("show-labels", nodes.length <= 30);
   box.createDiv({ cls: "literature-feed-meta", text: LEGEND.group });
   const buttons = box.createDiv({ cls: "literature-feed-buttons" });
@@ -135,8 +145,8 @@ export class GraphView extends ItemView {
     search.addEventListener("input", () => { this.filter = search.value.trim().toLowerCase(); this.draw(); });
     bar.createEl("button", { text: "Reset view" }).addEventListener("click", () => { this.scale = 1; this.tx = 0; this.ty = 0; this.applyTransform(); });
 
-    this.svg = root.createSvg("svg", { cls: "literature-feed-graph-svg", attr: { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" } });
-    this.viewport = this.svg.createSvg("g");
+    this.svg = svgEl(root, "svg", "literature-feed-graph-svg", { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" });
+    this.viewport = svgEl(this.svg, "g", "");
     this.panel = root.createDiv({ cls: "literature-feed-graph-panel" });
     this.bindPointers(this.svg, graph);
     this.draw();

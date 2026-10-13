@@ -1,6 +1,7 @@
 // A force-directed layout (Fruchterman-Reingold) for the review's graph. Pure and deterministic: nodes start on a spiral in id
 // order and nothing is random, so the same papers always give the same picture. Linked nodes pull together, all nodes push apart,
-// a weak pull to the centre keeps separate groups on the page, and every node stays inside the box.
+// a pull to the centre keeps separate groups on the page, and every node stays inside the box. Papers with no link to another are
+// not part of the force simulation (they would be pushed to the walls): they sit in a tidy grid along the bottom.
 export interface LayoutNode {
   id: string;
 }
@@ -17,19 +18,12 @@ export interface LayoutOptions {
   iterations?: number;
 }
 
-export function forceLayout(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], opts: LayoutOptions): Map<string, { x: number; y: number }> {
-  const { width, height } = opts;
-  const iterations = opts.iterations ?? 250;
-  const out = new Map<string, { x: number; y: number }>();
-  const ids = [...new Set(nodes.map((n) => n.id))].sort();
-  const n = ids.length;
-  if (n === 0) return out;
+/** Space between nodes of the grid of unlinked papers. */
+const GRID_STEP = 46;
+
+/** The force simulation for `n` nodes joined by `links`, inside `width` x `height`. */
+function simulate(n: number, links: readonly [number, number][], width: number, height: number, iterations: number): { x: Float64Array; y: Float64Array } {
   const margin = Math.min(width, height) * 0.05;
-  if (n === 1) {
-    out.set(ids[0], { x: width / 2, y: height / 2 });
-    return out;
-  }
-  const index = new Map(ids.map((id, i) => [id, i]));
   const x = new Float64Array(n);
   const y = new Float64Array(n);
   // A spiral from the centre outwards (the golden angle), in id order.
@@ -40,14 +34,8 @@ export function forceLayout(nodes: readonly LayoutNode[], edges: readonly Layout
     x[i] = width / 2 + r * Math.cos(i * golden);
     y[i] = height / 2 + r * Math.sin(i * golden);
   }
-  const links: [number, number][] = [];
-  for (const e of edges) {
-    const a = index.get(e.from);
-    const b = index.get(e.to);
-    if (a !== undefined && b !== undefined && a !== b) links.push([a, b]);
-  }
   const area = (width - 2 * margin) * (height - 2 * margin);
-  const k = Math.sqrt(area / n);
+  const k = 0.7 * Math.sqrt(area / n);
   let temperature = Math.min(width, height) / 8;
   const cooling = temperature / (iterations + 1);
   const dx = new Float64Array(n);
@@ -85,9 +73,9 @@ export function forceLayout(nodes: readonly LayoutNode[], edges: readonly Layout
       dy[b] += (ey / d) * force;
     }
     for (let i = 0; i < n; i++) {
-      // A weak pull to the centre.
-      dx[i] += (width / 2 - x[i]) * 0.02;
-      dy[i] += (height / 2 - y[i]) * 0.02;
+      // A pull to the centre that grows with distance, so no node is thrown against the wall.
+      dx[i] += (width / 2 - x[i]) * 0.5;
+      dy[i] += (height / 2 - y[i]) * 0.5;
       const d = Math.max(Math.hypot(dx[i], dy[i]), 0.01);
       const step = Math.min(d, temperature);
       x[i] = Math.min(width - margin, Math.max(margin, x[i] + (dx[i] / d) * step));
@@ -95,6 +83,61 @@ export function forceLayout(nodes: readonly LayoutNode[], edges: readonly Layout
     }
     temperature -= cooling;
   }
-  for (let i = 0; i < n; i++) out.set(ids[i], { x: Math.round(x[i] * 10) / 10, y: Math.round(y[i] * 10) / 10 });
+  return { x, y };
+}
+
+export function forceLayout(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], opts: LayoutOptions): Map<string, { x: number; y: number }> {
+  const { width, height } = opts;
+  const iterations = opts.iterations ?? 300;
+  const out = new Map<string, { x: number; y: number }>();
+  const ids = [...new Set(nodes.map((n) => n.id))].sort();
+  const n = ids.length;
+  if (n === 0) return out;
+  const round1 = (v: number): number => Math.round(v * 10) / 10;
+  if (n === 1) {
+    out.set(ids[0], { x: width / 2, y: height / 2 });
+    return out;
+  }
+  const index = new Map(ids.map((id, i) => [id, i]));
+  const links: [number, number][] = [];
+  const linked = new Set<number>();
+  for (const e of edges) {
+    const a = index.get(e.from);
+    const b = index.get(e.to);
+    if (a !== undefined && b !== undefined && a !== b) {
+      links.push([a, b]);
+      linked.add(a);
+      linked.add(b);
+    }
+  }
+  // Summing forces in a fixed order keeps the picture the same whatever order the edges came in.
+  links.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const core = ids.map((_, i) => i).filter((i) => linked.has(i));
+  const loose = ids.map((_, i) => i).filter((i) => !linked.has(i));
+
+  if (core.length === 0 || loose.length === 0) {
+    // Everything is linked, or nothing is: one simulation over the whole box.
+    const { x, y } = simulate(n, links, width, height, iterations);
+    for (let i = 0; i < n; i++) out.set(ids[i], { x: round1(x[i]), y: round1(y[i]) });
+    return out;
+  }
+
+  // Unlinked papers in a grid along the bottom, the rest above it.
+  const margin = Math.min(width, height) * 0.05;
+  const perRow = Math.max(1, Math.floor((width - 2 * margin) / GRID_STEP) + 1);
+  const rows = Math.ceil(loose.length / perRow);
+  const strip = rows * GRID_STEP + margin;
+  const top = Math.max(height - strip, height * 0.4);
+  const at = new Map(core.map((id, c) => [id, c]));
+  const coreLinks = links.map(([a, b]): [number, number] => [at.get(a) as number, at.get(b) as number]);
+  const { x, y } = simulate(core.length, coreLinks, width, top, iterations);
+  core.forEach((id, c) => out.set(ids[id], { x: round1(x[c]), y: round1(y[c]) }));
+  const first = Math.min(perRow, loose.length);
+  const left = (width - (first - 1) * GRID_STEP) / 2;
+  loose.forEach((id, i) => {
+    const r = Math.floor(i / perRow);
+    const col = i % perRow;
+    out.set(ids[id], { x: round1(left + col * GRID_STEP), y: round1(top + margin + r * GRID_STEP) });
+  });
   return out;
 }

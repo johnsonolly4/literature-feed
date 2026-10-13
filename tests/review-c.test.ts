@@ -150,3 +150,23 @@ describe("the graph in a review note", () => {
     expect(networkMarkdown(net, { missing: [], alsoCite: [] }, label, (id) => id).join("\n")).not.toContain("literature-feed-graph");
   });
 });
+
+describe("forceLayout with unlinked papers", () => {
+  it("keeps papers with no link out of the middle: a tidy grid below the linked ones, none against the walls", () => {
+    const linked = Array.from({ length: 12 }, (_, i) => `l${String(i).padStart(2, "0")}`);
+    const loose = Array.from({ length: 20 }, (_, i) => `z${String(i).padStart(2, "0")}`);
+    const edges = linked.slice(1).map((id) => ({ from: "l00", to: id }));
+    const at = forceLayout([...linked, ...loose].map((id) => ({ id })), edges, BOX);
+    const lowestLinked = Math.max(...linked.map((id) => (at.get(id) as { y: number }).y));
+    const highestLoose = Math.min(...loose.map((id) => (at.get(id) as { y: number }).y));
+    expect(highestLoose).toBeGreaterThan(lowestLinked);
+    for (const id of [...linked, ...loose]) {
+      const p = at.get(id) as { x: number; y: number };
+      expect(p.x).toBeGreaterThan(20);
+      expect(p.x).toBeLessThan(BOX.width - 20);
+      expect(p.y).toBeLessThan(BOX.height - 20);
+    }
+    const hub = at.get("l00") as { x: number; y: number };
+    expect(Math.hypot(hub.x - BOX.width / 2, hub.y - BOX.height / 2)).toBeLessThan(250);
+  });
+});

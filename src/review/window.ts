@@ -7,7 +7,7 @@ import { shortOpenAlexId } from "../inbox/write";
 import type { Candidate } from "../openalex/client";
 import { extractJson } from "../prompts/schemas";
 import type { Settings } from "../settings/data";
-import { Budget, CAP_PER_TOPIC, DEFAULT_PROMPT_PAPERS, MAX_PROMPT_PAPERS, monthOf, monthTotal, passesMonthlyLimit, type SpendTally } from "./budget";
+import { Budget, CAP_PER_TOPIC, COST_FILTER, DEFAULT_PROMPT_PAPERS, MAX_PROMPT_PAPERS, monthOf, monthTotal, passesMonthlyLimit, type SpendTally } from "./budget";
 import type { ReviewCache } from "./cache";
 import { buildCanvas } from "./canvas";
 import { chartBlock, chartSpecs } from "./chart";
@@ -15,7 +15,7 @@ import { drawChart } from "./chart-view";
 import { planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewPlan, type ReviewResult } from "./collect";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
 import { buildGraphData, type GraphData } from "./graph-data";
-import { buildNetwork, chartData, type Network } from "./network";
+import { buildNetwork, chartData, referenceCoverage, type Network } from "./network";
 import { MAX_GAP_REFERENCES, estimateGapRequests, estimateNetworkRequests, fetchCitationGaps, fetchNetworkExtras, type GapResult, type NetworkClient, type NetworkExtras } from "./network-fetch";
 import { buildExtraRows, networkMarkdown, networkText, type ExtraRow } from "./network-text";
 import { renderReviewNote, reviewNoteName } from "./note";
@@ -49,7 +49,7 @@ function today(): string {
 }
 
 function usd(n: number): string {
-  return `$${n.toFixed(3)}`;
+  return `$${n < 0.01 && n !== 0 ? n.toFixed(4) : n.toFixed(3)}`;
 }
 
 const NO_ROWS = (): { missing: ExtraRow[]; alsoCite: ExtraRow[] } => ({ missing: [], alsoCite: [] });
@@ -124,7 +124,7 @@ export class ReviewModal extends Modal {
     const month = monthTotal(this.host.spend, monthOf(new Date()));
     new Setting(contentEl)
       .setName("Allow going over the spending limit")
-      .setDesc(`The limit is ${usd(this.host.settings.reviewBudgetUsd)} for this review (Settings → Literature review). This month so far: ${month.requests} requests, about ${usd(month.usd)}.`)
+      .setDesc(`The limit is ${usd(this.host.settings.reviewBudgetUsd)} for this review (Settings → Literature review); the free OpenAlex plan includes $1.00 a day. This month so far: ${month.requests} requests, about ${usd(month.usd)}.`)
       .addToggle((t) => t.setValue(false).onChange((v) => { this.allowMore = v; }));
     new Setting(contentEl).addButton((b) => b.setButtonText("Estimate the cost").setCta().onClick(() => void this.estimate()));
     this.out = contentEl.createDiv();
@@ -361,12 +361,17 @@ export class ReviewModal extends Modal {
     this.out.createEl("p", {
       text: `${net.edges.length} citations among these papers; ${net.clusters.length} group${net.clusters.length === 1 ? "" : "s"} that cite each other; ${net.isolated.length} with no link to another. This much needed no extra requests.`,
     });
+    const cover = referenceCoverage(result.papers);
+    this.out.createEl("p", {
+      cls: cover.withList < cover.total * 0.7 ? "literature-feed-warning" : "literature-feed-meta",
+      text: `OpenAlex lists references for ${cover.withList} of ${cover.total} papers${cover.withList < cover.total * 0.7 ? ", so the network is missing many links and the missing-paper counts are probably too low" : ""}.`,
+    });
     const detailIds = Math.min(40, net.missing.length + 20);
     const requests = estimateNetworkRequests(result.papers.length, detailIds);
     if (this.extras === null) {
       new Setting(this.out)
         .setName("Find missing papers")
-        .setDesc(`Works that several of these papers cite but that are not here, and works that cite several of them: about ${requests} requests, ${usd(requests * 0.001)}.`)
+        .setDesc(`Works that several of these papers cite but that are not here, and works that cite several of them: about ${requests} requests, ${usd(requests * COST_FILTER)}.`)
         .addButton((b) => b.setButtonText("Find them").onClick(() => void this.findMissing(requests)));
     } else {
       if (this.extras.stopped) this.out.createEl("p", { cls: "literature-feed-warning", text: `The lookup ${this.extras.stopped}.` });
@@ -399,7 +404,7 @@ export class ReviewModal extends Modal {
     const result = this.result;
     const net = this.network;
     if (!result || !net) return;
-    const extraUsd = requests * 0.001;
+    const extraUsd = requests * COST_FILTER;
     if (!this.allowMore && result.spentUsd + extraUsd > this.host.settings.reviewBudgetUsd + 1e-9) {
       new Notice(`That would take this review to about ${usd(result.spentUsd + extraUsd)}, over the ${usd(this.host.settings.reviewBudgetUsd)} limit. Allow going over the limit at the top to do it.`, 8000);
       return;
@@ -461,7 +466,7 @@ export class ReviewModal extends Modal {
     if (!result) return;
     const paper = result.papers[this.gapIndex];
     if (!paper) return;
-    const extraUsd = requests * 0.001;
+    const extraUsd = requests * COST_FILTER;
     if (!this.allowMore && result.spentUsd + extraUsd > this.host.settings.reviewBudgetUsd + 1e-9) {
       new Notice(`That would take this review to about ${usd(result.spentUsd + extraUsd)}, over the ${usd(this.host.settings.reviewBudgetUsd)} limit. Allow going over the limit at the top to do it.`, 8000);
       return;

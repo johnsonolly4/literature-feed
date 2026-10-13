@@ -6,7 +6,7 @@ import { shortOpenAlexId } from "../inbox/write";
 import { escapeMd, doiUrl } from "../inbox/write";
 import type { ReviewPaper } from "./collect";
 import type { Flags } from "./flags";
-import type { Network } from "./network";
+import { referenceCoverage, type Network } from "./network";
 import type { NetworkExtras } from "./network-fetch";
 
 export const citingLabel = (index: number): string => `C${index + 1}`;
@@ -48,7 +48,10 @@ function titleLine(r: ExtraRow): string {
 /** The network for the prompt: hubs, clusters, isolated papers, and the missing and also-citing works. */
 export function networkText(papers: readonly ReviewPaper[], network: Network, rows: { missing: ExtraRow[]; alsoCite: ExtraRow[] }, labelOf: (id: string) => string | undefined): string {
   const label = (id: string): string => labelOf(id) ?? id;
-  const lines: string[] = [`${network.edges.length} citations among these ${papers.length} papers.`];
+  const cover = referenceCoverage(papers);
+  const lines: string[] = [
+    `${network.edges.length} citations among these ${papers.length} papers. OpenAlex lists references for ${cover.withList} of them${cover.withList < cover.total ? `; the other ${cover.total - cover.withList} may cite more than shows here, so treat missing links with care` : ""}.`,
+  ];
   if (network.hubs.length > 0) {
     lines.push("Cited most by the others in the set:");
     for (const id of network.hubs) lines.push(`- ${label(id)}: cited by ${network.degree.get(id)?.in ?? 0} of them`);

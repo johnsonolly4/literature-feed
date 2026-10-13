@@ -1,10 +1,16 @@
 // Keeping a literature review inside a spending limit. Pure: no Obsidian, no network. OpenAlex bills a request through the
-// `meta.cost_usd` it reports (about $0.001 for a search page); a review adds up many requests, so it is estimated before it runs,
+// `meta.cost_usd` it reports ($0.001 for a search page, $0.0001 for a lookup by id or by citation); a review adds up many requests, so it is estimated before it runs,
 // capped while it runs, and every request is tallied by month. The plugin only sees its own requests: the account's real
 // allowance is on openalex.org.
 
-/** What one search request costs when the answer does not say (as seen: $0.001). */
-export const COST_PER_REQUEST = 0.001;
+/**
+ * What OpenAlex charges (the account page, 10,000 credits = $1): a search costs 10 credits ($0.001), a filtered list (works by id,
+ * works that cite some works) 1 credit ($0.0001), and one record is free. The free plan includes $1.00 a day.
+ */
+export const COST_SEARCH = 0.001;
+export const COST_FILTER = 0.0001;
+/** What a search request costs when the answer does not say. */
+export const COST_PER_REQUEST = COST_SEARCH;
 /** The default spending limit of one review. */
 export const DEFAULT_BUDGET_USD = 0.05;
 /** At most this many works are fetched per search topic (3 pages). */

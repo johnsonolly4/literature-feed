@@ -7,7 +7,7 @@ import { buildCanvas } from "../src/review/canvas";
 import { CHART_BLOCK, chartBlock, chartSpecs, parseChartSpec } from "../src/review/chart";
 import { emptyCache, getWork } from "../src/review/cache";
 import type { ReviewPaper } from "../src/review/collect";
-import { alsoCites, buildNetwork, chartData, citationGaps } from "../src/review/network";
+import { alsoCites, buildNetwork, chartData, citationGaps, referenceCoverage } from "../src/review/network";
 import { CITING_PAGES, MAX_GAP_REFERENCES, SEED_BATCH, estimateGapRequests, estimateNetworkRequests, fetchCitationGaps, fetchNetworkExtras, type NetworkClient } from "../src/review/network-fetch";
 import { buildExtraRows, networkMarkdown, networkText } from "../src/review/network-text";
 import { renderReviewNote } from "../src/review/note";
@@ -260,7 +260,7 @@ describe("network text, canvas and note", () => {
 
   it("prints the network for the prompt: hubs, groups, isolated, missing and citing works with what you have", () => {
     const text = networkText(papers, net, rows, label);
-    expect(text).toContain("1 citations among these 3 papers.");
+    expect(text).toContain("1 citations among these 3 papers. OpenAlex lists references for 2 of them; the other 1 may cite more");
     expect(text).toContain("- P2: cited by 1 of them");
     expect(text).toContain("Group 1 (2 papers): P1, P2");
     expect(text).toContain("1 papers neither cite nor are cited");
@@ -306,5 +306,22 @@ describe("network text, canvas and note", () => {
     expect(note).toContain("| Should read | [Foundational](https://doi.org/10.1000/99) (M1) | 2010 | 900 |");
     expect(note).toContain("| Must read | Paper 1 |".replace("Paper 1", "[Paper 1](https://doi.org/10.1000/1)"));
     expect(note.indexOf("## Reading priorities")).toBeLessThan(note.indexOf("## Citation network"));
+  });
+});
+
+describe("referenceCoverage and the price of lookups", () => {
+  it("counts the papers that have a reference list", () => {
+    expect(referenceCoverage([paper(1, [2]), paper(2, []), paper(3, [1, 2])])).toEqual({ withList: 2, total: 3 });
+    expect(referenceCoverage([])).toEqual({ withList: 0, total: 0 });
+  });
+
+  it("charges lookups by id and by citation as filtered lists ($0.0001), so a small budget still pays for them", async () => {
+    const papers = [paper(1, [99]), paper(2, [99])];
+    const net = buildNetwork(papers);
+    const { client } = fakeNetwork({ citing: [], works: [cand(99)] });
+    const budget = new Budget(0.0005);
+    const extras = await fetchNetworkExtras(papers, net, { client: { ...client, citingPage: async () => ({ papers: [], fetched: 0, count: 0, costUsd: 0 }), getWorks: async (ids) => ({ papers: ids.length > 0 ? [cand(99)] : [], costUsd: 0 }) }, cache: emptyCache(), now: 1, budget });
+    expect(extras.stopped).toBeNull();
+    expect(budget.spent).toBeCloseTo(0.0002); // the fallback price when the answer states no cost: two requests at $0.0001
   });
 });

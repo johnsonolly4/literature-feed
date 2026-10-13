@@ -2,7 +2,7 @@
 // so a repeat costs nothing. The client is passed in (a fake in tests); nothing here touches Obsidian.
 import { shortOpenAlexId } from "../inbox/write";
 import type { Candidate } from "../openalex/client";
-import { COST_PER_REQUEST, type Budget } from "./budget";
+import { COST_FILTER, type Budget } from "./budget";
 import { getWork, putWorks, type ReviewCache } from "./cache";
 import type { ReviewPaper } from "./collect";
 import { alsoCites, citationGaps, type Gap, type Network } from "./network";
@@ -46,13 +46,13 @@ async function worksById(ids: readonly string[], deps: NetworkDeps): Promise<{ p
   }
   let stopped: string | null = null;
   for (let i = 0; i < need.length; i += 50) {
-    if (!deps.budget.canAfford()) {
-      stopped = `stopped at $${deps.budget.spent.toFixed(3)}; some works were not fetched`;
+    if (!deps.budget.canAfford(COST_FILTER)) {
+      stopped = `stopped at $${deps.budget.spent.toFixed(4)}; some works were not fetched`;
       break;
     }
     try {
       const got = await deps.client.getWorks(need.slice(i, i + 50));
-      deps.budget.add(got.costUsd > 0 ? got.costUsd : COST_PER_REQUEST);
+      deps.budget.add(got.costUsd > 0 ? got.costUsd : COST_FILTER);
       putWorks(deps.cache, got.papers, deps.now);
       have.push(...got.papers);
     } catch (e) {
@@ -81,13 +81,13 @@ export async function fetchNetworkExtras(papers: readonly ReviewPaper[], network
     .map((p) => p.id);
   const citing: { id: string; referencedWorks: string[] }[] = [];
   for (let page = 1; page <= CITING_PAGES && seeds.length > 0; page++) {
-    if (!deps.budget.canAfford()) {
-      stopped = `stopped at $${deps.budget.spent.toFixed(3)} before reading the citing works`;
+    if (!deps.budget.canAfford(COST_FILTER)) {
+      stopped = `stopped at $${deps.budget.spent.toFixed(4)} before reading the citing works`;
       break;
     }
     try {
       const res = await deps.client.citingPage(seeds, page);
-      deps.budget.add(res.costUsd > 0 ? res.costUsd : COST_PER_REQUEST);
+      deps.budget.add(res.costUsd > 0 ? res.costUsd : COST_FILTER);
       for (const c of res.papers) {
         const id = shortOpenAlexId(c.openalexId);
         if (id !== null) citing.push({ id, referencedWorks: c.referencedWorks ?? [] });

@@ -86,6 +86,11 @@ function clustersOf(ids: readonly string[], edges: readonly { from: string; to: 
   return { clusters, isolated };
 }
 
+/** How many of the papers have a reference list in OpenAlex: without one a paper can add no link to the network. */
+export function referenceCoverage(papers: readonly { referencedWorks: readonly string[] }[]): { withList: number; total: number } {
+  return { withList: papers.filter((p) => p.referencedWorks.length > 0).length, total: papers.length };
+}
+
 export function buildNetwork(papers: readonly ReviewPaper[], options: NetworkOptions = DEFAULT_NETWORK_OPTIONS): Network {
   const ids = papers.map((p) => p.id);
   const inSet = new Set(ids);

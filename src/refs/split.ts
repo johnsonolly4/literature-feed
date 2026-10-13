@@ -20,14 +20,16 @@ export interface ParsedReference {
   software: boolean;
 }
 
-const LIGATURES: Record<string, string> = { "ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st" };
+const LIGATURES: Record<string, string> = {
+  "\ufb01": "fi", "\ufb02": "fl", "\ufb00": "ff", "\ufb03": "ffi", "\ufb04": "ffl", "\ufb05": "st", "\ufb06": "st",
+};
 
 /** Ligatures, soft hyphens, odd spaces and zero-width characters made plain. */
 export function cleanText(text: string): string {
   return text
-    .replace(/[ﬁﬂﬀﬃﬄﬅﬆ]/g, (c) => LIGATURES[c] ?? c)
-    .replace(/[­​‌‍﻿]/g, "")
-    .replace(/[    ]/g, " ")
+    .replace(/[ﬀ-ﬆ]/g, (c) => LIGATURES[c] ?? c)
+    .replace(/\u00ad|\u200b|\u200c|\u200d|\ufeff/g, "")
+    .replace(/\u00a0|\u2007|\u2009|\u202f/g, " ")
     .replace(/\r\n?/g, "\n");
 }
 
@@ -50,7 +52,7 @@ function startsLikeAuthor(line: string): boolean {
 /** Whether the text so far looks like a whole reference: it has a year and does not end part-way (a comma, a hyphen, an open bracket). */
 function looksComplete(text: string): boolean {
   const t = text.trim();
-  return YEAR.test(t) && /[.\d)\]]$/.test(t) && !/[,;:(\[-–]$/.test(t);
+  return YEAR.test(t) && /[.\d)\]]$/.test(t) && !/[,;:([\-–]$/.test(t);
 }
 
 /** Lines of one reference joined: a word broken at the end of a line is mended, page ranges broken by a space are closed up. */

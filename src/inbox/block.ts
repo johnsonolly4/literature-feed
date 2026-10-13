@@ -281,6 +281,7 @@ class StatusBlock extends MarkdownRenderChild {
       if (meta.length > 0) cell.createDiv({ cls: "literature-feed-meta", text: meta.join(" · ") });
 
       tr.createEl("td", { text: TIER_LABEL[paper.tier] });
+      tr.createEl("td", { text: paper.year === null ? "" : String(paper.year) });
 
       const links = tr.createEl("td", { cls: "literature-feed-links" });
       const doi = doiUrl(paper.doi);

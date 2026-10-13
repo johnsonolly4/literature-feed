@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## 0.0.1 (not released)
+- The table has a Year column (its header was there but the cells were missing, so the headers sat one column off); the cards keep their Show in table button at the bottom.
 - Search effectiveness: the plugin keeps a local history (`ledger.json` in its folder) of every listed paper and what you did with it (ticked, sent to Zotero, read), of what each search topic returned and had removed in each scan, and of changes to a search's rules; the command **Show search effectiveness** shows, per search, wanted and dismissed papers by tier, topic, month and rule version, with feed terms and title words that do better or worse than average as suggestions, and can copy the report as Markdown. Not seen in Obsidian yet.
 - `npm run demo` writes a demo set into `test-vault/Demo/` (four weekly notes, literature notes, a guide) and `docs/feeds/` has two demo searches to import.
 - Cards per search: above the table the note shows one card for each search with a badge ("3 to read"), topic count and last-scan numbers, the first papers to read, the status counts, a funnel line (listed, ticked, read) with a status bar, and **Show in table**, which filters the table to that search (a "Feed" chip clears it). The Home card (`show: home`) gains the status counts and the first papers to read (`limit: N`, default 3, at most 20). The per-search rows of the status box now appear on the Home card only. Not seen in Obsidian yet.

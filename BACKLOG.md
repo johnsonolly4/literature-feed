@@ -29,7 +29,7 @@ Phase 1 took these where the plan was silent (approved in plan mode 2026-10-12 a
 - [ ] Confirm the cap order: it is applied before lower terms, so a title-only paper with a lower term goes Possible → Dropped. Change if you would rather it stay Possible.
 
 ## Bugs
-- [x] Store check, 2026-10-13 (owner, chat, from the Obsidian plugin review report): the manifest description must not contain the word "Obsidian" (`manifest.json:6`). Fixed in 0.1.1 ("in a weekly reading inbox"). The review may report more; each goes here.
+- [x] Store check, 2026-10-13 (owner, chat, from the Obsidian plugin review report): the manifest description must not contain the word "Obsidian" (`manifest.json:6`). Fixed in 0.1.1 ("in a reading inbox note"). The review may report more; each goes here.
 
 ## Quick changes
 - [ ] Trim the Lab Kit copies: `.claude/rules/obsidian-plugin.md` (mentions `src/node.ts`, `src/platform.ts`, `hasNode()`) and `docs/reference/plugin-guidelines.md:68` (kit updater). Left as copied in Phase 0 on purpose; adjust when this plugin has its own helpers.

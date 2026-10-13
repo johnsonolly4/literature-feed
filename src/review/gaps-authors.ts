@@ -135,3 +135,38 @@ export function authorTableCsv(table: AuthorTable): string {
 export function authorTableCallout(title: string, table: AuthorTable): string[] {
   return [`> [!info]- ${title}`, ...authorTableMarkdown(table, Infinity).map((l) => (l === "" ? ">" : `> ${l}`)), ""];
 }
+
+/** A work as the authors drill-down shows it. */
+export interface WorkRef {
+  id: string;
+  title: string;
+  year: number | null;
+  doi: string | null;
+  authors: string[];
+  /** One OpenAlex author id for each name in `authors` ("" when unknown). */
+  authorIds: string[];
+  citedBy: number | null;
+}
+
+/** The works that have this author (by `authorKey`). */
+export function worksBy(key: string, works: readonly WorkRef[]): WorkRef[] {
+  return works.filter((w) => w.authors.some((a) => authorKey(a) === key));
+}
+
+/** The OpenAlex id most often given to this author across the works, or null when none of them has one. */
+export function authorIdFor(key: string, works: readonly WorkRef[]): string | null {
+  const counts = new Map<string, number>();
+  for (const w of works) {
+    w.authors.forEach((a, i) => {
+      const id = w.authorIds[i] ?? "";
+      if (id !== "" && authorKey(a) === key) counts.set(id, (counts.get(id) ?? 0) + 1);
+    });
+  }
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
+}
+
+/** Whether an uncited work could have been cited: out before the paper (or the same year), after it (it could not), or unknown. */
+export function couldHaveBeenCited(workYear: number | null, paperYear: number | null): "before" | "after" | "unknown" {
+  if (workYear === null || paperYear === null) return "unknown";
+  return workYear <= paperYear ? "before" : "after";
+}

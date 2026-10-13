@@ -8,11 +8,13 @@ import { bareDoi } from "../zotero/map";
 import { COST_FILTER, COST_SEARCH } from "./budget";
 import { getTitle, getWork, putTitle, putWorks } from "./cache";
 import { MAX_TITLE_SEARCHES, titleInReference, titleOverlap, type GapInput } from "./gaps-input";
+import { type WorkRef } from "./gaps-authors";
 import { citationGaps, sharedHubs, type Gap } from "./network";
 import { MAX_DEEPER, MAX_GAPS, MAX_HUBS, fetchCitationGaps, worksById, type NetworkClient, type NetworkDeps } from "./network-fetch";
 
 export interface GapsClient extends NetworkClient {
   getFullWork(ref: { doi?: string | null; id?: string | null }): Promise<Candidate | null>;
+  authorWorks(authorId: string, citedIds: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }>;
   getWorksByDoi(dois: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }>;
   findByTitle(title: string): Promise<{ papers: Candidate[]; costUsd: number }>;
 }
@@ -48,6 +50,9 @@ export interface GapsRun {
   citedAuthors: string[][];
   /** DOIs added by hand that OpenAlex knew. */
   addedDois: string[];
+  /** The references that were read, as works (the cited side of the authors drill-down), and their ids. */
+  citedWorks: WorkRef[];
+  referenceIds: string[];
   /** Something to tell the user instead of a list (no record, no references). */
   message: string | null;
   spentUsd: number;
@@ -57,8 +62,13 @@ function subjectOf(c: Candidate): NonNullable<GapsRun["subject"]> {
   return { title: c.title, doi: c.doi ? bareDoi(c.doi) : null, id: shortOpenAlexId(c.openalexId), year: c.year ?? null, authors: c.authors };
 }
 
+/** A candidate as a work reference. */
+export function toWorkRef(c: Candidate): WorkRef {
+  return { id: shortOpenAlexId(c.openalexId) ?? "", title: c.title, year: c.year ?? null, doi: c.doi ? bareDoi(c.doi) : null, authors: c.authors, authorIds: c.authorIds ?? [], citedBy: c.citedByCount ?? null };
+}
+
 const empty = (spentUsd: number, over: Partial<GapsRun>): GapsRun => ({
-  subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: [], searches: 0, stopped: null, deeper: null, citedAuthors: [], addedDois: [], message: null, spentUsd, ...over,
+  subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: [], searches: 0, stopped: null, deeper: null, citedAuthors: [], addedDois: [], citedWorks: [], referenceIds: [], message: null, spentUsd, ...over,
 });
 
 /** A reference line or title searched in OpenAlex (or remembered from before); "stop" when the budget does not allow another search. */
@@ -163,6 +173,7 @@ export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3, dee
   return empty(deps.budget.spent, {
     subject, referencesRead: g.referencesRead, referencesWithLists: g.referencesWithLists, gaps: g.gaps, stopped: g.stopped ?? deep?.stopped ?? added.stopped,
     deeper: deep?.deeper ?? null, citedAuthors: g.referenceAuthors, addedDois: added.found, unresolved: notFound,
+    citedWorks: g.referencePapers.map(toWorkRef), referenceIds: g.records.map((r) => r.id),
   });
 }
 
@@ -211,5 +222,40 @@ async function runReferenceList(input: Extract<GapInput, { kind: "references" }>
     referencesRead: unique.length, referencesWithLists: unique.filter((r) => r.referencedWorks.length > 0).length,
     gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })), unresolved, searches, stopped: stopped ?? details.stopped ?? deep?.stopped ?? null, deeper: deep?.deeper ?? null,
     citedAuthors: unique.map((r) => authorsOf.get(r.id) ?? []),
+    citedWorks: resolved.filter((cand, i, all) => { const id = shortOpenAlexId(cand.openalexId); return id !== null && all.findIndex((o) => shortOpenAlexId(o.openalexId) === id) === i; }).map(toWorkRef),
+    referenceIds: unique.map((r) => r.id),
   });
+}
+
+export interface AuthorWorkResult {
+  /** The author's works that cite some of the paper's references and that the paper does not cite, most shared first. */
+  works: { paper: Candidate; shared: number }[];
+  stopped: string | null;
+}
+
+/**
+ * An author's other work on the same ground: their works that cite at least one of the paper's references (read in lists of 50, so at
+ * most two lookups), leaving out what the paper cites and the paper itself. Each is listed with how many of the references it cites.
+ */
+export async function findAuthorWork(authorId: string, referenceIds: readonly string[], subjectId: string | null, deps: GapsDeps): Promise<AuthorWorkResult> {
+  const refs = [...new Set(referenceIds)].slice(0, 100);
+  const refSet = new Set(refs);
+  const found = new Map<string, Candidate>();
+  let stopped: string | null = null;
+  for (let i = 0; i < refs.length; i += 50) {
+    if (!deps.budget.canAfford(COST_FILTER)) {
+      stopped = `stopped at $${deps.budget.spent.toFixed(4)} before asking about the author's other work`;
+      break;
+    }
+    const res = await deps.client.authorWorks(authorId, refs.slice(i, i + 50));
+    deps.budget.add(res.costUsd > 0 ? res.costUsd : COST_FILTER);
+    putWorks(deps.cache, res.papers, deps.now);
+    for (const p of res.papers) {
+      const id = shortOpenAlexId(p.openalexId);
+      if (id !== null && !refSet.has(id) && id !== subjectId) found.set(id, p);
+    }
+  }
+  const works = [...found.values()].map((paper) => ({ paper, shared: (paper.referencedWorks ?? []).filter((r) => refSet.has(r)).length }));
+  works.sort((a, b) => b.shared - a.shared || (b.paper.citedByCount ?? 0) - (a.paper.citedByCount ?? 0) || a.paper.title.localeCompare(b.paper.title));
+  return { works, stopped };
 }

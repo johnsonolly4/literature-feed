@@ -82,6 +82,12 @@ export function buildTitleSearchUrl(text: string, perPage = 5): string {
   return `${API_URL}?search=${encodeURIComponent(clean)}&per_page=${perPage}&select=${SELECT_EXTRA}`;
 }
 
+/** An author's works (author id `A123`) that cite any of the given works (short ids, at most 50). One filtered list. */
+export function buildAuthorWorksUrl(authorId: string, citedIds: readonly string[], perPage = 100): string {
+  const list = citedIds.filter((id) => /^W\d+$/.test(id)).slice(0, 50);
+  return `${API_URL}?filter=${encodeURIComponent(`authorships.author.id:${authorId},cites:${list.join("|")}`)}&per_page=${perPage}&sort=cited_by_count:desc&select=${SELECT_EXTRA}`;
+}
+
 /** Works that cite any of the given works (short ids, at most 50). */
 export function buildCitingUrl(ids: readonly string[], page = 1, perPage = 100): string {
   const list = ids.filter((id) => /^W\d+$/.test(id)).slice(0, 50);
@@ -290,6 +296,18 @@ export class OpenAlexClient {
       if (candidate) papers.push(candidate);
     }
     return { papers, fetched: results.length, count: meta.count ?? 0, costUsd: meta.cost_usd ?? 0 };
+  }
+
+  /** An author's works that cite at least one of `citedIds` (at most 50 of them), most cited first; one filtered list. */
+  async authorWorks(authorId: string, citedIds: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }> {
+    if (!/^A\d+$/.test(authorId)) return { papers: [], costUsd: 0 };
+    const body = await this.get(buildAuthorWorksUrl(authorId, citedIds));
+    const papers: Candidate[] = [];
+    for (const work of Array.isArray(body.results) ? (body.results as OpenAlexWork[]) : []) {
+      const candidate = toCandidate(work);
+      if (candidate) papers.push(candidate);
+    }
+    return { papers, costUsd: ((body.meta ?? {}) as { cost_usd?: number }).cost_usd ?? 0 };
   }
 
   /** Works by DOI, in batches of 50 (a filtered list, one credit each); DOIs that cannot sit in a filter are skipped. */

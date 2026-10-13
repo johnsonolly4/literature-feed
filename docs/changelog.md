@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## Next version (not released)
+- The references screen matches Check setup: marks, confirm, skip, links to the DOI, Google and Scholar, selectable text. Every list of papers shows its authors. In the gaps tool an author can be clicked for their cited and uncited papers and for their other work on the same ground; the author table can be searched; the gaps note carries all author tables.
 - Citation gaps: add references by DOI (they count as cited and are read), and an authors table: for each author the share of the paper's references and the share of the gaps they appear on, the difference in points, labels for under- and over-cited authors, the paper's own authors starred; in the tab (with CSV) and in the gaps note.
 - Citation gaps: up to 100 gaps with Show more, and an optional second level (what the works that several references cite rest on), with the cost shown first (about $0.0004 a paper, about $0.0011 with the second level).
 - Find DOIs for a reference list: paste references copied from a PDF (ragged lines, no numbers or DOIs), and each is split out and looked up on Crossref (new host `api.crossref.org`, only when you press the button; optional contact email in the settings). Results are marked Found, Check, Not found, Manual or Error, the ones that need a look come first and are skipped unless ticked, and you can copy the list with DOIs or as CSV, or make a note. The citation-gaps paste mode uses it, so pasted references now cost about $0.0001 per 50 instead of $0.001 each.

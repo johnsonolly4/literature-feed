@@ -2,7 +2,7 @@
 // picked from the Zotero library (the local index), or replaced by a pasted reference list. The cost is shown before anything is
 // requested, and the last run is kept so closing the tab loses nothing. Nothing is sent but the OpenAlex requests the user starts.
 import { Notice, Setting, type App } from "obsidian";
-import { shortOpenAlexId } from "../inbox/write";
+import { doiUrl, shortOpenAlexId } from "../inbox/write";
 import type { Settings } from "../settings/data";
 import type { ZoteroIndex } from "../zotero/library-index";
 import { Budget } from "./budget";
@@ -10,8 +10,10 @@ import type { ReviewCache } from "./cache";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
 import { RefsPanel, normaliseRefsSession, type RefsSession } from "../refs/panel";
 import type { ReferenceSearcher } from "../refs/resolve";
-import { authorShares, authorTableCsv } from "./gaps-authors";
-import { runGaps, type GapsClient, type GapsRun } from "./gaps-fetch";
+import { authorsShort } from "./authors-text";
+import { authorIdFor, authorShares, authorTableCsv, couldHaveBeenCited, worksBy, type AuthorRow, type WorkRef } from "./gaps-authors";
+import { googleUrl, scholarUrl, searchQuery } from "./search-links";
+import { findAuthorWork, runGaps, toWorkRef, type AuthorWorkResult, type GapsClient, type GapsRun } from "./gaps-fetch";
 import { renderGapsNote } from "./gaps-note";
 import {
   MAX_TITLE_SEARCHES, emptyGapsSession, estimateGaps, parseDoiList, parseReferenceList, parseWorkInput, searchZoteroIndex, type GapInput, type GapsMode, type GapsSession,
@@ -58,6 +60,8 @@ export class GapsPanel {
   private out!: HTMLElement;
   private saveTimer: number | null = null;
   private refsPanel: RefsPanel | null = null;
+  /** What "find their other work" found, by author key (kept while the tab is open). */
+  private authorFinds = new Map<string, AuthorWorkResult>();
 
   constructor(private readonly host: GapsHost, private readonly root: HTMLElement) {
     this.s = host.gapsSession ?? emptyGapsSession();
@@ -245,14 +249,26 @@ export class GapsPanel {
     return list.map((g) => flagsFor({ id: g.paper ? shortOpenAlexId(g.paper.openalexId) ?? g.gap.id : g.gap.id, doi: g.paper?.doi ?? null, title: g.paper?.title ?? "" }, sources));
   }
 
+  /** One work as a row: the title (a link to its DOI, else a web search), the authors, and what is known. */
+  private workRow(parent: HTMLElement, w: { title: string; doi: string | null; authors: string[]; year: number | null; citedBy: number | null }, info: string, f?: Flags): void {
+    const row = parent.createDiv({ cls: "literature-feed-suggestion" });
+    const query = searchQuery(w.title);
+    const url = doiUrl(w.doi);
+    row.createDiv({ cls: "literature-feed-title" }).createEl("a", { cls: "external-link", text: w.title, href: url ?? googleUrl(query), attr: { target: "_blank", rel: "noopener" } });
+    const who = authorsShort(w.authors);
+    if (who !== "") row.createDiv({ cls: "literature-feed-meta", text: who });
+    row.createDiv({ cls: "literature-feed-meta", text: [w.year ? String(w.year) : "", info, w.citedBy !== null ? `${w.citedBy} citations` : "", f?.zotero ? "in Zotero" : "", f?.vault ? "in the vault" : ""].filter((t) => t !== "").join(" \u00b7 ") });
+    const links = row.createDiv({ cls: "literature-feed-meta literature-feed-ref-links" });
+    links.createEl("a", { cls: "external-link", text: "Google", href: googleUrl(query), attr: { target: "_blank", rel: "noopener" } });
+    links.createEl("a", { cls: "external-link", text: "Scholar", href: scholarUrl(query), attr: { target: "_blank", rel: "noopener" } });
+  }
+
   /** A list of gaps, the first `shown` of them, with how many there are and buttons for more. */
   private drawList(container: HTMLElement, items: GapsRun["gaps"], flags: Flags[], shown: number, line: (x: GapsRun["gaps"][number]) => string, more: (n: number) => void): void {
     container.empty();
     items.slice(0, shown).forEach((x, i) => {
-      const row = container.createDiv({ cls: "literature-feed-suggestion" });
-      row.createDiv({ cls: "literature-feed-title", text: x.paper ? x.paper.title : x.gap.id });
-      const f = flags[i];
-      row.createDiv({ cls: "literature-feed-meta", text: [x.paper?.year ? String(x.paper.year) : "", line(x), x.paper?.citedByCount !== undefined ? `${x.paper.citedByCount} citations` : "", f.zotero ? "in Zotero" : "", f.vault ? "in the vault" : ""].filter((t) => t !== "").join(" · ") });
+      const p = x.paper;
+      this.workRow(container, { title: p ? p.title : x.gap.id, doi: p?.doi ?? null, authors: p?.authors ?? [], year: p?.year ?? null, citedBy: p?.citedByCount ?? null }, line(x), flags[i]);
     });
     if (items.length > shown) {
       container.createEl("p", { cls: "literature-feed-meta", text: `Showing ${Math.min(shown, items.length)} of ${items.length}.` });
@@ -300,39 +316,47 @@ export class GapsPanel {
   private renderAuthors(out: HTMLElement, run: GapsRun): void {
     if (run.citedAuthors.length === 0 || run.gaps.length === 0) return;
     out.createEl("h4", { text: "Authors: cited and not cited" });
-    out.createEl("p", { cls: "literature-feed-meta", text: "For each author, the share of the paper's references they appear on, and the share of the gaps (works its references cite that it does not). An author with a bigger share of the gaps than of the references may be under-cited by this paper; the reverse (starred: the paper's own authors) may be over-cited. Authors are matched by family name and first initial, so two people who share both are counted as one." });
+    out.createEl("p", { cls: "literature-feed-meta", text: "For each author, the share of the paper's references they appear on, and the share of the gaps (works its references cite that it does not). An author with a bigger share of the gaps than of the references may be under-cited by this paper; the reverse (starred: the paper's own authors) may be over-cited. Click an author to see their papers the paper cites and does not cite, and to look for their other work on the same ground. Authors are matched by family name and first initial, so two people who share both are counted as one." });
     const lists = (items: GapsRun["gaps"]): string[][] => items.flatMap((g) => (g.paper ? [g.paper.authors] : []));
+    const works = (items: GapsRun["gaps"]): WorkRef[] => items.flatMap((g) => (g.paper ? [toWorkRef(g.paper)] : []));
     let which: "first" | "second" | "both" = "first";
     let min = 2;
     let shown = 25;
+    let find = "";
+    let selected: string | null = null;
     const bar = out.createDiv({ cls: "literature-feed-chip-row" });
     const holder = out.createDiv();
     const draw = (): void => {
       holder.empty();
-      const uncited = which === "first" ? lists(run.gaps) : which === "second" ? lists(run.deeper?.gaps ?? []) : [...lists(run.gaps), ...lists(run.deeper?.gaps ?? [])];
-      const table = authorShares(run.citedAuthors, uncited, { min, own: run.subject?.authors ?? [] });
+      const secondGaps = run.deeper?.gaps ?? [];
+      const uncitedGaps = which === "first" ? run.gaps : which === "second" ? secondGaps : [...run.gaps, ...secondGaps];
+      const table = authorShares(run.citedAuthors, lists(uncitedGaps), { min, own: run.subject?.authors ?? [] });
+      const rows = find.trim() === "" ? table.rows : table.rows.filter((r) => r.name.toLowerCase().includes(find.trim().toLowerCase()));
       holder.createEl("p", { text: `Shares are of the ${table.citedWorks} cited works and the ${table.uncitedWorks} uncited works that have an author list.` });
-      if (table.rows.length === 0) {
-        holder.createEl("p", { text: "No author is on enough works to compare. Try a lower minimum." });
-        return;
-      }
-      const t = holder.createEl("table", { cls: "literature-feed-papers" });
-      const head = t.createEl("tr");
-      for (const h of ["Author", "Cited", "% of cited", "Uncited", "% of uncited", "Difference", ""]) head.createEl("th", { text: h });
-      for (const r of table.rows.slice(0, shown)) {
-        const tr = t.createEl("tr");
-        tr.createEl("td", { text: `${r.own ? "★ " : ""}${r.name}` });
-        tr.createEl("td", { text: String(r.cited) });
-        tr.createEl("td", { text: `${r.citedPct.toFixed(r.citedPct > 0 && r.citedPct < 10 ? 1 : 0)}%` });
-        tr.createEl("td", { text: String(r.uncited) });
-        tr.createEl("td", { text: `${r.uncitedPct.toFixed(r.uncitedPct > 0 && r.uncitedPct < 10 ? 1 : 0)}%` });
-        tr.createEl("td", { text: `${r.diff >= 0 ? "+" : "−"}${Math.abs(r.diff).toFixed(0)} points` });
-        const label = tr.createEl("td");
-        if (r.label !== "") label.createSpan({ cls: `literature-feed-status ${r.label === "Under-cited" ? "status-check" : "status-over"}`, text: r.label });
+      if (rows.length === 0) {
+        holder.createEl("p", { text: table.rows.length === 0 ? "No author is on enough works to compare. Try a lower minimum." : "No author matches that search." });
+      } else {
+        const t = holder.createEl("table", { cls: "literature-feed-papers literature-feed-authors" });
+        const head = t.createEl("tr");
+        for (const h of ["Author", "Cited", "% of cited", "Uncited", "% of uncited", "Difference", ""]) head.createEl("th", { text: h });
+        for (const r of rows.slice(0, shown)) {
+          const tr = t.createEl("tr", { cls: r.key === selected ? "is-selected" : "" });
+          tr.createEl("td", { text: `${r.own ? "\u2605 " : ""}${r.name}` });
+          tr.createEl("td", { text: String(r.cited) });
+          tr.createEl("td", { text: `${r.citedPct.toFixed(r.citedPct > 0 && r.citedPct < 10 ? 1 : 0)}%` });
+          tr.createEl("td", { text: String(r.uncited) });
+          tr.createEl("td", { text: `${r.uncitedPct.toFixed(r.uncitedPct > 0 && r.uncitedPct < 10 ? 1 : 0)}%` });
+          tr.createEl("td", { text: `${r.diff >= 0 ? "+" : "\u2212"}${Math.abs(r.diff).toFixed(0)} points` });
+          const label = tr.createEl("td");
+          if (r.label !== "") label.createSpan({ cls: `literature-feed-status ${r.label === "Under-cited" ? "status-check" : "status-over"}`, text: r.label });
+          tr.addEventListener("click", () => { selected = r.key === selected ? null : r.key; draw(); });
+        }
       }
       const buttons = new Setting(holder);
-      if (table.rows.length > shown) buttons.addButton((b) => b.setButtonText(`Show all ${table.rows.length}`).onClick(() => { shown = table.rows.length; draw(); }));
+      if (rows.length > shown) buttons.addButton((b) => b.setButtonText(`Show all ${rows.length}`).onClick(() => { shown = rows.length; draw(); }));
       buttons.addButton((b) => b.setButtonText("Copy as CSV").onClick(() => { void navigator.clipboard.writeText(authorTableCsv(table)).then(() => new Notice(COPIED_CSV)); }));
+      const picked = selected === null ? undefined : table.rows.find((r) => r.key === selected);
+      if (picked) this.drawAuthorPanel(holder.createDiv({ cls: "literature-feed-suggestion" }), picked, run, works(uncitedGaps));
     };
     if (run.deeper) {
       const chips = new Map<"first" | "second" | "both", HTMLElement>();
@@ -343,12 +367,70 @@ export class GapsPanel {
         chip.addEventListener("click", () => { which = key; for (const [k, c] of chips) c.toggleClass("is-active", k === key); draw(); });
       }
     }
+    new Setting(bar).setName("Search authors").addText((t) => { t.setPlaceholder("Name").onChange((v) => { find = v; draw(); }); });
     new Setting(bar).setName("Minimum works").addText((t) => {
       t.inputEl.type = "number";
       t.inputEl.addClass("literature-feed-narrow");
       t.setValue(String(min)).onChange((v) => { const n = Math.floor(Number(v)); min = Number.isFinite(n) && n >= 1 ? n : 2; draw(); });
     });
     draw();
+  }
+
+  /** One author: their papers the paper cites, their papers it does not (among the gaps), and a look for their other work on the same ground. */
+  private drawAuthorPanel(box: HTMLElement, row: AuthorRow, run: GapsRun, uncitedWorks: WorkRef[]): void {
+    box.createDiv({ cls: "literature-feed-title", text: `${row.own ? "\u2605 " : ""}${row.name}` });
+    const paperYear = run.subject?.year ?? null;
+    const cited = worksBy(row.key, run.citedWorks);
+    const uncited = worksBy(row.key, uncitedWorks);
+    box.createEl("h5", { text: `Cited by this paper (${cited.length})` });
+    if (cited.length === 0) box.createEl("p", { cls: "literature-feed-meta", text: "None of the references read has this author." });
+    for (const w of cited) this.workRow(box, w, "cited by this paper");
+    box.createEl("h5", { text: `Not cited, among the gaps (${uncited.length})` });
+    if (uncited.length === 0) box.createEl("p", { cls: "literature-feed-meta", text: "None of the gaps has this author." });
+    for (const w of uncited) {
+      const when = couldHaveBeenCited(w.year, paperYear);
+      this.workRow(box, w, when === "before" ? "out before the paper: it could have been cited" : when === "after" ? "out after the paper: it could not have been cited" : "");
+    }
+    const id = authorIdFor(row.key, [...run.citedWorks, ...uncitedWorks]);
+    const found = this.authorFinds.get(row.key);
+    box.createEl("h5", { text: "Their other work on this ground" });
+    box.createEl("p", { cls: "literature-feed-meta", text: "Works by this author that cite at least one of the same references as the paper and that the paper does not cite. One or two small requests (about $0.0002 at most)." });
+    if (id === null) {
+      box.createEl("p", { cls: "literature-feed-meta", text: "No identifier came back for this author in the works read, so this cannot be looked up." });
+    } else if (found) {
+      this.drawAuthorFinds(box, found, paperYear);
+    } else {
+      new Setting(box).addButton((b) => b.setButtonText("Find their other work on this ground").setCta().onClick(() => void this.runAuthorFind(row, id, run, box, uncitedWorks)));
+    }
+  }
+
+  private async runAuthorFind(row: AuthorRow, id: string, run: GapsRun, box: HTMLElement, uncitedWorks: WorkRef[]): Promise<void> {
+    const budget = new Budget(this.host.settings.reviewBudgetUsd);
+    try {
+      const res = await findAuthorWork(id, run.referenceIds, run.subject?.id ?? null, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget });
+      await this.host.saveReviewCache();
+      this.authorFinds.set(row.key, res);
+    } catch (e) {
+      new Notice(`The lookup failed: ${e instanceof Error ? e.message : "unknown error"}`, 8000);
+      return;
+    }
+    box.empty();
+    this.drawAuthorPanel(box, row, run, uncitedWorks);
+  }
+
+  private drawAuthorFinds(box: HTMLElement, found: AuthorWorkResult, paperYear: number | null): void {
+    if (found.stopped) box.createEl("p", { cls: "literature-feed-warning", text: `The lookup ${found.stopped}.` });
+    if (found.works.length === 0) {
+      box.createEl("p", { text: "No other work by this author cites the same references and is missing from the paper." });
+      return;
+    }
+    const sources = this.host.flagSources();
+    for (const { paper, shared } of found.works) {
+      const when = couldHaveBeenCited(paper.year ?? null, paperYear);
+      const f = flagsFor({ id: shortOpenAlexId(paper.openalexId) ?? "", doi: paper.doi ?? null, title: paper.title }, sources);
+      this.workRow(box, { title: paper.title, doi: paper.doi ?? null, authors: paper.authors, year: paper.year ?? null, citedBy: paper.citedByCount ?? null },
+        `cites ${shared} of the paper's references \u00b7 ${when === "before" ? "out before the paper" : when === "after" ? "out after the paper: it could not have been cited" : "year unknown"}`, f);
+    }
   }
 
   private async createNote(run: GapsRun, input: GapInput, ranAt: string, flags: Flags[], deeperFlags: Flags[]): Promise<void> {

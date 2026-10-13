@@ -201,8 +201,14 @@ function sectionBlocks(section: FeedSection): string[][] {
   return blocks;
 }
 
+/**
+ * The classes of a reading-inbox note: `vt` is Lab Kit's look (it gives every scripted note that class), `literature-feed`
+ * our callout colours, and `literature-feed-table` hides the checkbox lines in reading view because the table shows them.
+ */
+export const NOTE_CLASSES = ["vt", "literature-feed", "literature-feed-table"];
+
 function frontmatter(week: string, scanned: string): string[] {
-  return ["---", "kind: reading-inbox", "cssclasses:", "  - literature-feed", `week: ${week}`, `scanned: ${scanned}`, "---"];
+  return ["---", "kind: reading-inbox", "cssclasses:", ...NOTE_CLASSES.map((c) => `  - ${c}`), `week: ${week}`, `scanned: ${scanned}`, "---"];
 }
 
 /** A new note. The line under the properties is empty (Lab Kit's rule), then the status block, then one callout per feed. */
@@ -235,6 +241,17 @@ export interface ParsedPaper {
   topics: number[];
   /** The paper's title as the line shows it (the bold text, backslash escapes removed); "" if it cannot be read. */
   title: string;
+  /** The authors text after the dash ("A. Author, B. Writer et al."), escapes removed; "" if none. */
+  authors: string;
+  /** The venue (the italic part), escapes removed; "" if none. */
+  venue: string;
+  year: number | null;
+  /** The line is marked `preprint`. */
+  preprint: boolean;
+  /** The line is marked `title only` (no abstract came back, so it was judged on the title). */
+  titleOnly: boolean;
+  /** The path in the line's Read link (no ".md"), or null. */
+  readLink: string | null;
 }
 
 export type NoteList = "ranked" | "unchecked" | "synced";
@@ -251,6 +268,8 @@ const ZOTERO_KEY = /zotero:\/\/select\/library\/items\/([A-Z0-9]{8})/;
 const DOI_LINK = /\]\(https:\/\/doi\.org\/(10\.[^)\s]+)\)/;
 const TOPICS = /%%tp:(\d+(?:,\d+)*)%%/;
 const READ_LINK = /\[\[[^\]|]+\|Read\]\]/;
+const READ_PATH = /\[\[([^\]|]+)\|Read\]\]/;
+const TITLE_BLOCK = /^>\s*-\s\[[ xX]\]\s(?:⭐\s)?\*\*(?:\\.|[^*])+\*\*/;
 const LINE_TITLE = /^>\s*-\s\[[ xX]\]\s(?:⭐\s)?\*\*((?:\\.|[^*])+)\*\*/;
 const PAPER = /^>\s*-\s\[( |x|X)\]\s.*%%oa:(W\d+):([psou])%%\s*$/;
 const CODE_TO_TIER = Object.fromEntries(Object.entries(TIER_CODE).map(([tier, code]) => [code, tier])) as Record<string, ListedTier>;
@@ -264,6 +283,34 @@ function doiOfLine(line: string): string | null {
   } catch {
     return raw.toLowerCase();
   }
+}
+
+function unescape(text: string): string {
+  return text.replace(/\\(.)/g, "$1");
+}
+
+/** Authors, venue, year and marks from what follows the title; the line's order is fixed by `paperLine`. */
+function detailsOfLine(line: string): Pick<ParsedPaper, "authors" | "venue" | "year" | "preprint" | "titleOnly"> {
+  const empty = { authors: "", venue: "", year: null, preprint: false, titleOnly: false };
+  const head = TITLE_BLOCK.exec(line);
+  if (!head) return empty;
+  let rest = line.slice(head[0].length).replace(/\s*%%tp:[\d,]+%%/, "").replace(/\s*%%oa:[^%]+%%\s*$/, "");
+  let authors = "";
+  if (rest.startsWith(" — ")) {
+    const cut = rest.indexOf(" · ");
+    authors = unescape(cut === -1 ? rest.slice(3) : rest.slice(3, cut));
+    rest = cut === -1 ? "" : rest.slice(cut);
+  }
+  const segments = rest.split(" · ").map((s) => s.trim()).filter((s) => s !== "");
+  const venueMatch = segments.map((s) => /^\*((?:\\.|[^*])+)\*$/.exec(s)).find((m) => m !== null);
+  const yearSegment = segments.find((s) => /^\d{4}$/.test(s));
+  return {
+    authors,
+    venue: venueMatch ? unescape(venueMatch[1]) : "",
+    year: yearSegment ? Number(yearSegment) : null,
+    preprint: segments.includes("preprint"),
+    titleOnly: segments.includes("title only"),
+  };
 }
 
 /** The papers of a note with their tick state and feed, and the scan date. Lines that do not look like ours are ignored. */
@@ -295,6 +342,8 @@ export function parseInbox(text: string): ParsedNote {
         doi: doiOfLine(line), read: READ_LINK.test(line),
         title: (LINE_TITLE.exec(line)?.[1] ?? "").replace(/\\(.)/g, "$1"),
         topics: (TOPICS.exec(line)?.[1] ?? "").split(",").filter((n) => n !== "").map(Number),
+        readLink: READ_PATH.exec(line)?.[1] ?? null,
+        ...detailsOfLine(line),
       });
     }
   });
@@ -518,4 +567,52 @@ export function markRead(text: string, marks: readonly ReadMark[]): string {
     if (READ_LINK.test(line)) return line.replace(READ_LINK, read);
     return line.replace(/ (%%oa:W\d+:[psou]%%)(\s*)$/, ` · ${read} $1$2`);
   }).join("\n");
+}
+
+/** Sets the tick of one paper's line in one feed (the line the table's checkbox stands for). Changes nothing else. */
+export function setTick(text: string, feedId: string, openalexId: string, ticked: boolean): string {
+  let current = "";
+  return text.split("\n").map((line) => {
+    const header = HEADER.exec(line);
+    if (header) {
+      current = header[1];
+      return line;
+    }
+    const paper = PAPER.exec(line);
+    if (!paper || current !== feedId || paper[2] !== openalexId) return line;
+    return line.replace(/^(>\s*-\s)\[[ xX]\]/, `$1[${ticked ? "x" : " "}]`);
+  }).join("\n");
+}
+
+/**
+ * Makes sure a reading-inbox note (properties with `kind: reading-inbox`) has the classes in `NOTE_CLASSES`, keeping any
+ * others it has and every other line as it is. Notes made before the table existed get them this way. Idempotent.
+ */
+export function ensureNoteClasses(text: string): string {
+  const lines = text.split("\n");
+  if (lines[0]?.trim() !== "---") return text;
+  const end = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
+  if (end === -1) return text;
+  const front = lines.slice(1, end);
+  if (!front.some((l) => /^kind:\s*reading-inbox\s*$/.test(l))) return text;
+
+  const at = front.findIndex((l) => /^cssclasses:/.test(l));
+  const existing: string[] = [];
+  let stop = at;
+  if (at !== -1) {
+    const inline = /^cssclasses:\s*(.*)$/.exec(front[at])?.[1].trim() ?? "";
+    if (inline !== "") {
+      for (const c of inline.replace(/^\[|\]$/g, "").split(",")) if (c.trim() !== "") existing.push(c.trim().replace(/^["']|["']$/g, ""));
+    } else {
+      while (stop + 1 < front.length && /^\s+-\s+\S/.test(front[stop + 1])) {
+        stop++;
+        existing.push(front[stop].replace(/^\s+-\s+/, "").trim().replace(/^["']|["']$/g, ""));
+      }
+    }
+  }
+  const missing = NOTE_CLASSES.filter((c) => !existing.includes(c));
+  if (missing.length === 0) return text;
+  const block = ["cssclasses:", ...[...NOTE_CLASSES, ...existing.filter((c) => !NOTE_CLASSES.includes(c))].map((c) => `  - ${c}`)];
+  const next = at === -1 ? [...front, ...block] : [...front.slice(0, at), ...block, ...front.slice(stop + 1)];
+  return [lines[0], ...next, ...lines.slice(end)].join("\n");
 }

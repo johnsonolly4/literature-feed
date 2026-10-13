@@ -3,7 +3,7 @@ import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
 import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, type LiteratureNote, type RefreshReport } from "./inbox/state";
-import { NOTE_NAME_PATTERN, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, tidySynced } from "./inbox/write";
+import { NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setTick, tidySynced } from "./inbox/write";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
@@ -153,6 +153,13 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     }
   }
 
+  /** The table's checkbox: sets the tick of one paper's line in the note, nothing else. */
+  async toggleTick(path: string, feedId: string, openalexId: string, ticked: boolean): Promise<void> {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return;
+    await this.app.vault.process(file, (current) => setTick(current, feedId, openalexId, ticked));
+  }
+
   /** Marks papers that have a literature note as read and archives finished notes; says so when it changed something. */
   async refreshAndReport(verbose = false): Promise<void> {
     try {
@@ -202,6 +209,12 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     let archived = 0;
     for (const note of inbox) {
       let text = note.text;
+      const withClasses = ensureNoteClasses(text);
+      if (withClasses !== text) {
+        // Notes made before the table existed get the classes that show it and hide the checkbox lines.
+        await vault.process(note.file, ensureNoteClasses);
+        text = withClasses;
+      }
       papers += parseInbox(text).papers.length;
       if (this.settings.literatureFolder !== "") {
         const marks: { feedId: string; openalexId: string; link: string }[] = [];
@@ -271,7 +284,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     const path = normalizePath(note.path);
     const existing = vault.getFileByPath(path);
     if (existing) {
-      await vault.process(existing, (current) => mergeIntoNote(tidySynced(current), note.input));
+      await vault.process(existing, (current) => mergeIntoNote(ensureNoteClasses(tidySynced(current)), note.input));
       return path;
     }
     const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";

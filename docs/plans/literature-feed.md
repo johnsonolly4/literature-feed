@@ -92,6 +92,7 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 - A paper shows **Read** (link to its literature note) once a ZotLit note with the same DOI / Zotero key exists in the vault. A weekly note moves to the archive folder when every paper in it is synced, dismissed or read (unticked papers count as dismissed after N weeks, setting).
 - Done when: tests; seen in `test-vault` with a hand-made literature note.
 - Built 2026-10-13 (not yet seen in Obsidian): `src/inbox/state.ts`, `markRead` and `doi` / `read` in `src/inbox/write.ts`, `refreshInbox` and the command **Update read state and archive** in `src/main.ts`; settings for the literature folder, the archive switch and the dismiss weeks. The match ignores property names (key, DOI, then title). The archive rule is: every paper read or aged out. See `docs/decisions.md`.
+- Added 2026-10-13 (owner request, not in the original plan): the inbox note shows a coloured, ordered table (`src/inbox/table.ts`, `src/inbox/block.ts`) with status chips; the checkbox lines are hidden in reading view but remain the stored data.
 
 ### Phase 7 — Schedule, commands, ribbon
 - Depends on: Phase 6

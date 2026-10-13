@@ -3,7 +3,7 @@ import type { Candidate } from "../src/openalex/client";
 import type { FeedConfig } from "../src/settings/data";
 import {
   buildNote, buildPapers, doiUrl, escapeMd, isoWeek, mergeIntoNote, noteName, parseInbox, renderNote, shortOpenAlexId, weekLabel,
-  NOTE_NAME_PATTERN, markRead, markSynced, tidySynced, waitingByFeed, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
+  NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, setTick, tidySynced, waitingByFeed, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
 } from "../src/inbox/write";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
 import { priorityFlow, strongComonomer, possible, droppedNoLipoic, withSentence } from "./fixtures/lipoic-papers";
@@ -141,8 +141,8 @@ describe("renderNote", () => {
   const lines = text.split("\n");
 
   it("starts with properties, then an empty line, then the status block", () => {
-    expect(lines.slice(0, 7)).toEqual(["---", "kind: reading-inbox", "cssclasses:", "  - literature-feed", "week: 2026-W42", "scanned: 2026-10-12", "---"]);
-    expect(lines.slice(7, 11)).toEqual(["", "```literature-feed", "```", ""]);
+    expect(lines.slice(0, 9)).toEqual(["---", "kind: reading-inbox", "cssclasses:", "  - vt", "  - literature-feed", "  - literature-feed-table", "week: 2026-W42", "scanned: 2026-10-12", "---"]);
+    expect(lines.slice(9, 13)).toEqual(["", "```literature-feed", "```", ""]);
   });
 
   it("writes one callout per feed, open when it has a Priority or Strong paper, collapsed when quiet", () => {
@@ -181,15 +181,15 @@ describe("parseInbox", () => {
     expect(parseInbox(text)).toEqual({
       scanned: "2026-10-12",
       papers: [
-        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [] },
-        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [] },
+        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null },
+        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null },
       ],
     });
   });
 
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
-    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [] }]);
+    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [], authors: "", venue: "", year: null, preprint: false, titleOnly: false, readLink: null }]);
   });
 });
 
@@ -289,6 +289,94 @@ describe("markSynced", () => {
     const note = renderNote(input([{ feedId: "a", feedName: "Lipoic [acid] · copolymers", papers: [paper(1, "strong"), paper(2, "possible")] }]));
     const out = markSynced(note, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
     expect(out).toContain("> [!literature-feed]- Lipoic \\[acid\\] · copolymers · 1 paper %%feed:a%%");
+  });
+});
+
+describe("what the table reads from a line", () => {
+  const nl = String.fromCharCode(10);
+
+  it("reads authors, venue, year and the marks, with escapes removed", () => {
+    const rich = { ...paper(1, "strong", "T"), authors: ["Ada [Lovelace]", "B. Writer", "C", "D"], venue: "J. *of* Tests", year: 2024, isPreprint: true, noAbstract: true, doi: null, topics: [2] };
+    const text = renderNote(input([{ feedId: "a", feedName: "A", papers: [rich as unknown as InboxPaper] }]));
+    expect(parseInbox(text).papers[0]).toMatchObject({
+      authors: "Ada [Lovelace], B. Writer, C et al.", venue: "J. *of* Tests", year: 2024, preprint: true, titleOnly: true, topics: [2],
+    });
+  });
+
+  it("copes with a line that has no authors, venue or year, and with links added by Sync and Read", () => {
+    const bare = { ...paper(1, "possible"), authors: [], venue: null, year: null, doi: null };
+    const text = markRead(markSynced(renderNote(input([{ feedId: "a", feedName: "A", papers: [bare] }])), [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]), [{ feedId: "a", openalexId: "W1", link: "Lit/x" }]);
+    expect(parseInbox(text).papers[0]).toMatchObject({ authors: "", venue: "", year: null, preprint: false, titleOnly: false, readLink: "Lit/x", read: true, synced: true });
+  });
+
+  it("reads the Read link's path, and null when there is none", () => {
+    const text = renderNote(input([{ feedId: "a", feedName: "A", papers: [paper(1, "strong"), paper(2, "possible")] }]));
+    const linked = markRead(text, [{ feedId: "a", openalexId: "W1", link: "04 Literature/Smith 2026.md" }]);
+    expect(parseInbox(linked).papers.map((p) => p.readLink)).toEqual(["04 Literature/Smith 2026", null]);
+    expect(linked.split(nl).filter((l) => l.includes("Read]]"))).toHaveLength(1);
+  });
+});
+
+describe("setTick", () => {
+  const nl = String.fromCharCode(10);
+  const base = renderNote(input([
+    { feedId: "a", feedName: "A", papers: [paper(1, "strong"), paper(2, "possible")] },
+    { feedId: "b", feedName: "B", papers: [paper(1, "possible")] },
+  ]));
+
+  it("ticks and unticks only the named paper in the named feed", () => {
+    const ticked = setTick(base, "a", "W1", true);
+    expect(parseInbox(ticked).papers.map((p) => `${p.feedId}:${p.openalexId}:${p.ticked}`)).toEqual(["a:W1:true", "a:W2:false", "b:W1:false"]);
+    const back = setTick(ticked, "a", "W1", false);
+    expect(back).toBe(base);
+    const changed = ticked.split(nl).filter((l, i) => l !== base.split(nl)[i]);
+    expect(changed).toHaveLength(1);
+  });
+
+  it("changes nothing for an unknown paper or feed, and keeps an upper-case X ticked state consistent", () => {
+    expect(setTick(base, "a", "W99", true)).toBe(base);
+    expect(setTick(base, "zzz", "W1", true)).toBe(base);
+    const upper = base.replace("> - [ ] **Paper 2**", "> - [X] **Paper 2**");
+    expect(parseInbox(upper).papers[1].ticked).toBe(true);
+    expect(parseInbox(setTick(upper, "a", "W2", false)).papers[1].ticked).toBe(false);
+  });
+
+  it("works on a paper in the In Zotero list (unticking it is the request to send it again)", () => {
+    const synced = markSynced(base, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
+    const resend = setTick(synced, "a", "W1", false);
+    expect(parseInbox(resend).papers.find((p) => p.openalexId === "W1" && p.feedId === "a")).toMatchObject({ list: "synced", ticked: false, synced: true });
+  });
+});
+
+describe("ensureNoteClasses", () => {
+  const nl = String.fromCharCode(10);
+  const modern = renderNote(input([{ feedId: "a", feedName: "A", papers: [paper(1, "strong")] }]));
+  const old = ["---", "kind: reading-inbox", "cssclasses:", "  - literature-feed", "week: 2026-W42", "scanned: 2026-10-12", "---", "", "body"].join(nl);
+
+  it("does not touch a note that already has the classes, and new notes have them", () => {
+    expect(ensureNoteClasses(modern)).toBe(modern);
+    expect(modern).toContain("  - vt" + nl + "  - literature-feed" + nl + "  - literature-feed-table");
+  });
+
+  it("adds the missing classes to an old note, keeping its other properties and its body", () => {
+    const out = ensureNoteClasses(old);
+    expect(out).toBe(["---", "kind: reading-inbox", "cssclasses:", "  - vt", "  - literature-feed", "  - literature-feed-table", "week: 2026-W42", "scanned: 2026-10-12", "---", "", "body"].join(nl));
+    expect(ensureNoteClasses(out)).toBe(out);
+  });
+
+  it("keeps classes the user added, and handles an inline list and a note with no cssclasses at all", () => {
+    const user = old.replace("  - literature-feed", "  - literature-feed" + nl + "  - my-class");
+    expect(ensureNoteClasses(user)).toContain("  - my-class");
+    expect(ensureNoteClasses(old.replace("cssclasses:" + nl + "  - literature-feed", "cssclasses: [literature-feed, mine]"))).toContain("  - mine");
+    const none = ["---", "kind: reading-inbox", "week: 2026-W42", "---", "", "body"].join(nl);
+    expect(ensureNoteClasses(none)).toContain("cssclasses:" + nl + "  - vt");
+  });
+
+  it("leaves any other note alone", () => {
+    expect(ensureNoteClasses("no properties here")).toBe("no properties here");
+    const other = ["---", "kind: literature", "cssclasses:", "  - vt", "---", "x"].join(nl);
+    expect(ensureNoteClasses(other)).toBe(other);
+    expect(ensureNoteClasses(["---", "kind: reading-inbox", "no closing line"].join(nl))).toBe(["---", "kind: reading-inbox", "no closing line"].join(nl));
   });
 });
 

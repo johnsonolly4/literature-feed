@@ -36,7 +36,7 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
         type: "group",
         heading: "Folders",
         items: [
-          { name: "Inbox folder", desc: "Where the weekly reading-inbox notes go.", control: { type: "folder", key: "inboxFolder", includeRoot: true } },
+          { name: "Inbox folder", desc: "Where the weekly reading-inbox notes go. Use a folder of its own: with Lab Kit, not its quick-capture inbox, which Sort inbox sweeps.", control: { type: "folder", key: "inboxFolder", includeRoot: true } },
           { name: "Archive folder", desc: "Where finished inbox notes are moved.", control: { type: "folder", key: "archiveFolder", includeRoot: true } },
         ],
       },

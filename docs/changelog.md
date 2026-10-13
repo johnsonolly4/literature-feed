@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## 0.0.1 (not released)
+- Reading inbox table: the block shows every paper in a table with status chips (New, Ticked, In Zotero, Read, Processed) in Lab Kit's colours by meaning, an order that puts papers to read first, sort by clicking a column header, filter chips with counts, and tick boxes that edit the note's lines; the per-feed lists are hidden in reading view by the class `literature-feed-table`. Notes now carry `cssclasses` `vt`, `literature-feed`, `literature-feed-table` (old notes get them on the next refresh). The "In Zotero" callout is amber. Not seen in Obsidian yet.
 - Archive rule: a weekly note moves to the archive when every paper is read or has aged out (unticked, or in Zotero but unread, N weeks after the note's week); papers in Zotero that are not read keep it in the inbox as a reading queue. Setting renamed "Mark papers done after (weeks)".
 - Where papers came from: new Zotero items get the tag `found-by/openalex` and an Extra line "Found by: OpenAlex search, feed ..., topic N"; inbox lines carry a hidden marker with the topics that found the paper. Items already in the library are not tagged.
 - Read state: a paper also matches a literature note by its title (a `title` property) when the key and DOI do not match; the command **Update read state and archive**, run by hand, says what it checked and changed, and says so when the inbox folder holds no inbox notes.

@@ -472,11 +472,11 @@ table.literature-feed-papers input.literature-feed-tick[type="checkbox"] {
 .literature-feed-chip.is-dismissed,
 .literature-feed-filter.is-dismissed {
   --literature-feed-rgb: var(--vt-neutral, 100, 116, 139);
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 table.literature-feed-papers tr.is-dismissed td:not(.literature-feed-act) {
-  opacity: 0.55;
+  opacity: 0.7;
 }
 
 table.literature-feed-papers tr.is-dismissed .literature-feed-title {

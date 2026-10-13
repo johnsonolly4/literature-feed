@@ -90,6 +90,22 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       },
       {
         type: "group",
+        heading: "Literature review",
+        items: [
+          {
+            name: "Spending limit per review (US dollars)",
+            desc: "The most one literature review may spend on OpenAlex requests (a search page costs about $0.001). The window shows the estimate first and never goes over this unless you allow it for that review.",
+            control: { type: "number", key: "reviewBudgetUsd", min: 0.005, max: 5, step: 0.005 },
+          },
+          {
+            name: "Monthly soft limit (US dollars, 0 = none)",
+            desc: "Warns before a review that would take this month's OpenAlex requests from this plugin past this amount. The plugin only counts its own requests; your account's real allowance is on openalex.org.",
+            control: { type: "number", key: "reviewMonthlyLimitUsd", min: 0, max: 100, step: 0.5 },
+          },
+        ],
+      },
+      {
+        type: "group",
         heading: "Zotero",
         items: [
           {
@@ -124,6 +140,7 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
         items: [
           { name: "Review a search", desc: "Copies a prompt for an LLM chat with a search, how it has done and what you decided before; paste the JSON answer back to accept or reject each change. The plugin sends nothing.", action: () => void this.host.openPrompt("review") },
           { name: "Tweak search terms", desc: "Copies a prompt that asks an LLM to review and tweak one search's topics.", action: () => void this.host.openPrompt("topics") },
+          { name: "Generate literature review", desc: "Runs your searches over a wider window within a spending limit, flags the papers you already have in Zotero and the vault, and copies a prompt for an LLM to group and prioritise them. The plugin sends nothing but the OpenAlex searches you start.", action: () => void this.host.openReview() },
           { name: "Compare searches", desc: "Copies a prompt that gives an LLM all your searches and how they overlap (shared papers, papers one drops that another lists, topics that add nothing) and asks for advice, shown for you to read.", action: () => void this.host.openPrompt("compare") },
           { name: "New search from a description", desc: "Copies a prompt that asks an LLM to write a new search from your description and the example papers you attach to the chat.", action: () => void this.host.openPrompt("new") },
         ],
@@ -144,6 +161,8 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       case "archiveFinished": return s.archiveFinished;
       case "autoScan": return s.autoScan;
       case "autoSync": return s.autoSync;
+      case "reviewBudgetUsd": return s.reviewBudgetUsd;
+      case "reviewMonthlyLimitUsd": return s.reviewMonthlyLimitUsd;
       case "dismissAfterWeeks": return s.dismissAfterWeeks;
       default: return undefined;
     }
@@ -167,6 +186,16 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       case "archiveFinished": s.archiveFinished = value === true; break;
       case "autoScan": s.autoScan = value === true; break;
       case "autoSync": s.autoSync = value === true; break;
+      case "reviewBudgetUsd": {
+        const n = Number(value);
+        if (Number.isFinite(n) && n >= 0.005 && n <= 5) s.reviewBudgetUsd = n;
+        break;
+      }
+      case "reviewMonthlyLimitUsd": {
+        const n = Number(value);
+        if (Number.isFinite(n) && n >= 0 && n <= 100) s.reviewMonthlyLimitUsd = n;
+        break;
+      }
       case "dismissAfterWeeks": {
         const weeks = Number(value);
         if (Number.isInteger(weeks) && weeks >= 1 && weeks <= 52) s.dismissAfterWeeks = weeks;

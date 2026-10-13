@@ -27,7 +27,7 @@ describe("normaliseSettings", () => {
   it("defaults hold no secrets, no paths and no feeds", () => {
     expect(defaultSettings()).toEqual({
       openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [], lastScan: "", seen: [], lastScanResult: null, createInboxCollections: false, createProjectCollections: false,
-      literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4, autoScan: true, autoSync: false, lastSync: "",
+      literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4, autoScan: true, autoSync: false, lastSync: "", reviewBudgetUsd: 0.05, reviewMonthlyLimitUsd: 0,
     });
   });
 
@@ -69,6 +69,13 @@ describe("normaliseSettings", () => {
     }
     const saved = normaliseSettings({ createProjectCollections: true });
     expect(normaliseSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
+  });
+
+  it("reads the literature review limits, with safe fallbacks", () => {
+    expect(normaliseSettings({})).toMatchObject({ reviewBudgetUsd: 0.05, reviewMonthlyLimitUsd: 0 });
+    expect(normaliseSettings({ reviewBudgetUsd: 0.2, reviewMonthlyLimitUsd: 3 })).toMatchObject({ reviewBudgetUsd: 0.2, reviewMonthlyLimitUsd: 3 });
+    for (const bad of [0, 0.001, 9, -1, "0.1", null, NaN]) expect(normaliseSettings({ reviewBudgetUsd: bad }).reviewBudgetUsd, String(bad)).toBe(0.05);
+    for (const bad of [-1, 101, "5", null]) expect(normaliseSettings({ reviewMonthlyLimitUsd: bad }).reviewMonthlyLimitUsd, String(bad)).toBe(0);
   });
 
   it("reads the schedule settings: scan on by default, sync off by default, a bad day is ignored", () => {

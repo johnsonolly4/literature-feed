@@ -8,6 +8,11 @@ import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordDro
 import { topicStatRows, titlesByVerdict, type TopicStatRow } from "./prompts/build";
 import { emptyDecisions, normaliseDecisions, type Decisions } from "./prompts/decisions";
 import { PromptModal, type PromptHost, type PromptKind } from "./prompts/modals";
+import { addSpend, emptyTally, monthOf, normaliseTally, type SpendTally } from "./review/budget";
+import { emptyCache, normaliseCache, type ReviewCache } from "./review/cache";
+import type { FlagSources } from "./review/flags";
+import { ReviewModal, type ReviewHost } from "./review/window";
+import { buildLookup, emptyIndex, mergeIndex, normaliseIndex, type ZoteroIndex } from "./zotero/library-index";
 import type { FixAction, SetupSnapshot } from "./setup/checks";
 import type { IntegrationInfo } from "./setup/integrate";
 import { SetupModal, type SetupHost } from "./setup/setup-modal";
@@ -32,7 +37,7 @@ const START_DELAY_MS = 15_000;
 /** While Obsidian stays open the schedule is checked this often. */
 const CHECK_EVERY_MS = 60 * 60 * 1000;
 
-export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost {
+export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost, ReviewHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
@@ -41,6 +46,13 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   private readonly autoTried = { scan: "", sync: "" };
   /** The long-term record of how each search does (`ledger.json` in the plugin folder). */
   private ledger: Ledger = emptyLedger();
+  /** OpenAlex requests made by this plugin, by month (`openalex-spend.json`). */
+  spend: SpendTally = emptyTally();
+  private spendTimer: number | null = null;
+  /** What the last literature reviews fetched, kept 24 hours (`review-cache.json`). */
+  reviewCache: ReviewCache = emptyCache();
+  /** The Zotero library as a local, read-only index (`zotero-index.json`). */
+  zoteroIndex: ZoteroIndex = emptyIndex();
   /** Earlier LLM suggestions and what the user decided (`decisions.json` in the plugin folder). */
   decisions: Decisions = emptyDecisions();
   /** Open status blocks and cards; they redraw after a scan. */
@@ -50,11 +62,15 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.loadSettings();
     this.ledger = await this.loadLedger();
     this.decisions = await this.loadDecisions();
+    this.spend = normaliseTally(await this.readPluginJson("openalex-spend.json"));
+    this.reviewCache = normaliseCache(await this.readPluginJson("review-cache.json"));
+    this.zoteroIndex = normaliseIndex(await this.readPluginJson("zotero-index.json"));
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
     this.addCommand({ id: "check-setup", name: "Check setup", callback: () => void this.openSetup() });
+    this.addCommand({ id: "literature-review", name: "Generate literature review", callback: () => void this.openReview() });
     this.addCommand({ id: "llm-review", name: "Review a search with an LLM", callback: () => void this.openPrompt("review") });
     this.addCommand({ id: "llm-topics", name: "Tweak search terms with an LLM", callback: () => void this.openPrompt("topics") });
     this.addCommand({ id: "llm-compare", name: "Compare searches with an LLM", callback: () => void this.openPrompt("compare") });
@@ -149,11 +165,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         return;
       }
       new Notice("Scanning for new papers…");
-      const client = new OpenAlexClient({
-        request: obsidianRequester,
-        apiKey: this.getSecret("openAlexKey") || undefined,
-        sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
-      });
+      const client = this.newOpenAlexClient();
       const now = new Date();
       const outcome = await runScan(this.settings, { client, now });
       const scanned = this.settings.feeds.filter((f) => outcome.topicStats.some((s) => s.feedId === f.id));
@@ -212,7 +224,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
       const result = await runSync(this.settings.feeds, pending, {
         zotero: new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep }),
-        openalex: new OpenAlexClient({ request: obsidianRequester, apiKey: this.getSecret("openAlexKey") || undefined, sleep }),
+        openalex: this.newOpenAlexClient(),
       }, { createInboxCollections: this.settings.createInboxCollections, createProjectCollections: this.settings.createProjectCollections });
       for (const note of notes) {
         const marks = result.synced.filter((s) => s.path === note.file.path);
@@ -347,6 +359,109 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   /** Where the ledger is kept: next to `data.json`, in the plugin's folder. Null when Obsidian does not say where that is. */
   private ledgerPath(): string | null {
     return this.manifest.dir ? normalizePath(`${this.manifest.dir}/ledger.json`) : null;
+  }
+
+  /** An OpenAlex client with the user's key; every request's cost goes into the monthly tally. */
+  private newOpenAlexClient(): OpenAlexClient {
+    return new OpenAlexClient({
+      request: obsidianRequester,
+      apiKey: this.getSecret("openAlexKey") || undefined,
+      sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+      onCost: (usd) => this.recordSpend(usd),
+    });
+  }
+
+  newReviewClient(): OpenAlexClient {
+    return this.newOpenAlexClient();
+  }
+
+  /** Adds a request's cost to this month's tally; the file is written a moment later, once for a burst of requests. */
+  recordSpend(usd: number): void {
+    addSpend(this.spend, monthOf(new Date()), usd);
+    if (this.spendTimer !== null) return;
+    this.spendTimer = window.setTimeout(() => {
+      this.spendTimer = null;
+      void this.writePluginJson("openalex-spend.json", this.spend);
+    }, 2000);
+  }
+
+  onunload(): void {
+    if (this.spendTimer !== null) {
+      window.clearTimeout(this.spendTimer);
+      void this.writePluginJson("openalex-spend.json", this.spend);
+    }
+  }
+
+  private async readPluginJson(name: string): Promise<unknown> {
+    if (!this.manifest.dir) return null;
+    const path = normalizePath(`${this.manifest.dir}/${name}`);
+    try {
+      if (!(await this.app.vault.adapter.exists(path))) return null;
+      return JSON.parse(await this.app.vault.adapter.read(path)) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writePluginJson(name: string, data: unknown): Promise<void> {
+    if (!this.manifest.dir) return;
+    try {
+      await this.app.vault.adapter.write(normalizePath(`${this.manifest.dir}/${name}`), JSON.stringify(data));
+    } catch (e) {
+      new Notice(`Could not save ${name}: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    }
+  }
+
+  async openReview(): Promise<void> {
+    await this.updateLedgerNow();
+    new ReviewModal(this).open();
+  }
+
+  async saveReviewCache(): Promise<void> {
+    await this.writePluginJson("review-cache.json", this.reviewCache);
+  }
+
+  /** Reads the Zotero library (read-only) into the local index, only what changed since the last time, and says what it found. */
+  async refreshZoteroIndex(): Promise<string> {
+    const apiKey = this.getSecret("zoteroKey");
+    const userId = this.settings.zoteroUserId;
+    if (apiKey === "" || userId === "") throw new Error("Add your Zotero API key and user ID in the settings first.");
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
+    const client = new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep });
+    const since = this.zoteroIndex.libraryVersion;
+    const [fetched, deleted] = await Promise.all([client.listLibraryItems(since), client.listDeleted(since)]);
+    this.zoteroIndex = mergeIndex(this.zoteroIndex, fetched.items, deleted, fetched.libraryVersion);
+    await this.writePluginJson("zotero-index.json", this.zoteroIndex);
+    return `Zotero index up to date: ${Object.keys(this.zoteroIndex.items).length} items (${fetched.items.length} read this time${deleted.length > 0 ? `, ${deleted.length} removed` : ""}).`;
+  }
+
+  /** Where the three flags (in Zotero, in the vault, listed before) come from; a source that is not available is left out. */
+  flagSources(): FlagSources {
+    return {
+      zotero: Object.keys(this.zoteroIndex.items).length > 0 ? buildLookup(this.zoteroIndex) : null,
+      literature: this.settings.literatureFolder === "" ? null : buildLiteratureIndex(this.literatureNotes()),
+      ledger: this.ledger,
+      seen: this.settings.seen,
+    };
+  }
+
+  /** Review notes go in a Reviews folder under the literature notes folder, or the vault root when there is none. */
+  reviewFolder(): string {
+    return this.settings.literatureFolder === "" ? "" : normalizePath(`${this.settings.literatureFolder}/Reviews`);
+  }
+
+  /** Makes a note (a number is added to its name when one exists), opens it, and returns its path. */
+  async createReviewNote(path: string, text: string): Promise<string> {
+    const { vault } = this.app;
+    const clean = normalizePath(path);
+    const folder = clean.includes("/") ? clean.slice(0, clean.lastIndexOf("/")) : "";
+    if (folder !== "" && !vault.getFolderByPath(folder)) await vault.createFolder(folder);
+    const base = clean.replace(/\.md$/i, "");
+    let final = `${base}.md`;
+    for (let n = 2; vault.getAbstractFileByPath(final); n++) final = `${base} ${n}.md`;
+    await vault.create(final, text);
+    await this.app.workspace.openLinkText(final, "", "tab");
+    return final;
   }
 
   async openSetup(): Promise<void> {

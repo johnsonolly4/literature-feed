@@ -1,6 +1,14 @@
 # Literature Feed: changelog
 
 ## Next version (not released)
+
+## 0.3.0 (2026-10-13)
+- Reports share one look: tables with chips, sorting and a search box, a side pane for details, and **Open this note's report view** reopens a report from its note.
+- Citation gaps: one table of works and one of authors, switched by chips; clicking an author opens their papers beside the table (it did nothing before for runs saved by an older version); the settings fold away after a run; the gaps note can reopen the view; an LLM prompt checks whether under- or over-cited authors really are, against what it finds on the web, and its verdicts come back into the table and the note.
+- Literature review: **Works fetched per topic** (default 1000, up to 2000; it was 300) and **Order papers by**: closest to the papers you already know, best fit to the searches, newest or most cited (citation order used to push recent, well-fitting papers out of the prompt).
+- Literature review: **Papers I already know** (paste DOIs) ranks results by shared references and authors, adds that overlap to the prompt, and **Read papers and suggest searches** proposes search strings from those papers, shows which of them each string finds, checks its size and adds it to a search.
+
+### Also in 0.3.0 (built earlier on this branch)
 - The references screen matches Check setup: marks, confirm, skip, links to the DOI, Google and Scholar, selectable text. Every list of papers shows its authors. In the gaps tool an author can be clicked for their cited and uncited papers and for their other work on the same ground; the author table can be searched; the gaps note carries all author tables.
 - Citation gaps: add references by DOI (they count as cited and are read), and an authors table: for each author the share of the paper's references and the share of the gaps they appear on, the difference in points, labels for under- and over-cited authors, the paper's own authors starred; in the tab (with CSV) and in the gaps note.
 - Citation gaps: up to 100 gaps with Show more, and an optional second level (what the works that several references cite rest on), with the cost shown first (about $0.0004 a paper, about $0.0011 with the second level).

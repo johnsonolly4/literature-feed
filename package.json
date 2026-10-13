@@ -1,6 +1,6 @@
 {
   "name": "literature-feed",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Weekly paper feeds from OpenAlex into an Obsidian reading inbox, synced to Zotero.",
   "main": "main.js",
   "scripts": {

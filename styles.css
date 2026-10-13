@@ -471,12 +471,26 @@ table.literature-feed-papers .literature-feed-act {
   white-space: nowrap;
 }
 
+/* An icon in a box, big enough to hit easily */
 button.literature-feed-icon {
-  height: auto;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: 6px;
   background: transparent;
   box-shadow: none;
+  font-size: 16px;
+  line-height: 1;
   color: var(--text-muted);
+  cursor: pointer;
+}
+
+button.literature-feed-icon:hover {
+  background: var(--background-modifier-hover);
 }
 
 .literature-feed-links a + a {
@@ -491,4 +505,9 @@ button.literature-feed-icon {
 /* The dismiss cross is red (the owner's choice; Lab Kit otherwise keeps red for overdue only) */
 button.literature-feed-icon.is-dismiss {
   color: rgb(var(--vt-overdue, 239, 68, 68));
+  border-color: rgba(var(--vt-overdue, 239, 68, 68), 0.6);
+}
+
+button.literature-feed-icon.is-dismiss:hover {
+  background: rgba(var(--vt-overdue, 239, 68, 68), 0.15);
 }

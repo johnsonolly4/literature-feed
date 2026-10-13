@@ -11,6 +11,7 @@ import { PromptModal, type PromptHost, type PromptKind } from "./prompts/modals"
 import { addSpend, emptyTally, monthOf, normaliseTally, type SpendTally } from "./review/budget";
 import { emptyCache, normaliseCache, type ReviewCache } from "./review/cache";
 import type { FlagSources } from "./review/flags";
+import { chartBlockProcessor } from "./review/chart-view";
 import { ReviewModal, type ReviewHost } from "./review/window";
 import { buildLookup, emptyIndex, mergeIndex, normaliseIndex, type ZoteroIndex } from "./zotero/library-index";
 import type { FixAction, SetupSnapshot } from "./setup/checks";
@@ -70,6 +71,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
     this.addCommand({ id: "check-setup", name: "Check setup", callback: () => void this.openSetup() });
+    this.registerMarkdownCodeBlockProcessor("literature-feed-chart", (source, el) => chartBlockProcessor(source, el));
     this.addCommand({ id: "literature-review", name: "Generate literature review", callback: () => void this.openReview() });
     this.addCommand({ id: "llm-review", name: "Review a search with an LLM", callback: () => void this.openPrompt("review") });
     this.addCommand({ id: "llm-topics", name: "Tweak search terms with an LLM", callback: () => void this.openPrompt("topics") });
@@ -450,17 +452,18 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     return this.settings.literatureFolder === "" ? "" : normalizePath(`${this.settings.literatureFolder}/Reviews`);
   }
 
-  /** Makes a note (a number is added to its name when one exists), opens it, and returns its path. */
-  async createReviewNote(path: string, text: string): Promise<string> {
+  /** Makes a file (a number is added to its name when one exists), opens it when asked, and returns its path. */
+  async createReviewNote(path: string, text: string, open = true): Promise<string> {
     const { vault } = this.app;
     const clean = normalizePath(path);
     const folder = clean.includes("/") ? clean.slice(0, clean.lastIndexOf("/")) : "";
     if (folder !== "" && !vault.getFolderByPath(folder)) await vault.createFolder(folder);
-    const base = clean.replace(/\.md$/i, "");
-    let final = `${base}.md`;
-    for (let n = 2; vault.getAbstractFileByPath(final); n++) final = `${base} ${n}.md`;
+    const ext = /\.[A-Za-z0-9]+$/.exec(clean)?.[0] ?? ".md";
+    const base = clean.endsWith(ext) ? clean.slice(0, clean.length - ext.length) : clean;
+    let final = `${base}${ext}`;
+    for (let n = 2; vault.getAbstractFileByPath(final); n++) final = `${base} ${n}${ext}`;
     await vault.create(final, text);
-    await this.app.workspace.openLinkText(final, "", "tab");
+    if (open) await this.app.workspace.openLinkText(final, "", "tab");
     return final;
   }
 

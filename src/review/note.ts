@@ -2,6 +2,7 @@
 // literature note in the vault). Pure: the plugin writes it. Properties follow the vault rules: an empty line after them.
 import { doiUrl, escapeMd } from "../inbox/write";
 import type { ReviewPaper } from "./collect";
+import type { ExtraRow } from "./network-text";
 import { countFlags, type Flags } from "./flags";
 import type { LitReviewAnswer, ReadLevel } from "./prompt";
 import { READ_LEVELS, paperLabel } from "./prompt";
@@ -21,8 +22,10 @@ export interface NoteInput {
   stopped: string | null;
   /** The LLM's answer, or null when the note is made before there is one. */
   answer: LitReviewAnswer | null;
-  /** Text to show under the title about the citation network (Phase B), when there is one. */
+  /** Lines to show after the priorities: the charts and the citation network, when there are any. */
   networkMarkdown?: string[];
+  /** Missing (M) and citing (C) works, so the answer's priorities can name them. */
+  extraRows?: readonly ExtraRow[];
 }
 
 const LEVEL_LABEL: Record<ReadLevel, string> = { must: "Must read", should: "Should read", skim: "Skim", skip: "Skip" };
@@ -36,6 +39,12 @@ export function reviewNoteName(date: string, searches: readonly string[]): strin
 function titleLink(p: ReviewPaper): string {
   const url = doiUrl(p.doi);
   const title = escapeMd(p.title) || "(no title)";
+  return url ? `[${title}](${url})` : title;
+}
+
+function extraTitle(r: ExtraRow): string {
+  const url = doiUrl(r.doi);
+  const title = escapeMd(r.title) || "(no title)";
   return url ? `[${title}](${url})` : title;
 }
 
@@ -54,6 +63,7 @@ function cell(text: string): string {
 export function renderReviewNote(input: NoteInput, searchNames: ReadonlyMap<string, string> = new Map()): string {
   const counts = countFlags(input.flags);
   const indexOf = new Map(input.papers.map((p, i) => [paperLabel(i), i]));
+  const extraByLabel = new Map((input.extraRows ?? []).map((r) => [r.label, r]));
   const lines: string[] = [
     "---", "kind: literature-review", "cssclasses:", "  - vt", `created: ${input.date}`, "searches:", ...input.searches.map((s) => `  - ${JSON.stringify(s)}`), "---", "",
     `> [!info] ${input.papers.length}${input.total > input.papers.length ? ` of ${input.total}` : ""} papers from ${input.searches.join(", ")}, published since ${input.fromDate}.`
@@ -83,6 +93,11 @@ export function renderReviewNote(input: NoteInput, searchNames: ReadonlyMap<stri
       for (const level of READ_LEVELS) {
         for (const pr of answer.priorities.filter((x) => x.level === level)) {
           const i = indexOf.get(pr.paper);
+          const extra = i === undefined ? extraByLabel.get(pr.paper) : undefined;
+          if (extra) {
+            lines.push(`| ${LEVEL_LABEL[level]} | ${cell(extraTitle(extra))} (${extra.label}) | ${extra.year ?? ""} | ${extra.citedBy} | ${cell(flagText(extra.flags, searchNames))} | ${cell(escapeMd(pr.reason))} |`);
+            continue;
+          }
           if (i === undefined) continue;
           const p = input.papers[i];
           lines.push(`| ${LEVEL_LABEL[level]} | ${cell(titleLink(p))} | ${p.year ?? ""} | ${p.citedByCount} | ${cell(flagText(input.flags[i], searchNames))} | ${cell(escapeMd(pr.reason))} |`);

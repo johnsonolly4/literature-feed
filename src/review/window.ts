@@ -1,13 +1,22 @@
 // The "Generate literature review" window: choose searches and limits, see what the search will cost before it runs, run it within
-// the budget, see the papers with what you already have of them, copy the prompt for an LLM, paste its answer back, and make the
-// review note. Nothing is sent from here except the OpenAlex searches the user starts; the prompt only goes to the clipboard.
+// the budget, see the papers with what you already have of them, charts and the citation network, copy the prompt for an LLM,
+// paste its answer back, and make the review note. Nothing is sent from here except the OpenAlex searches the user starts; the
+// prompt only goes to the clipboard.
 import { Modal, Notice, Setting, type App } from "obsidian";
-import type { Settings } from "../settings/data";
+import { shortOpenAlexId } from "../inbox/write";
+import type { Candidate } from "../openalex/client";
 import { extractJson } from "../prompts/schemas";
+import type { Settings } from "../settings/data";
 import { Budget, CAP_PER_TOPIC, DEFAULT_PROMPT_PAPERS, MAX_PROMPT_PAPERS, monthOf, monthTotal, passesMonthlyLimit, type SpendTally } from "./budget";
 import type { ReviewCache } from "./cache";
+import { buildCanvas } from "./canvas";
+import { chartBlock, chartSpecs } from "./chart";
+import { drawChart } from "./chart-view";
 import { planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewPlan, type ReviewResult } from "./collect";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
+import { buildNetwork, chartData, type Network } from "./network";
+import { MAX_GAP_REFERENCES, estimateGapRequests, estimateNetworkRequests, fetchCitationGaps, fetchNetworkExtras, type GapResult, type NetworkClient, type NetworkExtras } from "./network-fetch";
+import { buildExtraRows, networkMarkdown, networkText, type ExtraRow } from "./network-text";
 import { renderReviewNote, reviewNoteName } from "./note";
 import { DEFAULT_PROMPT_OPTIONS, buildLitReviewPrompt, checkLitReviewAnswer, paperLabel, type LitChecked } from "./prompt";
 
@@ -15,7 +24,7 @@ import { DEFAULT_PROMPT_OPTIONS, buildLitReviewPrompt, checkLitReviewAnswer, pap
 export interface ReviewHost {
   app: App;
   settings: Settings;
-  newReviewClient(): ReviewClient;
+  newReviewClient(): ReviewClient & NetworkClient;
   reviewCache: ReviewCache;
   saveReviewCache(): Promise<void>;
   spend: SpendTally;
@@ -24,8 +33,8 @@ export interface ReviewHost {
   flagSources(): FlagSources;
   /** The folder review notes go in ("" = the vault root). */
   reviewFolder(): string;
-  /** Makes a note (adding a number to the name when it exists), opens it, and returns its path. */
-  createReviewNote(path: string, text: string): Promise<string>;
+  /** Makes a file (adding a number to the name when it exists), opens it when asked, and returns its path. */
+  createReviewNote(path: string, text: string, open?: boolean): Promise<string>;
 }
 
 const TIER_CHOICES: Record<ReviewOptions["minTier"], string> = { possible: "Possible and better", strong: "Strong and better", priority: "Priority only" };
@@ -40,6 +49,8 @@ function usd(n: number): string {
   return `$${n.toFixed(3)}`;
 }
 
+const NO_ROWS = (): { missing: ExtraRow[]; alsoCite: ExtraRow[] } => ({ missing: [], alsoCite: [] });
+
 export class ReviewModal extends Modal {
   private selected: Set<string>;
   private fromYear: string;
@@ -53,6 +64,12 @@ export class ReviewModal extends Modal {
   private spentSoFar = 0;
   private result: ReviewResult | null = null;
   private flags: Flags[] = [];
+  private sources: FlagSources | null = null;
+  private network: Network | null = null;
+  private extras: NetworkExtras | null = null;
+  private rows = NO_ROWS();
+  private gapIndex = 0;
+  private gaps: { paper: string; result: GapResult; flags: Flags[] } | null = null;
   private answerText = "";
   private checked: LitChecked | null = null;
   private out!: HTMLElement;
@@ -101,10 +118,11 @@ export class ReviewModal extends Modal {
     });
     new Setting(contentEl).setName("Include abstracts in the prompt").addToggle((t) => t.setValue(this.abstracts).onChange((v) => { this.abstracts = v; this.renderResult(); }));
     new Setting(contentEl).setName("Fetch again").setDesc("Ignore results saved in the last 24 hours. This spends credits again.").addToggle((t) => t.setValue(false).onChange((v) => { this.refresh = v; this.plan = null; }));
+    const month = monthTotal(this.host.spend, monthOf(new Date()));
     new Setting(contentEl)
-      .setName("Spending limit")
-      .setDesc(`${usd(this.host.settings.reviewBudgetUsd)} for this review (Settings → Literature review). This month so far: ${monthTotal(this.host.spend, monthOf(new Date())).requests} requests, about ${usd(monthTotal(this.host.spend, monthOf(new Date())).usd)}.`)
-      .addToggle((t) => t.setValue(false).onChange((v) => { this.allowMore = v; })).setTooltip("Allow going over the limit for this review");
+      .setName("Allow going over the spending limit")
+      .setDesc(`The limit is ${usd(this.host.settings.reviewBudgetUsd)} for this review (Settings → Literature review). This month so far: ${month.requests} requests, about ${usd(month.usd)}.`)
+      .addToggle((t) => t.setValue(false).onChange((v) => { this.allowMore = v; }));
     new Setting(contentEl).addButton((b) => b.setButtonText("Estimate the cost").setCta().onClick(() => void this.estimate()));
     this.out = contentEl.createDiv();
   }
@@ -124,6 +142,11 @@ export class ReviewModal extends Modal {
 
   private feeds() {
     return this.host.settings.feeds.filter((f) => this.selected.has(f.id) && f.topics.length > 0);
+  }
+
+  /** The limit for a step that follows others: the usual one, or enough for this step when the user allowed it. */
+  private limitFor(spent: number, extraUsd: number): number {
+    return this.allowMore ? Math.max(this.host.settings.reviewBudgetUsd, spent + extraUsd) : this.host.settings.reviewBudgetUsd;
   }
 
   private async estimate(): Promise<void> {
@@ -166,7 +189,7 @@ export class ReviewModal extends Modal {
     if (plan.estimate.works >= plan.topics.length * CAP_PER_TOPIC) this.out.createEl("p", { cls: "literature-feed-meta", text: `Each topic is capped at ${CAP_PER_TOPIC} works, best matches first. Narrow the year to see more of the rest.` });
     const over = plan.overBudget && !this.allowMore;
     if (over) {
-      this.out.createEl("p", { cls: "literature-feed-warning", text: `This would cost about ${usd(total)}, over your limit. Raise the year, choose fewer searches, or switch on "Spending limit" above to allow it once.` });
+      this.out.createEl("p", { cls: "literature-feed-warning", text: `This would cost about ${usd(total)}, over your limit. Raise the year, choose fewer searches, or allow going over the limit above, once.` });
     }
     const monthly = passesMonthlyLimit(this.host.spend, monthOf(new Date()), plan.estimate.usd, this.host.settings.reviewMonthlyLimitUsd);
     if (monthly && !this.monthlyOk) {
@@ -184,8 +207,7 @@ export class ReviewModal extends Modal {
     const plan = this.plan;
     if (opts === null || plan === null) return;
     const feeds = this.feeds();
-    const limit = this.allowMore ? Math.max(this.host.settings.reviewBudgetUsd, plan.estimate.usd + this.spentSoFar) : this.host.settings.reviewBudgetUsd;
-    const budget = new Budget(limit);
+    const budget = new Budget(this.limitFor(this.spentSoFar, plan.estimate.usd));
     budget.add(this.spentSoFar);
     this.out.empty();
     this.out.createEl("p", { text: "Searching…" });
@@ -197,16 +219,37 @@ export class ReviewModal extends Modal {
       return;
     }
     await this.host.saveReviewCache();
+    this.sources = this.host.flagSources();
     this.computeFlags();
+    this.network = buildNetwork(this.result.papers);
+    this.extras = null;
+    this.rows = NO_ROWS();
+    this.gaps = null;
+    this.gapIndex = 0;
     this.answerText = "";
     this.checked = null;
     this.renderResult();
   }
 
+  private flagsOfCandidate(c: Candidate): Flags {
+    const sources = this.sources ?? this.host.flagSources();
+    return flagsFor({ id: shortOpenAlexId(c.openalexId) ?? "", doi: c.doi ?? null, title: c.title }, sources);
+  }
+
   private computeFlags(): void {
     if (!this.result) return;
-    const sources = this.host.flagSources();
-    this.flags = this.result.papers.map((p) => flagsFor(p, sources));
+    this.sources = this.host.flagSources();
+    this.flags = this.result.papers.map((p) => flagsFor(p, this.sources as FlagSources));
+    if (this.extras) this.rows = buildExtraRows(this.extras, (id) => this.labelOf(id), (c) => this.flagsOfCandidate(c));
+  }
+
+  private labelOf(id: string): string | undefined {
+    const i = this.result?.papers.findIndex((p) => p.id === id) ?? -1;
+    return i >= 0 ? paperLabel(i) : undefined;
+  }
+
+  private titleOf(id: string): string {
+    return this.result?.papers.find((p) => p.id === id)?.title ?? id;
   }
 
   private names(): Map<string, string> {
@@ -215,10 +258,19 @@ export class ReviewModal extends Modal {
 
   private promptText(): string {
     if (!this.result) return "";
+    const net = this.network;
+    const hasNet = net !== null && (net.edges.length > 0 || this.rows.missing.length > 0 || this.rows.alsoCite.length > 0);
     return buildLitReviewPrompt({
       feeds: this.feeds(), papers: this.result.papers, flags: this.flags, total: this.result.total, names: this.names(),
+      networkText: hasNet && net ? networkText(this.result.papers, net, this.rows, (id) => this.labelOf(id)) : undefined,
       options: { ...DEFAULT_PROMPT_OPTIONS, includeAbstracts: this.abstracts },
     });
+  }
+
+  private answerLabels(): Set<string> {
+    const labels = new Set((this.result?.papers ?? []).map((_, i) => paperLabel(i)));
+    for (const r of [...this.rows.missing, ...this.rows.alsoCite]) labels.add(r.label);
+    return labels;
   }
 
   private renderResult(): void {
@@ -255,6 +307,10 @@ export class ReviewModal extends Modal {
       tr.createEl("td", { text: [f.zotero ? "Zotero" : "", f.vault ? "note" : "", f.listedBefore.length > 0 ? "listed" : ""].filter((x) => x !== "").join(", ") });
     });
 
+    this.renderCharts();
+    this.renderNetwork();
+    this.renderGaps();
+
     const text = this.promptText();
     this.out.createEl("h4", { text: "Prompt for an LLM" });
     const preview = this.out.createEl("textarea", { cls: "literature-feed-prompt" });
@@ -282,6 +338,154 @@ export class ReviewModal extends Modal {
       .addButton((b) => b.setButtonText("Create review note").setCta().onClick(() => void this.createNote(feedback)));
   }
 
+  private chartSpecsNow() {
+    if (!this.result || !this.network) return [];
+    return chartSpecs(chartData(this.result.papers, this.network), (id) => this.labelOf(id) ?? id, (id) => this.titleOf(id));
+  }
+
+  private renderCharts(): void {
+    const specs = this.chartSpecsNow();
+    if (specs.length === 0) return;
+    this.out.createEl("h4", { text: "Charts" });
+    for (const spec of specs) drawChart(this.out, spec);
+  }
+
+  private renderNetwork(): void {
+    const result = this.result;
+    const net = this.network;
+    if (!result || !net) return;
+    this.out.createEl("h4", { text: "Citation network" });
+    this.out.createEl("p", {
+      text: `${net.edges.length} citations among these papers; ${net.clusters.length} group${net.clusters.length === 1 ? "" : "s"} that cite each other; ${net.isolated.length} with no link to another. This much needed no extra requests.`,
+    });
+    const detailIds = Math.min(40, net.missing.length + 20);
+    const requests = estimateNetworkRequests(result.papers.length, detailIds);
+    if (this.extras === null) {
+      new Setting(this.out)
+        .setName("Find missing papers")
+        .setDesc(`Works that several of these papers cite but that are not here, and works that cite several of them: about ${requests} requests, ${usd(requests * 0.001)}.`)
+        .addButton((b) => b.setButtonText("Find them").onClick(() => void this.findMissing(requests)));
+    } else {
+      if (this.extras.stopped) this.out.createEl("p", { cls: "literature-feed-warning", text: `The lookup ${this.extras.stopped}.` });
+      for (const [title, list] of [["Possibly missing (cited by several of these)", this.rows.missing], ["Cite several of these", this.rows.alsoCite]] as const) {
+        if (list.length === 0) continue;
+        this.out.createEl("h5", { text: title });
+        const t = this.out.createEl("table", { cls: "literature-feed-papers" });
+        const h = t.createEl("thead").createEl("tr");
+        for (const x of ["", "Paper", "Year", "Cited", "How it relates", "Have"]) h.createEl("th", { text: x });
+        const b = t.createEl("tbody");
+        for (const r of list) {
+          const tr = b.createEl("tr");
+          tr.createEl("td", { text: r.label });
+          tr.createEl("td", { text: r.title });
+          tr.createEl("td", { text: r.year === null ? "" : String(r.year) });
+          tr.createEl("td", { text: String(r.citedBy) });
+          tr.createEl("td", { text: r.detail });
+          tr.createEl("td", { text: [r.flags.zotero ? "Zotero" : "", r.flags.vault ? "note" : ""].filter((x) => x !== "").join(", ") });
+        }
+      }
+    }
+    new Setting(this.out).setName("Network as a canvas").setDesc("A canvas file with a card per paper by year, and the citations between them.").addButton((b) => b.setButtonText("Save canvas").onClick(() => void this.saveCanvas()));
+  }
+
+  private async findMissing(requests: number): Promise<void> {
+    const result = this.result;
+    const net = this.network;
+    if (!result || !net) return;
+    const extraUsd = requests * 0.001;
+    if (!this.allowMore && result.spentUsd + extraUsd > this.host.settings.reviewBudgetUsd + 1e-9) {
+      new Notice(`That would take this review to about ${usd(result.spentUsd + extraUsd)}, over the ${usd(this.host.settings.reviewBudgetUsd)} limit. Allow going over the limit at the top to do it.`, 8000);
+      return;
+    }
+    const budget = new Budget(this.limitFor(result.spentUsd, extraUsd));
+    budget.add(result.spentUsd);
+    new Notice("Looking up the citing and missing works…");
+    try {
+      this.extras = await fetchNetworkExtras(result.papers, net, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget });
+    } catch (e) {
+      new Notice(`The lookup failed: ${e instanceof Error ? e.message : "unknown error"}`, 8000);
+      return;
+    }
+    result.spentUsd = budget.spent;
+    await this.host.saveReviewCache();
+    this.rows = buildExtraRows(this.extras, (id) => this.labelOf(id), (c) => this.flagsOfCandidate(c));
+    this.checked = null;
+    this.renderResult();
+  }
+
+  private renderGaps(): void {
+    const result = this.result;
+    if (!result || result.papers.length === 0) return;
+    this.out.createEl("h4", { text: "Citation gaps of one paper" });
+    this.out.createEl("p", { cls: "setting-item-description", text: "What many of a paper's own references cite, but the paper does not: works it may have missed." });
+    const paper = result.papers[this.gapIndex] ?? result.papers[0];
+    const requests = estimateGapRequests(paper.referencedWorks.length);
+    new Setting(this.out)
+      .setName("Paper")
+      .addDropdown((d) => {
+        for (const [i, p] of result.papers.entries()) d.addOption(String(i), `${paperLabel(i)} ${p.title.length > 60 ? `${p.title.slice(0, 59)}…` : p.title}`);
+        d.setValue(String(this.gapIndex)).onChange((v) => { this.gapIndex = Number(v); this.gaps = null; this.renderResult(); });
+      })
+      .addButton((b) => {
+        b.setButtonText(`Find gaps (about ${requests} requests)`).onClick(() => void this.findGaps(requests));
+        b.setDisabled(paper.referencedWorks.length === 0);
+      });
+    if (paper.referencedWorks.length === 0) this.out.createEl("p", { cls: "literature-feed-meta", text: "No references are listed for this paper." });
+    const gaps = this.gaps;
+    if (gaps && gaps.paper === paper.id) {
+      const g = gaps.result;
+      this.out.createEl("p", { text: `Read ${g.referencesRead} of its ${paper.referencedWorks.length} references (${g.referencesWithLists} with a reference list${paper.referencedWorks.length > MAX_GAP_REFERENCES ? `; at most ${MAX_GAP_REFERENCES} are read` : ""}).` });
+      if (g.stopped) this.out.createEl("p", { cls: "literature-feed-warning", text: `The lookup ${g.stopped}.` });
+      if (g.gaps.length === 0) this.out.createEl("p", { text: "No work is cited by three or more of its references without also being cited by it." });
+      g.gaps.forEach((x, i) => {
+        const row = this.out.createDiv({ cls: "literature-feed-suggestion" });
+        row.createDiv({ cls: "literature-feed-title", text: x.paper ? x.paper.title : x.gap.id });
+        const f = gaps.flags[i];
+        row.createDiv({ cls: "literature-feed-meta", text: [
+          x.paper?.year ? String(x.paper.year) : "", `cited by ${x.gap.count} of its references (${Math.round(x.gap.share * 100)}%)`, x.paper?.citedByCount !== undefined ? `${x.paper.citedByCount} citations` : "",
+          f.zotero ? "in Zotero" : "", f.vault ? "in the vault" : "",
+        ].filter((s) => s !== "").join(" · ") });
+      });
+    }
+  }
+
+  private async findGaps(requests: number): Promise<void> {
+    const result = this.result;
+    if (!result) return;
+    const paper = result.papers[this.gapIndex];
+    if (!paper) return;
+    const extraUsd = requests * 0.001;
+    if (!this.allowMore && result.spentUsd + extraUsd > this.host.settings.reviewBudgetUsd + 1e-9) {
+      new Notice(`That would take this review to about ${usd(result.spentUsd + extraUsd)}, over the ${usd(this.host.settings.reviewBudgetUsd)} limit. Allow going over the limit at the top to do it.`, 8000);
+      return;
+    }
+    const budget = new Budget(this.limitFor(result.spentUsd, extraUsd));
+    budget.add(result.spentUsd);
+    new Notice("Reading the paper's references…");
+    try {
+      const found = await fetchCitationGaps(paper, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget });
+      this.gaps = { paper: paper.id, result: found, flags: found.gaps.map((x) => (x.paper ? this.flagsOfCandidate(x.paper) : { zotero: null, vault: null, listedBefore: [] })) };
+    } catch (e) {
+      new Notice(`The lookup failed: ${e instanceof Error ? e.message : "unknown error"}`, 8000);
+      return;
+    }
+    result.spentUsd = budget.spent;
+    await this.host.saveReviewCache();
+    this.renderResult();
+  }
+
+  private async saveCanvas(): Promise<void> {
+    const result = this.result;
+    const net = this.network;
+    if (!result || !net) return;
+    const missingCiters = new Map((this.extras?.missing ?? []).flatMap((m) => { const id = shortOpenAlexId(m.paper.openalexId); return id ? [[id, m.citers] as const] : []; }));
+    const citingCites = new Map((this.extras?.alsoCite ?? []).flatMap((a) => { const id = shortOpenAlexId(a.paper.openalexId); return id ? [[id, a.cites] as const] : []; }));
+    const file = buildCanvas(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, { missingCiters, citingCites });
+    const folder = this.host.reviewFolder();
+    const path = await this.host.createReviewNote(`${folder === "" ? "" : `${folder}/`}Literature review network ${today()}.canvas`, JSON.stringify(file), false);
+    new Notice(`Canvas saved: ${path}`);
+  }
+
   private notePath(name: string): string {
     const folder = this.host.reviewFolder();
     return `${folder === "" ? "" : `${folder}/`}${name}.md`;
@@ -295,8 +499,7 @@ export class ReviewModal extends Modal {
       for (const e of json.errors) feedback.createEl("p", { cls: "literature-feed-warning", text: e });
       return;
     }
-    const labels = new Set((this.result?.papers ?? []).map((_, i) => paperLabel(i)));
-    const checked = checkLitReviewAnswer(json.value, labels);
+    const checked = checkLitReviewAnswer(json.value, this.answerLabels());
     if (!checked.ok) {
       for (const e of checked.errors) feedback.createEl("p", { cls: "literature-feed-warning", text: e });
       return;
@@ -313,9 +516,16 @@ export class ReviewModal extends Modal {
     const answer = this.checked && this.checked.ok ? this.checked.value : null;
     if (this.answerText.trim() !== "" && answer === null) return; // the answer has problems: they are shown
     const searches = this.feeds().map((f) => f.name);
+    const extra: string[] = [];
+    const specs = this.chartSpecsNow();
+    if (specs.length > 0) {
+      extra.push("## Charts", "");
+      for (const spec of specs) extra.push(...chartBlock(spec), "");
+    }
+    if (this.network) extra.push(...networkMarkdown(this.network, this.rows, (id) => this.labelOf(id), (id) => this.titleOf(id)));
     const text = renderReviewNote({
       date: today(), searches, fromDate: this.fromYear, papers: result.papers, flags: this.flags, total: result.total,
-      spentUsd: result.spentUsd, stopped: result.stopped, answer,
+      spentUsd: result.spentUsd, stopped: result.stopped, answer, networkMarkdown: extra, extraRows: [...this.rows.missing, ...this.rows.alsoCite],
     }, this.names());
     const path = await this.host.createReviewNote(this.notePath(reviewNoteName(today(), searches)), text);
     new Notice(`Review note made: ${path}`);

@@ -640,3 +640,27 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
   border-color: rgb(var(--vt-overdue, 239, 68, 68));
   color: rgb(var(--vt-overdue-text, 252, 165, 165));
 }
+
+/* Charts drawn from ```literature-feed-chart blocks (review notes and the review window) */
+.literature-feed-chart {
+  margin: var(--size-4-3) 0;
+}
+
+.literature-feed-chart-title {
+  margin-bottom: var(--size-4-1);
+  font-weight: var(--font-semibold);
+}
+
+.literature-feed-chart svg {
+  max-width: 640px;
+}
+
+.literature-feed-chart-bar {
+  fill: rgb(var(--vt-doing, 59, 130, 246));
+}
+
+.literature-feed-chart-label,
+.literature-feed-chart-value {
+  fill: var(--text-muted);
+  font-size: 11px;
+}

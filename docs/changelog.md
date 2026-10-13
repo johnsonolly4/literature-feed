@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## Next version (not released)
+- Literature review: charts (papers per year, frequent authors, most cited, most connected), the citation network inside the set at no extra cost, **Find missing papers** (works the set cites often, and works citing several of its papers, flagged against Zotero and the vault, within the spending limit), **Find gaps** for one paper (what many of its references cite that it does not), **Save canvas** (the network as an Obsidian canvas), and a `literature-feed-chart` code block that draws a chart in a note.
 - Literature review: **Generate literature review** runs your searches over a wider window within a spending limit (estimate first, cap per topic, stop at the limit, 24-hour result cache, a monthly tally of the plugin's OpenAlex requests with an optional soft limit), flags papers already in Zotero (a local read-only index of the library), already in the vault and listed before, builds a prompt for an LLM to group and prioritise them, and makes a review note from the pasted answer. Settings → Literature review has the limits.
 
 ## 0.2.0 (2026-10-13)

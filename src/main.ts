@@ -20,7 +20,10 @@ import { normaliseRefsSession, type RefsSession } from "./refs/panel";
 import { crossrefRequester } from "./refs/request";
 import { REFS_VIEW, RefsView } from "./refs/view";
 import { GAPS_VIEW, GapsView } from "./review/gaps-view";
-import { normaliseGapsSession, type GapsSession } from "./review/gaps-input";
+import { emptyGapsSession, normaliseGapsSession, type GapsSession } from "./review/gaps-input";
+import { GAPS_KIND, gapsRecordFromNote, parseGapsSnapshot, sessionFromRecord } from "./review/gaps-note";
+import { REPORT_BLOCK, reportsInNote, type ReportKind } from "./ui/report-block";
+import { reportBlockProcessor } from "./ui/report-view";
 import { recordFromNote, type ReviewRecord } from "./review/record";
 import { REVIEW_VIEW, ReviewView } from "./review/review-view";
 import { describeSession, normaliseSession, type ReviewSession } from "./review/session";
@@ -50,6 +53,8 @@ const START_DELAY_MS = 15_000;
 /** While Obsidian stays open the schedule is checked this often. */
 const CHECK_EVERY_MS = 60 * 60 * 1000;
 
+const NO_SNAPSHOT = "This note holds no saved report, so its settings were put back. Press Estimate the cost, then Find the gaps (free from the cache for a day).";
+
 export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost, ReviewHost, GraphHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
@@ -72,6 +77,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   gapsSession: GapsSession | null = null;
   /** How the review tab starts the next time it is created. */
   private nextReviewMode: StartMode = "ask";
+  /** What each kind of report note can reopen (gaps, graph, …); see `ui/report-block.ts`. */
+  readonly reportKinds = new Map<string, ReportKind>();
   /** The graph of the last literature review (`review-graph.json`). */
   graph: GraphData | null = null;
   /** The Zotero library as a local, read-only index (`zotero-index.json`). */
@@ -127,6 +134,18 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         const graph = graphFromNote(editor.getValue());
         if (graph && !checking) void this.openGraph(graph);
         return graph !== null;
+      },
+    });
+    this.reportKinds.set(GAPS_KIND, { label: "gaps view", open: (data) => this.openGapsSnapshot(data) });
+    this.reportKinds.set("graph", { label: "graph view", open: async (data) => { const g = normaliseGraph(data); if (g) await this.openGraph(g); return g !== null; } });
+    this.registerMarkdownCodeBlockProcessor(REPORT_BLOCK, (source, el) => reportBlockProcessor(source, el, this.reportKinds));
+    // In any report note: opens the interactive view the note was made from (a snapshot in the note, else its record, else a graph).
+    this.addCommand({
+      id: "open-note-report", name: "Open this note's report view",
+      editorCheckCallback: (checking, editor) => {
+        const open = this.reportOpener(editor.getValue());
+        if (open && !checking) void open();
+        return open !== null;
       },
     });
     this.registerMarkdownCodeBlockProcessor(GRAPH_BLOCK, (source, el, ctx) => graphBlockProcessor(source, el, ctx, this.app, (g) => void this.openGraph(g)));
@@ -197,6 +216,16 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       return;
     }
     this.settings = settings;
+  }
+
+  /** Adds a search string to a search's topics (once), saves, and says what happened. */
+  async addTopicToFeed(feedId: string, topic: string): Promise<string> {
+    const feed = this.settings.feeds.find((f) => f.id === feedId);
+    if (!feed) return "That search no longer exists.";
+    if (feed.topics.includes(topic)) return `"${feed.name}" already has this topic.`;
+    feed.topics.push(topic);
+    await this.saveSettings();
+    return `Added to "${feed.name}" (now ${feed.topics.length} topics). Papers it finds are still ranked by that search's rules. Run the review again to use it.`;
   }
 
   async saveSettings(): Promise<void> {
@@ -500,6 +529,47 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  /** Shows the tool in its tab from the given session (a saved run, or the inputs of an older note). */
+  private async openGapsSession(session: GapsSession): Promise<void> {
+    this.saveGapsSession(session);
+    await this.updateLedgerNow();
+    const existing = this.app.workspace.getLeavesOfType(GAPS_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: GAPS_VIEW, active: true });
+    else if (leaf.view instanceof GapsView) leaf.view.reload();
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** Reopens a saved gaps report (the snapshot a note holds) without asking OpenAlex anything. */
+  async openGapsSnapshot(data: unknown): Promise<boolean> {
+    const snap = parseGapsSnapshot(data);
+    if (!snap) return false;
+    const base = sessionFromRecord({ input: snap.input, minCount: snap.minCount, addedDois: snap.run.addedDois, deeper: snap.run.deeper ? { minCount: snap.run.deeper.minCount, hubsRead: snap.run.deeper.hubsRead, gaps: [] } : null }, this.gapsSession ?? emptyGapsSession());
+    await this.openGapsSession({ ...base, audit: snap.audit ? { answer: JSON.stringify(snap.audit, null, 2), result: snap.audit } : null, last: { input: snap.input, run: snap.run, ranAt: snap.ranAt } });
+    return true;
+  }
+
+  /**
+   * What "open this note's report" would do for the text of a note, or null when it holds nothing to open: a report block of a
+   * registered kind, else an older graph block, else an older gaps record (its inputs are put back and the run is made again).
+   */
+  private reportOpener(text: string): (() => Promise<void>) | null {
+    for (const snap of reportsInNote(text)) {
+      const kind = this.reportKinds.get(snap.kind);
+      if (kind) return async () => { if (!(await kind.open(snap.data))) new Notice("The report in this note could not be read."); };
+    }
+    const graph = graphFromNote(text);
+    if (graph) return () => this.openGraph(graph);
+    const record = gapsRecordFromNote(text);
+    if (record) {
+      return async () => {
+        await this.openGapsSession(sessionFromRecord(record, this.gapsSession ?? emptyGapsSession()));
+        new Notice(NO_SNAPSHOT, 10000);
+      };
+    }
+    return null;
+  }
+
   /** Opens the reference tidy-up in a tab (the one that is open, if any). */
   async openRefs(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(REFS_VIEW)[0];
@@ -534,6 +604,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     }
     menu.addItem((item) => item.setTitle(TEXT.command).setIcon("list-checks").onClick(() => void this.openRefs()));
     menu.addItem((item) => item.setTitle("Citation gaps of one paper").setIcon("search-check").onClick(() => void this.openGaps()));
+    if (this.gapsSession?.last) menu.addItem((item) => item.setTitle("Open the last citation gaps report").setIcon("search-check").onClick(() => void this.openGaps()));
     if (this.graph) menu.addItem((item) => item.setTitle("Open review graph").setIcon("network").onClick(() => void this.openGraph(this.graph)));
     menu.showAtMouseEvent(evt);
   }

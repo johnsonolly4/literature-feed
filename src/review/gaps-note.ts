@@ -4,11 +4,60 @@ import { doiUrl, escapeMd } from "../inbox/write";
 import type { Flags } from "./flags";
 import { authorsShort } from "./authors-text";
 import { authorShares, authorTableCallout } from "./gaps-authors";
-import type { GapInput } from "./gaps-input";
+import { withRunDefaults, type GapInput, type GapsSession } from "./gaps-input";
 import type { GapsRun } from "./gaps-fetch";
 import { cell, flagText } from "./note";
+import type { Candidate } from "../openalex/client";
+import { reportBlock } from "../ui/report-block";
+import { checkAuditAnswer, type AuditAnswer } from "./authors-prompt";
 
 export const GAPS_RECORD_BLOCK = "literature-feed-gaps-record";
+
+/** The kind name of a gaps report in a note's report block. */
+export const GAPS_KIND = "gaps";
+
+/** Everything the gaps view needs to show a run again, without asking OpenAlex anything. */
+export interface GapsSnapshot {
+  input: GapInput;
+  ranAt: string;
+  minCount: number;
+  run: GapsRun;
+  /** What the LLM that checked the authors answered (absent when none was asked). */
+  audit?: AuditAnswer | null;
+}
+
+/** A work cut down to what the view shows (abstracts and the rest are dropped to keep the note small). */
+function slim(c: Candidate | null): Candidate | null {
+  return c ? { title: c.title, abstract: null, doi: c.doi, year: c.year, openalexId: c.openalexId, authors: c.authors, authorIds: c.authorIds, venue: null, publicationDate: null, citedByCount: c.citedByCount } : null;
+}
+
+export function gapsSnapshot(ranAt: string, input: GapInput, minCount: number, run: GapsRun, audit: AuditAnswer | null = null): GapsSnapshot {
+  return {
+    input, ranAt, minCount, ...(audit ? { audit } : {}),
+    run: { ...run, gaps: run.gaps.map((g) => ({ gap: g.gap, paper: slim(g.paper) })), deeper: run.deeper ? { ...run.deeper, gaps: run.deeper.gaps.map((g) => ({ gap: g.gap, paper: slim(g.paper) })) } : null },
+  };
+}
+
+/** The snapshot from a report block's data, or null when it is not usable. Older snapshots get the fields they lack. */
+export function parseGapsSnapshot(data: unknown): GapsSnapshot | null {
+  if (typeof data !== "object" || data === null) return null;
+  const d = data as Partial<GapsSnapshot>;
+  if (typeof d.ranAt !== "string" || typeof d.minCount !== "number" || typeof d.input !== "object" || d.input === null || typeof d.run !== "object" || d.run === null || !Array.isArray((d.run as { gaps?: unknown }).gaps)) return null;
+  const audit = d.audit ? checkAuditAnswer(JSON.stringify(d.audit)) : null;
+  return { input: d.input, ranAt: d.ranAt, minCount: d.minCount, run: withRunDefaults(d.run as unknown as Record<string, unknown>), ...(audit?.ok ? { audit: audit.value } : {}) };
+}
+
+/**
+ * The tool's inputs set from an older note's record (which holds no snapshot): the same paper or references, minimum and second level.
+ * The run itself is made again (free from the cache for a day), so `last` is left empty.
+ */
+export function sessionFromRecord(rec: Pick<GapsRecord, "input" | "minCount" | "addedDois" | "deeper">, base: GapsSession): GapsSession {
+  const s: GapsSession = { ...base, last: null, minCount: rec.minCount, extraDois: (rec.addedDois ?? []).join("\n"), deeper: rec.deeper != null, deeperMin: rec.deeper?.minCount ?? base.deeperMin };
+  const input = rec.input;
+  if (input.kind === "work") return { ...s, mode: "paper", paperText: input.doi ?? input.id ?? "" };
+  if (input.kind === "title") return { ...s, mode: "paper", paperText: input.title };
+  return { ...s, mode: "paste", pasted: [...input.dois, ...input.lines].join("\n"), refs: null, searchUnfound: input.lines.length > 0 };
+}
 
 export interface GapsRecord {
   version: 1;
@@ -71,6 +120,8 @@ export interface GapsNoteInput {
   /** Flags of the second level's works, in order. */
   deeperFlags?: readonly Flags[];
   searchNames?: ReadonlyMap<string, string>;
+  /** What an LLM answered when asked to check the authors table. */
+  audit?: AuditAnswer | null;
 }
 
 export function renderGapsNote(n: GapsNoteInput): string {
@@ -80,6 +131,7 @@ export function renderGapsNote(n: GapsNoteInput): string {
     "---", "kind: literature-gaps", "cssclasses:", "  - vt", `created: ${n.date}`, ...(run.subject ? [`paper: ${JSON.stringify(run.subject.title)}`] : []), "---", "",
     `> [!info] Works that at least ${n.minCount} of the references of ${subject} cite, and that it does not cite itself. Read ${run.referencesRead} references (${run.referencesWithLists} with a reference list of their own). Cost about $${run.spentUsd.toFixed(4)}.`, "",
   ];
+  lines.push(...reportBlock(GAPS_KIND, gapsSnapshot(n.ranAt, n.input, n.minCount, run, n.audit ?? null), `${run.gaps.length + (run.deeper?.gaps.length ?? 0)} works and ${run.citedAuthors.length} references, made ${n.date}`), "");
   if (run.message) lines.push(`> [!note] ${run.message}`, "");
   if (run.stopped) lines.push(`> [!warning] The lookup ${run.stopped}.`, "");
   if (run.gaps.length > 0) {
@@ -120,6 +172,16 @@ export function renderGapsNote(n: GapsNoteInput): string {
       lines.push(...authorTableCallout("Second-level gaps", authorShares(run.citedAuthors, lists(run.deeper.gaps), { own })));
       lines.push(...authorTableCallout("Both", authorShares(run.citedAuthors, [...lists(run.gaps), ...lists(run.deeper.gaps)], { own })));
     }
+  }
+  if (n.audit) {
+    lines.push("## Authors checked by an LLM", "");
+    if (n.audit.summary) lines.push(escapeMd(n.audit.summary), "");
+    lines.push("| Author | Claim | Verdict | Evidence | Caveats |", "| --- | --- | --- | --- | --- |");
+    for (const a of n.audit.authors) {
+      const evidence = a.evidence.map((e) => `[${cell(escapeMd(e.note || e.url))}](${e.url})`).join("; ");
+      lines.push(`| ${cell(escapeMd(a.author))} | ${a.claim} | ${a.verdict} | ${evidence} | ${cell(escapeMd(a.caveats))} |`);
+    }
+    lines.push("");
   }
   lines.push("## How this was made", "", ...describeInput(n.input), `- **Run:** ${n.ranAt}. Minimum: cited by ${n.minCount} of the references.`);
   lines.push(`- **OpenAlex requests:** ${run.searches} title search${run.searches === 1 ? "" : "es"}, the rest lookups by id or DOI; about $${run.spentUsd.toFixed(4)}.`);

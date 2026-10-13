@@ -129,6 +129,12 @@ export class RefsPanel {
     this.onSession(this.session());
   }
 
+  /** Stops a pending save (the panel is being replaced and must not write over what replaces it). */
+  discard(): void {
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+  }
+
   /** What the rest of the plugin should use now. */
   selection(): RefsSelection {
     const looked = this.rows.length > 0;

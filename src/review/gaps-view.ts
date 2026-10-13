@@ -24,11 +24,17 @@ export class GapsView extends ItemView {
   }
 
   onOpen(): Promise<void> {
-    this.contentEl.empty();
     this.contentEl.addClass("literature-feed-review");
+    this.reload();
+    return Promise.resolve();
+  }
+
+  /** Draws the tool again from the host's session (a report was opened from a note). */
+  reload(): void {
+    this.panel?.discard();
+    this.contentEl.empty();
     this.panel = new GapsPanel(this.host, this.contentEl);
     this.panel.mount();
-    return Promise.resolve();
   }
 
   onClose(): Promise<void> {

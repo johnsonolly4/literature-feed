@@ -1,5 +1,6 @@
 // What the citation-gaps tool is asked about, and what that costs: a DOI or OpenAlex id, a Zotero item, or a pasted list of
 // references. Pure: parsing text, searching the local Zotero index, and the arithmetic of the estimate.
+import { checkAuditAnswer, type AuditAnswer } from "./authors-prompt";
 import { titleKey } from "../zotero/client";
 import type { ZoteroIndex } from "../zotero/library-index";
 import { bareDoi } from "../zotero/map";
@@ -174,12 +175,14 @@ export interface GapsSession {
   deeper: boolean;
   /** A deeper gap is cited by at least this many of those shared works (2 to 20). */
   deeperMin: number;
+  /** What was pasted back from the LLM that checked the authors of the last run (the text, and what it was read as). */
+  audit: { answer: string; result: AuditAnswer | null } | null;
   /** The last run and the input it was made from, with when. */
   last: { input: GapInput; run: import("./gaps-fetch").GapsRun; ranAt: string } | null;
 }
 
 export function emptyGapsSession(): GapsSession {
-  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, extraDois: "", deeper: false, deeperMin: 5, last: null };
+  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, extraDois: "", deeper: false, deeperMin: 5, audit: null, last: null };
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -201,9 +204,29 @@ export function normaliseGapsSession(raw: unknown): GapsSession | null {
   if (typeof raw.extraDois === "string") out.extraDois = raw.extraDois;
   out.deeper = raw.deeper === true;
   if (typeof raw.deeperMin === "number" && Number.isFinite(raw.deeperMin)) out.deeperMin = Math.min(20, Math.max(2, Math.floor(raw.deeperMin)));
+  if (isObj(raw.audit) && typeof raw.audit.answer === "string") {
+    const read = raw.audit.result == null ? null : checkAuditAnswer(JSON.stringify(raw.audit.result));
+    out.audit = { answer: raw.audit.answer, result: read?.ok ? read.value : null };
+  }
   const last = raw.last;
   if (isObj(last) && typeof last.ranAt === "string" && isObj(last.input) && isObj(last.run) && Array.isArray(last.run.gaps) && typeof last.input.kind === "string") {
-    out.last = { input: last.input as unknown as GapInput, run: last.run as unknown as NonNullable<GapsSession["last"]>["run"], ranAt: last.ranAt };
+    out.last = { input: last.input as unknown as GapInput, run: withRunDefaults(last.run), ranAt: last.ranAt };
   }
   return out;
+}
+
+type SavedRun = NonNullable<GapsSession["last"]>["run"];
+
+/**
+ * A saved run with every field present. Runs saved by older versions lack the author details (`citedWorks`, `referenceIds`,
+ * `citedAuthors`), and code that reads them must not throw: `detailsKept` says whether they were kept.
+ */
+export function withRunDefaults(raw: Record<string, unknown>): SavedRun {
+  const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  return {
+    subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: [], searches: 0, stopped: null, deeper: null, addedDois: [], message: null, spentUsd: 0,
+    ...raw,
+    citedAuthors: list(raw.citedAuthors), citedWorks: list(raw.citedWorks), referenceIds: list(raw.referenceIds),
+    detailsKept: Array.isArray(raw.citedWorks),
+  } as unknown as SavedRun;
 }

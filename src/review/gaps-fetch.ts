@@ -53,6 +53,8 @@ export interface GapsRun {
   /** The references that were read, as works (the cited side of the authors drill-down), and their ids. */
   citedWorks: WorkRef[];
   referenceIds: string[];
+  /** False for a run saved before the author details were kept (they come back empty; run it again to get them). */
+  detailsKept?: boolean;
   /** Something to tell the user instead of a list (no record, no references). */
   message: string | null;
   spentUsd: number;

@@ -153,7 +153,7 @@ describe("the results as text", () => {
     expect(csv[1]).toContain(",10.1000/alb.1,OK,");
     expect(toCsv([])).toBe(csv[0]);
     const md = toMarkdownTable(rows).split("\n");
-    expect(md[0]).toBe("| # | Reference | DOI | Status | Notes |");
+    expect(md[0]).toBe("| # | Reference | Authors | DOI | Status | Notes |");
     expect(md[2]).toContain("[10.1000/alb.1](https://doi.org/10.1000/alb.1)");
     expect(md[3]).toContain("volume differs");
   });

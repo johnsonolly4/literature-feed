@@ -710,6 +710,18 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
 .sw-y4 { background: #3b82f6; }
 .sw-y5 { background: #1d4ed8; }
 
+/* The references and gaps screens: text can be selected and copied (Obsidian panes block it by default), rows look like Check setup */
+.literature-feed-review { -webkit-user-select: text; user-select: text; }
+.literature-feed-review button { -webkit-user-select: none; user-select: none; }
+.literature-feed-ref { align-items: center; }
+.literature-feed-ref .literature-feed-title a { color: var(--text-normal); text-decoration: underline; text-decoration-color: var(--text-faint); }
+.literature-feed-ref-use { flex: none; }
+.literature-feed-ref-links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-3); }
+.literature-feed-ref-actions { flex: none; display: flex; flex-direction: column; gap: var(--size-4-1); align-items: flex-end; min-width: 14em; }
+.literature-feed-ref-actions input[type="text"] { width: 100%; }
+.literature-feed-setup-row.is-bad .literature-feed-setup-mark { color: rgb(252, 165, 165); background: rgba(239, 68, 68, 0.2); }
+a.literature-feed-status { text-decoration: none; cursor: pointer; }
+
 .literature-feed-status { padding: 1px 8px; border-radius: 999px; font-size: var(--font-ui-smaller); background: var(--background-modifier-hover); }
 .literature-feed-status.status-ok { background: rgba(var(--vt-done, 16, 185, 129), 0.25); }
 .literature-feed-status.status-check { background: rgba(var(--vt-waiting, 245, 158, 11), 0.25); }

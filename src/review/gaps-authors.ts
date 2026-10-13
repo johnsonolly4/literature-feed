@@ -130,3 +130,8 @@ export function authorTableCsv(table: AuthorTable): string {
   for (const r of table.rows) lines.push([r.name, r.own ? "yes" : "", r.cited, r.citedPct.toFixed(1), r.uncited, r.uncitedPct.toFixed(1), r.diff.toFixed(1), r.label].map(cell).join(","));
   return lines.join("\n");
 }
+
+/** The table inside a closed, foldable callout (all rows), for a note: click the title to open it. */
+export function authorTableCallout(title: string, table: AuthorTable): string[] {
+  return [`> [!info]- ${title}`, ...authorTableMarkdown(table, Infinity).map((l) => (l === "" ? ">" : `> ${l}`)), ""];
+}

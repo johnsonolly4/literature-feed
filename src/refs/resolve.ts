@@ -27,6 +27,10 @@ export interface ResolvedRow {
   citedBy: number | null;
   /** The DOI was in the text itself, so nothing was looked up. */
   fromText: boolean;
+  /** The user followed the DOI and says it is right. */
+  confirmed: boolean;
+  /** The user chose not to check this one (a repository, a web page): it is not used and does not need a look. */
+  skipped: boolean;
 }
 
 export interface ResolveOptions {
@@ -47,7 +51,7 @@ export interface Resolution {
 export const MAX_REFERENCES = 200;
 
 const blank = (ref: RawReference): ResolvedRow => ({
-  n: ref.n, text: ref.text, doi: "", status: "NOT FOUND", reasons: [], crossrefTitle: "", authors: "", journal: "", year: "", volume: "", pages: "", publisher: "", citedBy: null, fromText: false,
+  n: ref.n, text: ref.text, doi: "", status: "NOT FOUND", reasons: [], crossrefTitle: "", authors: "", journal: "", year: "", volume: "", pages: "", publisher: "", citedBy: null, fromText: false, confirmed: false, skipped: false,
 });
 
 function fill(row: ResolvedRow, item: CrossrefItem): void {
@@ -63,7 +67,7 @@ function fill(row: ResolvedRow, item: CrossrefItem): void {
 
 /** Whether a row's DOI is used unless the user says otherwise: found, or found but with something to look at. */
 export function includedByDefault(row: ResolvedRow): boolean {
-  return (row.status === "OK" || row.status === "CHECK") && row.doi !== "";
+  return !row.skipped && (row.status === "OK" || row.status === "CHECK") && row.doi !== "";
 }
 
 export async function resolveReferences(refs: readonly RawReference[], client: ReferenceSearcher, opts: ResolveOptions = {}): Promise<Resolution> {
@@ -107,6 +111,11 @@ export async function resolveReferences(refs: readonly RawReference[], client: R
     opts.onProgress?.(rows.length, list.length);
   }
   return { rows, skipped: Math.max(0, refs.length - list.length), cancelled };
+}
+
+/** The status as shown: what the user did (skipped, confirmed) comes before what Crossref said. */
+export function effectiveStatus(row: ResolvedRow): string {
+  return row.skipped ? "SKIPPED" : row.confirmed ? "CONFIRMED" : row.status;
 }
 
 export function countStatuses(rows: readonly ResolvedRow[]): Record<RefStatus, number> {

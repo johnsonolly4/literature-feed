@@ -6,6 +6,7 @@ import { Notice, Setting, type App } from "obsidian";
 import type { Settings } from "../settings/data";
 import { listWithDois, toCsv, toMarkdownTable } from "./export";
 import type { RefStatus } from "./match";
+import { googleUrl, scholarUrl, searchQuery } from "../review/search-links";
 import { MAX_REFERENCES, countStatuses, includedByDefault, resolveReferences, type ReferenceSearcher, type ResolvedRow } from "./resolve";
 import { doiInText, splitReferences } from "./split";
 import { TEXT } from "./text";
@@ -47,7 +48,7 @@ export function normaliseRefsSession(raw: unknown): RefsSession | null {
       out.rows.push({
         n: r.n, text: r.text, doi: r.doi, status: r.status as RefStatus, reasons: Array.isArray(r.reasons) ? r.reasons.filter((x): x is string => typeof x === "string") : [],
         crossrefTitle: str(r.crossrefTitle), authors: str(r.authors), journal: str(r.journal), year: str(r.year), volume: str(r.volume), pages: str(r.pages), publisher: str(r.publisher),
-        citedBy: typeof r.citedBy === "number" ? r.citedBy : null, fromText: r.fromText === true,
+        citedBy: typeof r.citedBy === "number" ? r.citedBy : null, fromText: r.fromText === true, confirmed: r.confirmed === true, skipped: r.skipped === true,
       });
     }
   }
@@ -69,6 +70,7 @@ export interface RefsSelection {
 
 const STATUS_LABEL: Record<RefStatus, string> = { OK: "Found", CHECK: "Check", "NOT FOUND": "Not found", MANUAL: "Manual", ERROR: "Error" };
 const NEEDS_LOOK: readonly RefStatus[] = ["CHECK", "NOT FOUND", "MANUAL", "ERROR"];
+const MARK: Record<string, string> = { ok: "\u2713", todo: "!", bad: "\u2715", off: "\u25cb" };
 
 function today(): string {
   const d = new Date();
@@ -131,7 +133,7 @@ export class RefsPanel {
   selection(): RefsSelection {
     const looked = this.rows.length > 0;
     const dois = [...new Set(this.rows.filter((r) => this.included.has(r.n) && r.doi !== "").map((r) => r.doi))];
-    const unfound = this.rows.filter((r) => (r.status === "NOT FOUND" || r.status === "ERROR") && !(this.included.has(r.n) && r.doi !== "")).map((r) => r.text);
+    const unfound = this.rows.filter((r) => !r.skipped && (r.status === "NOT FOUND" || r.status === "ERROR") && !(this.included.has(r.n) && r.doi !== "")).map((r) => r.text);
     const skipped = this.rows.filter((r) => !(this.included.has(r.n) && r.doi !== ""));
     return { looked, dois, unfound, skipped };
   }
@@ -182,7 +184,7 @@ export class RefsPanel {
   /** Looks up again only the references whose look-up failed. */
   private async retryErrors(): Promise<void> {
     if (this.running) return;
-    const failed = this.rows.filter((r) => r.status === "ERROR");
+    const failed = this.rows.filter((r) => r.status === "ERROR" && !r.skipped);
     if (failed.length === 0) return;
     this.running = true;
     this.stop = false;
@@ -203,34 +205,60 @@ export class RefsPanel {
   private renderRows(): void {
     const out = this.out;
     out.empty();
-    const c = countStatuses(this.rows);
-    const needs = this.rows.filter((r) => NEEDS_LOOK.includes(r.status));
-    out.createEl("p", { text: `${this.rows.length} references: ${c.OK} found, ${c.CHECK} to check, ${c["NOT FOUND"]} not found, ${c.MANUAL} manual, ${c.ERROR} failed. Ticked ones are used; unticked ones are skipped.` });
+    const live = this.rows.filter((r) => !r.skipped);
+    const skippedRows = this.rows.filter((r) => r.skipped);
+    const c = countStatuses(live);
+    const confirmed = live.filter((r) => r.confirmed).length;
+    out.createEl("p", { text: `${this.rows.length} references: ${c.OK} found, ${c.CHECK} to check, ${c["NOT FOUND"]} not found, ${c.MANUAL} manual, ${c.ERROR} failed; ${confirmed} confirmed by you, ${skippedRows.length} skipped. Ticked ones are used.` });
 
     new Setting(out)
       .addButton((b) => b.setButtonText(TEXT.copyList).onClick(() => { void navigator.clipboard.writeText(listWithDois(this.rows)).then(() => new Notice(TEXT.copiedList)); }))
       .addButton((b) => b.setButtonText("Copy as CSV").onClick(() => { void navigator.clipboard.writeText(toCsv(this.rows)).then(() => new Notice(TEXT.copiedCsv)); }))
       .addButton((b) => b.setButtonText("Create note").onClick(() => void this.createNote()))
+      .addButton((b) => { b.setButtonText("Skip software and web pages").onClick(() => this.skipMany((r) => r.status === "MANUAL")); b.setDisabled(!live.some((r) => r.status === "MANUAL")); })
       .addButton((b) => { b.setButtonText("Look up the failed ones again").onClick(() => void this.retryErrors()); b.setDisabled(c.ERROR === 0); });
 
-    const table = (title: string, hint: string, list: ResolvedRow[]): void => {
+    const needs = live.filter((r) => !r.confirmed && NEEDS_LOOK.includes(r.status));
+    const found = live.filter((r) => r.confirmed || !NEEDS_LOOK.includes(r.status));
+    const group = (title: string, hint: string, list: ResolvedRow[]): void => {
       if (list.length === 0) return;
       out.createEl("h4", { text: `${title} (${list.length})` });
       out.createEl("p", { cls: "literature-feed-meta", text: hint });
-      const t = out.createEl("table", { cls: "literature-feed-papers literature-feed-refs" });
-      const head = t.createEl("thead").createEl("tr");
-      for (const h of ["Use", "#", "Reference", "Status", "DOI"]) head.createEl("th", { text: h });
-      const body = t.createEl("tbody");
-      for (const r of list) this.renderRow(body, r);
+      const box = out.createDiv({ cls: "literature-feed-refs-list" });
+      for (const r of list) this.renderRow(box, r);
     };
-    table("Needs a look", "Not found, software or web pages, failed look-ups, and matches that differ from the citation. They are skipped unless you tick them; type a DOI to include one you found yourself.", needs);
-    table("Found", "The title, first author and year agree with the Crossref record, or the DOI was in the text.", this.rows.filter((r) => !NEEDS_LOOK.includes(r.status)));
+    group("Needs a look", "Follow the link on the status or search for the paper, then press Confirm if the DOI is right. Not found, software and failed look-ups are not used unless you type a DOI and tick them; Skip takes one out of the check.", needs);
+    group("Found", "The title, first author and year agree with the Crossref record, or the DOI was in the text, or you confirmed it.", found);
+    if (skippedRows.length > 0) {
+      const details = out.createEl("details");
+      details.createEl("summary", { text: `Skipped (${skippedRows.length})` });
+      const box = details.createDiv({ cls: "literature-feed-refs-list" });
+      for (const r of skippedRows) this.renderRow(box, r);
+    }
   }
 
-  private renderRow(body: HTMLElement, r: ResolvedRow): void {
-    const tr = body.createEl("tr");
-    const box = tr.createEl("td").createEl("input", { type: "checkbox" });
-    box.checked = this.included.has(r.n) && r.doi !== "";
+  private skipMany(pick: (r: ResolvedRow) => boolean): void {
+    for (const r of this.rows) {
+      if (!pick(r)) continue;
+      r.skipped = true;
+      this.included.delete(r.n);
+    }
+    this.afterEdit();
+  }
+
+  private afterEdit(): void {
+    this.flush();
+    this.renderRows();
+    this.emit();
+  }
+
+  private renderRow(parent: HTMLElement, r: ResolvedRow): void {
+    const good = r.confirmed || r.status === "OK";
+    const state = r.skipped ? "off" : good ? "ok" : r.status === "CHECK" ? "todo" : r.status === "MANUAL" ? "off" : "bad";
+    const row = parent.createDiv({ cls: `literature-feed-setup-row literature-feed-ref is-${state}` });
+    const box = row.createEl("input", { type: "checkbox", cls: "literature-feed-ref-use", attr: { title: "Use this reference" } });
+    box.checked = this.included.has(r.n) && r.doi !== "" && !r.skipped;
+    box.disabled = r.skipped;
     box.addEventListener("change", () => {
       if (box.checked && r.doi === "") { box.checked = false; new Notice(TEXT.typeDoi); return; }
       if (box.checked) this.included.add(r.n);
@@ -238,25 +266,43 @@ export class RefsPanel {
       this.saveSoon();
       this.emit();
     });
-    tr.createEl("td", { text: String(r.n) });
-    const what = tr.createEl("td");
-    what.createDiv({ text: r.text });
-    if (r.crossrefTitle !== "" && r.status !== "OK") what.createDiv({ cls: "literature-feed-meta", text: `Closest in Crossref: ${r.authors === "" ? "" : `${r.authors}. `}${r.crossrefTitle}${r.year === "" ? "" : ` (${r.year})`}` });
-    else if (r.authors !== "") what.createDiv({ cls: "literature-feed-meta", text: `${r.authors}${r.journal === "" ? "" : ` · ${r.journal}`}${r.year === "" ? "" : ` · ${r.year}`}` });
-    if (r.reasons.length > 0 && r.status !== "OK") what.createDiv({ cls: "literature-feed-meta", text: r.reasons.join("; ") });
-    tr.createEl("td").createSpan({ cls: `literature-feed-status status-${r.status.toLowerCase().replace(" ", "-")}`, text: STATUS_LABEL[r.status] });
-    const doi = tr.createEl("td").createEl("input", { type: "text", placeholder: "10.…" });
+    row.createSpan({ cls: "literature-feed-setup-mark", text: MARK[state] });
+
+    const text = row.createDiv({ cls: "literature-feed-setup-text" });
+    const matched = r.status === "OK" || r.status === "CHECK";
+    const query = searchQuery(matched ? r.crossrefTitle : "", r.text);
+    text.createDiv({ cls: "literature-feed-title" }).createEl("a", { cls: "external-link", text: r.text, href: googleUrl(query), attr: { target: "_blank", rel: "noopener", title: "Search for this paper on Google" } });
+    if (r.crossrefTitle !== "" && r.status !== "OK") text.createDiv({ cls: "literature-feed-meta", text: `Closest in Crossref: ${r.authors === "" ? "" : `${r.authors}. `}${r.crossrefTitle}${r.year === "" ? "" : ` (${r.year})`}` });
+    else if (r.authors !== "") text.createDiv({ cls: "literature-feed-meta", text: `${r.authors}${r.journal === "" ? "" : ` \u00b7 ${r.journal}`}${r.year === "" ? "" : ` \u00b7 ${r.year}`}` });
+    if (r.reasons.length > 0 && r.status !== "OK") text.createDiv({ cls: "literature-feed-meta", text: r.reasons.join("; ") });
+    const links = text.createDiv({ cls: "literature-feed-meta literature-feed-ref-links" });
+    const label = r.skipped ? "Skipped" : r.confirmed ? "Confirmed" : STATUS_LABEL[r.status];
+    const chipCls = `literature-feed-status status-${(r.confirmed ? "ok" : r.status).toLowerCase().replace(" ", "-")}`;
+    if (r.doi !== "" && !r.skipped) links.createEl("a", { cls: `${chipCls} external-link`, text: label, href: `https://doi.org/${r.doi}`, attr: { target: "_blank", rel: "noopener", title: TEXT.openDoi } });
+    else links.createSpan({ cls: chipCls, text: label });
+    links.createEl("a", { cls: "external-link", text: "Google", href: googleUrl(query), attr: { target: "_blank", rel: "noopener" } });
+    links.createEl("a", { cls: "external-link", text: "Scholar", href: scholarUrl(query), attr: { target: "_blank", rel: "noopener" } });
+
+    const actions = row.createDiv({ cls: "literature-feed-ref-actions" });
+    const doi = actions.createEl("input", { type: "text", placeholder: "10.\u2026" });
     doi.value = r.doi;
+    doi.disabled = r.skipped;
     doi.addEventListener("change", () => {
       const typed = doiInText(doi.value) || doi.value.trim().toLowerCase();
       r.doi = /^10\.\d{4,9}\/\S+$/.test(typed) ? typed : "";
-      doi.value = r.doi;
+      r.confirmed = false;
       if (r.doi !== "") this.included.add(r.n);
       else this.included.delete(r.n);
-      box.checked = this.included.has(r.n);
-      this.saveSoon();
-      this.emit();
+      this.afterEdit();
     });
+    const buttons = actions.createDiv({ cls: "literature-feed-buttons" });
+    if (r.skipped) {
+      buttons.createEl("button", { text: "Restore" }).addEventListener("click", () => { r.skipped = false; if (includedByDefault(r)) this.included.add(r.n); this.afterEdit(); });
+    } else {
+      if (r.doi !== "" && !r.confirmed) buttons.createEl("button", { text: "Confirm", cls: "mod-cta", attr: { title: TEXT.doiRight } }).addEventListener("click", () => { r.confirmed = true; this.included.add(r.n); this.afterEdit(); });
+      if (r.confirmed) buttons.createEl("button", { text: "Undo" }).addEventListener("click", () => { r.confirmed = false; this.afterEdit(); });
+      buttons.createEl("button", { text: "Skip", attr: { title: "Do not check this one (a repository, a web page)" } }).addEventListener("click", () => { r.skipped = true; this.included.delete(r.n); this.afterEdit(); });
+    }
   }
 
   private async createNote(): Promise<void> {

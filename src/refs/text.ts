@@ -9,4 +9,6 @@ export const TEXT = {
   copiedList: "Copied the list with DOIs.",
   copiedCsv: "Copied as CSV (opens in Excel).",
   typeDoi: "Type a DOI first.",
+  openDoi: "Open the DOI to check it",
+  doiRight: "The DOI is right",
 } as const;

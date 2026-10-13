@@ -2,7 +2,8 @@
 // already have, and how it was made (input, threshold, date, cost) so it can be repeated. Pure: the plugin writes it.
 import { doiUrl, escapeMd } from "../inbox/write";
 import type { Flags } from "./flags";
-import { authorShares, authorTableMarkdown } from "./gaps-authors";
+import { authorsShort } from "./authors-text";
+import { authorShares, authorTableCallout } from "./gaps-authors";
 import type { GapInput } from "./gaps-input";
 import type { GapsRun } from "./gaps-fetch";
 import { cell, flagText } from "./note";
@@ -82,12 +83,12 @@ export function renderGapsNote(n: GapsNoteInput): string {
   if (run.message) lines.push(`> [!note] ${run.message}`, "");
   if (run.stopped) lines.push(`> [!warning] The lookup ${run.stopped}.`, "");
   if (run.gaps.length > 0) {
-    lines.push("## Possible gaps", "", "| Paper | Year | Cited | Cited by these references | Already have |", "| --- | --- | --- | --- | --- |");
+    lines.push("## Possible gaps", "", "| Paper | Authors | Year | Cited | Cited by these references | Already have |", "| --- | --- | --- | --- | --- | --- |");
     run.gaps.forEach((g, i) => {
       const p = g.paper;
       const url = doiUrl(p?.doi ?? null);
       const title = p ? (url ? `[${escapeMd(p.title)}](${url})` : escapeMd(p.title)) : g.gap.id;
-      lines.push(`| ${cell(title)} | ${p?.year ?? ""} | ${p?.citedByCount ?? ""} | ${g.gap.count} (${Math.round(g.gap.share * 100)}%) | ${cell(n.flags[i] ? flagText(n.flags[i], n.searchNames ?? new Map()) : "")} |`);
+      lines.push(`| ${cell(title)} | ${cell(escapeMd(authorsShort(p?.authors ?? [])))} | ${p?.year ?? ""} | ${p?.citedByCount ?? ""} | ${g.gap.count} (${Math.round(g.gap.share * 100)}%) | ${cell(n.flags[i] ? flagText(n.flags[i], n.searchNames ?? new Map()) : "")} |`);
     });
     lines.push("");
   } else if (!run.message) {
@@ -97,13 +98,13 @@ export function renderGapsNote(n: GapsNoteInput): string {
   if (deeper) {
     lines.push("## Deeper: what the shared works rest on", "", `Read ${deeper.hubsRead} works that several of the references cite (${deeper.hubsWithLists} with a reference list). Listed: cited by at least ${deeper.minCount} of them, and not the paper, its references or those shared works.`, "");
     if (deeper.gaps.length > 0) {
-      lines.push("| Paper | Year | Cited | Cited by these shared works | Already have |", "| --- | --- | --- | --- | --- |");
+      lines.push("| Paper | Authors | Year | Cited | Cited by these shared works | Already have |", "| --- | --- | --- | --- | --- | --- |");
       deeper.gaps.forEach((g, i) => {
         const p = g.paper;
         const url = doiUrl(p?.doi ?? null);
         const title = p ? (url ? `[${escapeMd(p.title)}](${url})` : escapeMd(p.title)) : g.gap.id;
         const f = n.deeperFlags?.[i];
-        lines.push(`| ${cell(title)} | ${p?.year ?? ""} | ${p?.citedByCount ?? ""} | ${g.gap.count} of ${deeper.hubsRead} | ${cell(f ? flagText(f, n.searchNames ?? new Map()) : "")} |`);
+        lines.push(`| ${cell(title)} | ${cell(escapeMd(authorsShort(p?.authors ?? [])))} | ${p?.year ?? ""} | ${p?.citedByCount ?? ""} | ${g.gap.count} of ${deeper.hubsRead} | ${cell(f ? flagText(f, n.searchNames ?? new Map()) : "")} |`);
       });
       lines.push("");
     } else {
@@ -111,8 +112,14 @@ export function renderGapsNote(n: GapsNoteInput): string {
     }
   }
   if (run.citedAuthors.length > 0 && run.gaps.length > 0) {
-    const uncited = run.gaps.flatMap((g) => (g.paper ? [g.paper.authors] : []));
-    lines.push("## Authors: cited and not cited", "", ...authorTableMarkdown(authorShares(run.citedAuthors, uncited, { own: run.subject?.authors ?? [] })));
+    const lists = (items: GapsRun["gaps"]): string[][] => items.flatMap((g) => (g.paper ? [g.paper.authors] : []));
+    const own = run.subject?.authors ?? [];
+    lines.push("## Authors: cited and not cited", "", "Each author's share of the paper's references and of the gaps, to see who is over- or under-represented. Open a table by clicking its title; every author is listed, and the note's search finds names inside.", "");
+    lines.push(...authorTableCallout("First-level gaps", authorShares(run.citedAuthors, lists(run.gaps), { own })));
+    if (run.deeper) {
+      lines.push(...authorTableCallout("Second-level gaps", authorShares(run.citedAuthors, lists(run.deeper.gaps), { own })));
+      lines.push(...authorTableCallout("Both", authorShares(run.citedAuthors, [...lists(run.gaps), ...lists(run.deeper.gaps)], { own })));
+    }
   }
   lines.push("## How this was made", "", ...describeInput(n.input), `- **Run:** ${n.ranAt}. Minimum: cited by ${n.minCount} of the references.`);
   lines.push(`- **OpenAlex requests:** ${run.searches} title search${run.searches === 1 ? "" : "es"}, the rest lookups by id or DOI; about $${run.spentUsd.toFixed(4)}.`);

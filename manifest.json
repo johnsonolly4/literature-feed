@@ -3,7 +3,7 @@
   "name": "Literature Feed",
   "version": "0.1.0",
   "minAppVersion": "1.14.0",
-  "description": "Weekly paper feeds from OpenAlex in an Obsidian reading inbox, synced to Zotero.",
+  "description": "Weekly paper feeds from OpenAlex in a reading inbox note, synced to Zotero.",
   "author": "johnsonolly4",
   "isDesktopOnly": true
 }

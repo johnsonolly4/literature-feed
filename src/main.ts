@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile, normalizePath } from "obsidian";
+import { MarkdownView, Menu, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
@@ -8,6 +8,27 @@ import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordDro
 import { topicStatRows, titlesByVerdict, type TopicStatRow } from "./prompts/build";
 import { emptyDecisions, normaliseDecisions, type Decisions } from "./prompts/decisions";
 import { PromptModal, type PromptHost, type PromptKind } from "./prompts/modals";
+import { addSpend, emptyTally, monthOf, normaliseTally, type SpendTally } from "./review/budget";
+import { emptyCache, normaliseCache, type ReviewCache } from "./review/cache";
+import type { FlagSources } from "./review/flags";
+import { chartBlockProcessor } from "./review/chart-view";
+import { GRAPH_BLOCK, graphFromNote, normaliseGraph, type GraphData } from "./review/graph-data";
+import { GRAPH_VIEW, GraphView, graphBlockProcessor, type GraphHost } from "./review/graph-view";
+import { CrossrefClient } from "./refs/crossref";
+import { TEXT } from "./refs/text";
+import { normaliseRefsSession, type RefsSession } from "./refs/panel";
+import { crossrefRequester } from "./refs/request";
+import { REFS_VIEW, RefsView } from "./refs/view";
+import { GAPS_VIEW, GapsView } from "./review/gaps-view";
+import { emptyGapsSession, normaliseGapsSession, type GapsSession } from "./review/gaps-input";
+import { GAPS_KIND, gapsRecordFromNote, parseGapsSnapshot, sessionFromRecord } from "./review/gaps-note";
+import { REPORT_BLOCK, reportsInNote, type ReportKind } from "./ui/report-block";
+import { reportBlockProcessor } from "./ui/report-view";
+import { recordFromNote, type ReviewRecord } from "./review/record";
+import { REVIEW_VIEW, ReviewView } from "./review/review-view";
+import { describeSession, normaliseSession, type ReviewSession } from "./review/session";
+import type { ReviewHost, StartMode } from "./review/window";
+import { buildLookup, emptyIndex, mergeIndex, normaliseIndex, type ZoteroIndex } from "./zotero/library-index";
 import type { FixAction, SetupSnapshot } from "./setup/checks";
 import type { IntegrationInfo } from "./setup/integrate";
 import { SetupModal, type SetupHost } from "./setup/setup-modal";
@@ -32,7 +53,9 @@ const START_DELAY_MS = 15_000;
 /** While Obsidian stays open the schedule is checked this often. */
 const CHECK_EVERY_MS = 60 * 60 * 1000;
 
-export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost {
+const NO_SNAPSHOT = "This note holds no saved report, so its settings were put back. Press Estimate the cost, then Find the gaps (free from the cache for a day).";
+
+export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost, ReviewHost, GraphHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
@@ -41,6 +64,25 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   private readonly autoTried = { scan: "", sync: "" };
   /** The long-term record of how each search does (`ledger.json` in the plugin folder). */
   private ledger: Ledger = emptyLedger();
+  /** OpenAlex requests made by this plugin, by month (`openalex-spend.json`). */
+  spend: SpendTally = emptyTally();
+  private spendTimer: number | null = null;
+  /** What the last literature reviews fetched, kept 24 hours (`review-cache.json`). */
+  reviewCache: ReviewCache = emptyCache();
+  /** The literature review in progress (`review-session.json`), so closing the tab does not lose it. */
+  session: ReviewSession | null = null;
+  /** The reference tidy-up's last list and results (`refs-session.json`). */
+  refsSession: RefsSession | null = null;
+  /** The citation-gaps tool's last input and run (`gaps-session.json`). */
+  gapsSession: GapsSession | null = null;
+  /** How the review tab starts the next time it is created. */
+  private nextReviewMode: StartMode = "ask";
+  /** What each kind of report note can reopen (gaps, graph, …); see `ui/report-block.ts`. */
+  readonly reportKinds = new Map<string, ReportKind>();
+  /** The graph of the last literature review (`review-graph.json`). */
+  graph: GraphData | null = null;
+  /** The Zotero library as a local, read-only index (`zotero-index.json`). */
+  zoteroIndex: ZoteroIndex = emptyIndex();
   /** Earlier LLM suggestions and what the user decided (`decisions.json` in the plugin folder). */
   decisions: Decisions = emptyDecisions();
   /** Open status blocks and cards; they redraw after a scan. */
@@ -50,11 +92,70 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.loadSettings();
     this.ledger = await this.loadLedger();
     this.decisions = await this.loadDecisions();
+    this.spend = normaliseTally(await this.readPluginJson("openalex-spend.json"));
+    this.reviewCache = normaliseCache(await this.readPluginJson("review-cache.json"));
+    this.zoteroIndex = normaliseIndex(await this.readPluginJson("zotero-index.json"));
+    this.graph = normaliseGraph(await this.readPluginJson("review-graph.json"));
+    this.session = normaliseSession(await this.readPluginJson("review-session.json"));
+    this.gapsSession = normaliseGapsSession(await this.readPluginJson("gaps-session.json"));
+    this.refsSession = normaliseRefsSession(await this.readPluginJson("refs-session.json"));
+    this.registerView(REFS_VIEW, (leaf) => new RefsView(leaf, this));
+    this.addCommand({ id: "find-dois", name: TEXT.command, callback: () => void this.openRefs() });
+    this.registerView(GAPS_VIEW, (leaf) => new GapsView(leaf, this));
+    this.addCommand({ id: "citation-gaps", name: "Citation gaps of one paper", callback: () => void this.openGaps() });
+    this.registerView(REVIEW_VIEW, (leaf) => {
+      const view = new ReviewView(leaf, this);
+      view.mode = this.nextReviewMode;
+      this.nextReviewMode = "ask";
+      return view;
+    });
+    this.registerView(GRAPH_VIEW, (leaf) => new GraphView(leaf, this));
+    this.addCommand({ id: "open-review-graph", name: "Open review graph", callback: () => void (this.graph ? this.openGraph(this.graph) : this.openReview()) });
+    this.addRibbonIcon("telescope", "Literature review", (evt) => this.reviewMenu(evt));
+    this.addCommand({
+      id: "repeat-review", name: "Repeat the review in this note",
+      editorCheckCallback: (checking, editor) => {
+        const record = recordFromNote(editor.getValue());
+        if (record && !checking) void this.openReview("new", record);
+        return record !== null;
+      },
+    });
+    this.addCommand({
+      id: "resume-review", name: "Resume the last literature review",
+      checkCallback: (checking) => {
+        if (this.session && !checking) void this.openReview("resume");
+        return this.session !== null;
+      },
+    });
+    // In a review note: opens the graph that the note holds (older reviews too).
+    this.addCommand({
+      id: "open-note-graph", name: "Open the graph in this note",
+      editorCheckCallback: (checking, editor) => {
+        const graph = graphFromNote(editor.getValue());
+        if (graph && !checking) void this.openGraph(graph);
+        return graph !== null;
+      },
+    });
+    this.reportKinds.set(GAPS_KIND, { label: "gaps view", open: (data) => this.openGapsSnapshot(data) });
+    this.reportKinds.set("graph", { label: "graph view", open: async (data) => { const g = normaliseGraph(data); if (g) await this.openGraph(g); return g !== null; } });
+    this.registerMarkdownCodeBlockProcessor(REPORT_BLOCK, (source, el) => reportBlockProcessor(source, el, this.reportKinds));
+    // In any report note: opens the interactive view the note was made from (a snapshot in the note, else its record, else a graph).
+    this.addCommand({
+      id: "open-note-report", name: "Open this note's report view",
+      editorCheckCallback: (checking, editor) => {
+        const open = this.reportOpener(editor.getValue());
+        if (open && !checking) void open();
+        return open !== null;
+      },
+    });
+    this.registerMarkdownCodeBlockProcessor(GRAPH_BLOCK, (source, el, ctx) => graphBlockProcessor(source, el, ctx, this.app, (g) => void this.openGraph(g)));
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
     this.addCommand({ id: "check-setup", name: "Check setup", callback: () => void this.openSetup() });
+    this.registerMarkdownCodeBlockProcessor("literature-feed-chart", (source, el) => chartBlockProcessor(source, el));
+    this.addCommand({ id: "literature-review", name: "Generate literature review", callback: () => void this.openReview() });
     this.addCommand({ id: "llm-review", name: "Review a search with an LLM", callback: () => void this.openPrompt("review") });
     this.addCommand({ id: "llm-topics", name: "Tweak search terms with an LLM", callback: () => void this.openPrompt("topics") });
     this.addCommand({ id: "llm-compare", name: "Compare searches with an LLM", callback: () => void this.openPrompt("compare") });
@@ -117,6 +218,16 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.settings = settings;
   }
 
+  /** Adds a search string to a search's topics (once), saves, and says what happened. */
+  async addTopicToFeed(feedId: string, topic: string): Promise<string> {
+    const feed = this.settings.feeds.find((f) => f.id === feedId);
+    if (!feed) return "That search no longer exists.";
+    if (feed.topics.includes(topic)) return `"${feed.name}" already has this topic.`;
+    feed.topics.push(topic);
+    await this.saveSettings();
+    return `Added to "${feed.name}" (now ${feed.topics.length} topics). Papers it finds are still ranked by that search's rules. Run the review again to use it.`;
+  }
+
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
   }
@@ -149,11 +260,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         return;
       }
       new Notice("Scanning for new papers…");
-      const client = new OpenAlexClient({
-        request: obsidianRequester,
-        apiKey: this.getSecret("openAlexKey") || undefined,
-        sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
-      });
+      const client = this.newOpenAlexClient();
       const now = new Date();
       const outcome = await runScan(this.settings, { client, now });
       const scanned = this.settings.feeds.filter((f) => outcome.topicStats.some((s) => s.feedId === f.id));
@@ -212,7 +319,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
       const result = await runSync(this.settings.feeds, pending, {
         zotero: new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep }),
-        openalex: new OpenAlexClient({ request: obsidianRequester, apiKey: this.getSecret("openAlexKey") || undefined, sleep }),
+        openalex: this.newOpenAlexClient(),
       }, { createInboxCollections: this.settings.createInboxCollections, createProjectCollections: this.settings.createProjectCollections });
       for (const note of notes) {
         const marks = result.synced.filter((s) => s.path === note.file.path);
@@ -347,6 +454,228 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   /** Where the ledger is kept: next to `data.json`, in the plugin's folder. Null when Obsidian does not say where that is. */
   private ledgerPath(): string | null {
     return this.manifest.dir ? normalizePath(`${this.manifest.dir}/ledger.json`) : null;
+  }
+
+  /** An OpenAlex client with the user's key; every request's cost goes into the monthly tally. */
+  private newOpenAlexClient(): OpenAlexClient {
+    return new OpenAlexClient({
+      request: obsidianRequester,
+      apiKey: this.getSecret("openAlexKey") || undefined,
+      sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+      onCost: (usd) => this.recordSpend(usd),
+    });
+  }
+
+  newReviewClient(): OpenAlexClient {
+    return this.newOpenAlexClient();
+  }
+
+  /** Adds a request's cost to this month's tally; the file is written a moment later, once for a burst of requests. */
+  recordSpend(usd: number): void {
+    addSpend(this.spend, monthOf(new Date()), usd);
+    if (this.spendTimer !== null) return;
+    this.spendTimer = window.setTimeout(() => {
+      this.spendTimer = null;
+      void this.writePluginJson("openalex-spend.json", this.spend);
+    }, 2000);
+  }
+
+  onunload(): void {
+    if (this.spendTimer !== null) {
+      window.clearTimeout(this.spendTimer);
+      void this.writePluginJson("openalex-spend.json", this.spend);
+    }
+  }
+
+  private async readPluginJson(name: string): Promise<unknown> {
+    if (!this.manifest.dir) return null;
+    const path = normalizePath(`${this.manifest.dir}/${name}`);
+    try {
+      if (!(await this.app.vault.adapter.exists(path))) return null;
+      return JSON.parse(await this.app.vault.adapter.read(path)) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writePluginJson(name: string, data: unknown): Promise<void> {
+    if (!this.manifest.dir) return;
+    try {
+      await this.app.vault.adapter.write(normalizePath(`${this.manifest.dir}/${name}`), JSON.stringify(data));
+    } catch (e) {
+      new Notice(`Could not save ${name}: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    }
+  }
+
+  /** Opens the review in a tab (the one that is open, if any). `resume` picks up the saved review, `new` starts fresh. */
+  async openReview(mode: StartMode = "ask", repeat?: ReviewRecord): Promise<void> {
+    await this.updateLedgerNow();
+    const existing = this.app.workspace.getLeavesOfType(REVIEW_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) {
+      this.nextReviewMode = mode;
+      await leaf.setViewState({ type: REVIEW_VIEW, active: true });
+    }
+    if (leaf.view instanceof ReviewView && (repeat || (existing && mode !== "ask"))) leaf.view.show(mode, repeat);
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** Opens the citation-gaps tool in a tab (the one that is open, if any). */
+  async openGaps(): Promise<void> {
+    await this.updateLedgerNow();
+    const existing = this.app.workspace.getLeavesOfType(GAPS_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: GAPS_VIEW, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** Shows the tool in its tab from the given session (a saved run, or the inputs of an older note). */
+  private async openGapsSession(session: GapsSession): Promise<void> {
+    this.saveGapsSession(session);
+    await this.updateLedgerNow();
+    const existing = this.app.workspace.getLeavesOfType(GAPS_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: GAPS_VIEW, active: true });
+    else if (leaf.view instanceof GapsView) leaf.view.reload();
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** Reopens a saved gaps report (the snapshot a note holds) without asking OpenAlex anything. */
+  async openGapsSnapshot(data: unknown): Promise<boolean> {
+    const snap = parseGapsSnapshot(data);
+    if (!snap) return false;
+    const base = sessionFromRecord({ input: snap.input, minCount: snap.minCount, addedDois: snap.run.addedDois, deeper: snap.run.deeper ? { minCount: snap.run.deeper.minCount, hubsRead: snap.run.deeper.hubsRead, gaps: [] } : null }, this.gapsSession ?? emptyGapsSession());
+    await this.openGapsSession({ ...base, audit: snap.audit ? { answer: JSON.stringify(snap.audit, null, 2), result: snap.audit } : null, last: { input: snap.input, run: snap.run, ranAt: snap.ranAt } });
+    return true;
+  }
+
+  /**
+   * What "open this note's report" would do for the text of a note, or null when it holds nothing to open: a report block of a
+   * registered kind, else an older graph block, else an older gaps record (its inputs are put back and the run is made again).
+   */
+  private reportOpener(text: string): (() => Promise<void>) | null {
+    for (const snap of reportsInNote(text)) {
+      const kind = this.reportKinds.get(snap.kind);
+      if (kind) return async () => { if (!(await kind.open(snap.data))) new Notice("The report in this note could not be read."); };
+    }
+    const graph = graphFromNote(text);
+    if (graph) return () => this.openGraph(graph);
+    const record = gapsRecordFromNote(text);
+    if (record) {
+      return async () => {
+        await this.openGapsSession(sessionFromRecord(record, this.gapsSession ?? emptyGapsSession()));
+        new Notice(NO_SNAPSHOT, 10000);
+      };
+    }
+    return null;
+  }
+
+  /** Opens the reference tidy-up in a tab (the one that is open, if any). */
+  async openRefs(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(REFS_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: REFS_VIEW, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  saveRefsSession(session: RefsSession): void {
+    this.refsSession = session;
+    void this.writePluginJson("refs-session.json", session);
+  }
+
+  /** A Crossref client for looking up references: one request at a time; the contact email only if the user gave one. */
+  newCrossrefClient(): CrossrefClient {
+    return new CrossrefClient({ request: crossrefRequester, sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)), mailto: this.settings.crossrefEmail });
+  }
+
+  saveGapsSession(session: GapsSession): void {
+    this.gapsSession = session;
+    void this.writePluginJson("gaps-session.json", session);
+  }
+
+  /** The ribbon icon's menu: start a review, pick up the last one, open the last graph. */
+  private reviewMenu(evt: MouseEvent): void {
+    const menu = new Menu();
+    menu.addItem((item) => item.setTitle("New literature review").setIcon("plus").onClick(() => void this.openReview("new")));
+    const saved = this.session;
+    if (saved) {
+      const names = new Map(this.settings.feeds.map((f) => [f.id, f.name]));
+      menu.addItem((item) => item.setTitle(`Resume: ${describeSession(saved, names)}`).setIcon("history").onClick(() => void this.openReview("resume")));
+    }
+    menu.addItem((item) => item.setTitle(TEXT.command).setIcon("list-checks").onClick(() => void this.openRefs()));
+    menu.addItem((item) => item.setTitle("Citation gaps of one paper").setIcon("search-check").onClick(() => void this.openGaps()));
+    if (this.gapsSession?.last) menu.addItem((item) => item.setTitle("Open the last citation gaps report").setIcon("search-check").onClick(() => void this.openGaps()));
+    if (this.graph) menu.addItem((item) => item.setTitle("Open review graph").setIcon("network").onClick(() => void this.openGraph(this.graph)));
+    menu.showAtMouseEvent(evt);
+  }
+
+  /** Keeps the review in progress (the file is written now; a review is saved a few times, not on every keystroke). */
+  saveSession(session: ReviewSession): void {
+    this.session = session;
+    void this.writePluginJson("review-session.json", session);
+  }
+
+  /** Shows the review graph in a tab (the given one, which is also kept for next time). */
+  async openGraph(data: GraphData | null): Promise<void> {
+    if (data === null) {
+      new Notice("No review graph yet. Make a literature review first.");
+      return;
+    }
+    this.graph = data;
+    await this.writePluginJson("review-graph.json", data);
+    const existing = this.app.workspace.getLeavesOfType(GRAPH_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: GRAPH_VIEW, active: true });
+    else if (leaf.view instanceof GraphView) leaf.view.render();
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  async saveReviewCache(): Promise<void> {
+    await this.writePluginJson("review-cache.json", this.reviewCache);
+  }
+
+  /** Reads the Zotero library (read-only) into the local index, only what changed since the last time, and says what it found. */
+  async refreshZoteroIndex(): Promise<string> {
+    const apiKey = this.getSecret("zoteroKey");
+    const userId = this.settings.zoteroUserId;
+    if (apiKey === "" || userId === "") throw new Error("Add your Zotero API key and user ID in the settings first.");
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
+    const client = new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep });
+    const since = this.zoteroIndex.libraryVersion;
+    const [fetched, deleted] = await Promise.all([client.listLibraryItems(since), client.listDeleted(since)]);
+    this.zoteroIndex = mergeIndex(this.zoteroIndex, fetched.items, deleted, fetched.libraryVersion);
+    await this.writePluginJson("zotero-index.json", this.zoteroIndex);
+    return `Zotero index up to date: ${Object.keys(this.zoteroIndex.items).length} items (${fetched.items.length} read this time${deleted.length > 0 ? `, ${deleted.length} removed` : ""}).`;
+  }
+
+  /** Where the three flags (in Zotero, in the vault, listed before) come from; a source that is not available is left out. */
+  flagSources(): FlagSources {
+    return {
+      zotero: Object.keys(this.zoteroIndex.items).length > 0 ? buildLookup(this.zoteroIndex) : null,
+      literature: this.settings.literatureFolder === "" ? null : buildLiteratureIndex(this.literatureNotes()),
+      ledger: this.ledger,
+      seen: this.settings.seen,
+    };
+  }
+
+  /** Review notes go in a Reviews folder under the literature notes folder, or the vault root when there is none. */
+  reviewFolder(): string {
+    return this.settings.literatureFolder === "" ? "" : normalizePath(`${this.settings.literatureFolder}/Reviews`);
+  }
+
+  /** Makes a file (a number is added to its name when one exists), opens it when asked, and returns its path. */
+  async createReviewNote(path: string, text: string, open = true): Promise<string> {
+    const { vault } = this.app;
+    const clean = normalizePath(path);
+    const folder = clean.includes("/") ? clean.slice(0, clean.lastIndexOf("/")) : "";
+    if (folder !== "" && !vault.getFolderByPath(folder)) await vault.createFolder(folder);
+    const ext = /\.[A-Za-z0-9]+$/.exec(clean)?.[0] ?? ".md";
+    const base = clean.endsWith(ext) ? clean.slice(0, clean.length - ext.length) : clean;
+    let final = `${base}${ext}`;
+    for (let n = 2; vault.getAbstractFileByPath(final); n++) final = `${base} ${n}${ext}`;
+    await vault.create(final, text);
+    if (open) await this.app.workspace.openLinkText(final, "", "tab");
+    return final;
   }
 
   async openSetup(): Promise<void> {

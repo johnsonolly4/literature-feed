@@ -5,7 +5,7 @@ import { verdictOf, type Ledger, type ScanRecord } from "../ledger/ledger";
 import type { Decision } from "./decisions";
 import { COMPARE_EXAMPLE, NEW_FEED_EXAMPLE, REVIEW_EXAMPLE, TOPIC_EXAMPLE, printJson } from "./schemas";
 
-const MEANING = [
+export const MEANING = [
   "How this tool ranks papers (a plain word and phrase match, no AI):",
   "- A search has several search topics. Each topic is one OpenAlex query run against titles and abstracts; the papers all topics return are merged.",
   "- A search has concept groups. A group matches a paper when any one of its terms appears as a whole word or phrase in the title or abstract (British and American spellings count as the same, and a trailing plural is allowed).",
@@ -23,7 +23,7 @@ const QUERY_RULES = [
   "- Keep each string under about 300 characters, and make each topic cover one angle of the subject.",
 ].join("\n");
 
-const ONLY_JSON = "Answer with JSON only, in one code block, nothing else before or after it. If you cannot open an attachment or link, or cannot do part of the task, say so in the JSON's reason or notes field instead of guessing.";
+export const ONLY_JSON = "Answer with JSON only, in one code block, nothing else before or after it. If you cannot open an attachment or link, or cannot do part of the task, say so in the JSON's reason or notes field instead of guessing.";
 
 /** The search as plain text for a prompt. */
 export function describeFeed(feed: FeedConfig): string {

@@ -1,6 +1,7 @@
 // Zotero Web API v3 client (https://www.zotero.org/support/dev/web_api/v3/start). No Obsidian imports: the caller passes in
 // an HTTP function (in the plugin a wrapper around `requestUrl`, in tests a fake) and a `sleep`. One request at a time.
 // Error text never contains the API key or the address.
+import { doiOfItem, type LibraryItemRow } from "./library-index";
 import { bareDoi, type ZoteroItem } from "./map";
 
 const API_URL = "https://api.zotero.org";
@@ -278,6 +279,36 @@ export class ZoteroClient {
     if (wanted === "") return null;
     const hit = (await this.search(title, false)).find((r) => r !== null && titleKey(r.title) === wanted);
     return hit?.found ?? null;
+  }
+
+  /**
+   * Every item that is not an attachment (all pages), or only those changed since a library version, with the library version
+   * after the last page. Read-only: used to keep the local index of the library for a literature review.
+   */
+  async listLibraryItems(since = 0): Promise<{ items: LibraryItemRow[]; libraryVersion: number }> {
+    const items: LibraryItemRow[] = [];
+    let libraryVersion = since;
+    for (let start = 0, pages = 0; pages < 400; start += PAGE, pages++) {
+      const res = await this.send("GET", "read your library for the review", `/items?format=json&itemType=-attachment&limit=${PAGE}&start=${start}${since > 0 ? `&since=${since}` : ""}`);
+      const rows = Array.isArray(res.json) ? res.json : [];
+      const version = Number(res.headers["last-modified-version"]);
+      if (Number.isFinite(version) && version > libraryVersion) libraryVersion = version;
+      for (const row of rows) {
+        if (!isRecord(row) || typeof row.key !== "string" || !isRecord(row.data)) continue;
+        const title = typeof row.data.title === "string" ? row.data.title : "";
+        items.push({ key: row.key, doi: doiOfItem(row.data), title });
+      }
+      if (rows.length < PAGE) break;
+    }
+    return { items, libraryVersion };
+  }
+
+  /** Keys of items deleted since a library version. */
+  async listDeleted(since: number): Promise<string[]> {
+    if (since <= 0) return [];
+    const res = await this.send("GET", "read what was deleted from your library", `/deleted?since=${since}`);
+    const items = isRecord(res.json) && Array.isArray(res.json.items) ? res.json.items : [];
+    return items.filter((k): k is string => typeof k === "string");
   }
 
   /** Reads one item back by its key; null when Zotero has no such item. Used to check that a write really landed. */

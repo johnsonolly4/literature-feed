@@ -39,6 +39,8 @@ If the user asks for another task without clearing, remind them to `/clear` firs
 - If the user's short reply could answer more than one open question, say which one you think it answers before acting.
 - Multi-line edits: use the Edit tool, not escaped shell scripts.
 
+- **No real names of people in the repo** (code, tests, comments, docs, fixtures): use invented names. The repository is public.
+
 ## Terse commands
 - "continue" → top item in `STATUS.md` → Next
 - "push" → push the current branch and open a PR with `gh pr create`

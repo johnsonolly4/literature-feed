@@ -8,6 +8,8 @@ const SELECT = [
   "id", "doi", "title", "publication_year", "publication_date", "type",
   "abstract_inverted_index", "primary_location", "authorships",
 ].join(",");
+/** What a literature review also needs: how often a work is cited, and what it cites (a long list, so only review requests ask for it). */
+const SELECT_EXTRA = `${SELECT},cited_by_count,referenced_works`;
 /** OpenAlex basic paging stops at page * per_page = 10,000. */
 const PAGING_CAP = 10_000;
 
@@ -31,11 +33,17 @@ export interface SearchUrlOptions {
   page?: number;
   perPage?: number;
   form?: QueryForm;
+  /** Also ask for `cited_by_count` and `referenced_works` (reviews only; the weekly scan does not). */
+  extra?: boolean;
+  /** An OpenAlex sort, for example `relevance_score:desc`, so a cap keeps the best works. */
+  sort?: string;
+  /** Replaces the fields asked for (for example `id` when only the count is wanted). */
+  select?: string;
 }
 
 /** The one place that knows how a topic becomes a query. */
 export function buildSearchUrl(topic: string, opts: SearchUrlOptions = {}): string {
-  const { fromDate, page = 1, perPage = 100, form = "scoped" } = opts;
+  const { fromDate, page = 1, perPage = 100, form = "scoped", extra = false, sort, select } = opts;
   const params: string[] = [];
   const filters: string[] = [];
   if (fromDate) filters.push(`from_publication_date:${fromDate}`);
@@ -46,8 +54,44 @@ export function buildSearchUrl(topic: string, opts: SearchUrlOptions = {}): stri
     filters.push(`title_and_abstract.search:${topic.replace(/,/g, " ")}`);
   }
   if (filters.length > 0) params.push(`filter=${encodeURIComponent(filters.join(","))}`);
-  params.push(`per_page=${perPage}`, `page=${page}`, `select=${SELECT}`);
+  if (sort) params.push(`sort=${encodeURIComponent(sort)}`);
+  params.push(`per_page=${perPage}`, `page=${page}`, `select=${select ?? (extra ? SELECT_EXTRA : SELECT)}`);
   return `${API_URL}?${params.join("&")}`;
+}
+
+/** Works by their short ids (`W1`, `W2`), at most 50 at a time (the length of the address and OpenAlex's own limit). */
+export function buildWorksByIdUrl(ids: readonly string[]): string {
+  const list = ids.filter((id) => /^W\d+$/.test(id)).slice(0, 50);
+  return `${API_URL}?filter=${encodeURIComponent(`openalex:${list.join("|")}`)}&per_page=${Math.max(list.length, 1)}&select=${SELECT_EXTRA}`;
+}
+
+/** A DOI that can sit in a filter: a comma or a bar would split it. */
+export function filterSafeDoi(doi: string): boolean {
+  return /^10\.\d{4,9}\/\S+$/.test(doi) && !/[,|]/.test(doi);
+}
+
+/** Works by DOI (bare, such as `10.1021/jacs.3c08248`), at most 50 at a time. */
+export function buildWorksByDoiUrl(dois: readonly string[]): string {
+  const list = dois.filter(filterSafeDoi).slice(0, 50);
+  return `${API_URL}?filter=${encodeURIComponent(`doi:${list.join("|")}`)}&per_page=${Math.max(list.length, 1)}&select=${SELECT_EXTRA}`;
+}
+
+/** The works that best match a title or a whole reference line (a relevance search), a few of them, with their reference lists. */
+export function buildTitleSearchUrl(text: string, perPage = 5): string {
+  const clean = text.replace(/[^\p{L}\p{N}\s'-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+  return `${API_URL}?search=${encodeURIComponent(clean)}&per_page=${perPage}&select=${SELECT_EXTRA}`;
+}
+
+/** An author's works (author id `A123`) that cite any of the given works (short ids, at most 50). One filtered list. */
+export function buildAuthorWorksUrl(authorId: string, citedIds: readonly string[], perPage = 100): string {
+  const list = citedIds.filter((id) => /^W\d+$/.test(id)).slice(0, 50);
+  return `${API_URL}?filter=${encodeURIComponent(`authorships.author.id:${authorId},cites:${list.join("|")}`)}&per_page=${perPage}&sort=cited_by_count:desc&select=${SELECT_EXTRA}`;
+}
+
+/** Works that cite any of the given works (short ids, at most 50). */
+export function buildCitingUrl(ids: readonly string[], page = 1, perPage = 100): string {
+  const list = ids.filter((id) => /^W\d+$/.test(id)).slice(0, 50);
+  return `${API_URL}?filter=${encodeURIComponent(`cites:${list.join("|")}`)}&per_page=${perPage}&page=${page}&select=${SELECT_EXTRA}`;
 }
 
 /** OpenAlex sends an abstract as `{ word: [positions] }`; this puts the words back in order. */
@@ -75,15 +119,27 @@ export interface OpenAlexWork {
   type?: string | null;
   abstract_inverted_index?: Record<string, number[]> | null;
   primary_location?: { source?: OpenAlexSource | null } | null;
-  authorships?: { author?: { display_name?: string | null } | null }[] | null;
+  authorships?: { author?: { id?: string | null; display_name?: string | null } | null }[] | null;
+  cited_by_count?: number | null;
+  referenced_works?: string[] | null;
 }
 
 /** A paper as the scan hands it on: what the engine reads plus what the inbox note shows. */
 export interface Candidate extends Paper {
   openalexId: string;
   authors: string[];
+  /** The OpenAlex ids of the authors (`A123`), one for each name in `authors` ("" when there is none); absent in older saved data. */
+  authorIds?: string[];
   venue: string | null;
   publicationDate: string | null;
+  /** Only in review requests: times the work is cited, and the short ids (`W123`) of the works it cites. */
+  citedByCount?: number;
+  referencedWorks?: string[];
+}
+
+/** `https://openalex.org/W123` to `W123`; null when it is not a work address. */
+export function shortWorkId(id: string): string | null {
+  return /(?:^|\/)(W\d+)$/.exec(id)?.[1] ?? null;
 }
 
 /** Null for a work without a title (nothing to show or match). */
@@ -99,8 +155,13 @@ export function toCandidate(work: OpenAlexWork): Candidate | null {
     isPreprint: work.type === "preprint" || source?.type === "repository",
     openalexId: work.id,
     authors: (work.authorships ?? []).map((a) => a.author?.display_name?.trim() ?? "").filter((n) => n !== ""),
+    authorIds: (work.authorships ?? []).filter((a) => (a.author?.display_name?.trim() ?? "") !== "").map((a) => /(A\d+)$/.exec(a.author?.id ?? "")?.[1] ?? ""),
     venue: source?.display_name ?? null,
     publicationDate: work.publication_date ?? null,
+    ...(typeof work.cited_by_count === "number" ? { citedByCount: work.cited_by_count } : {}),
+    ...(Array.isArray(work.referenced_works)
+      ? { referencedWorks: work.referenced_works.map((w) => shortWorkId(w)).filter((w): w is string => w !== null) }
+      : {}),
   };
 }
 
@@ -115,6 +176,8 @@ export interface ClientOptions {
   request: Requester;
   /** Sent as a Bearer header, never in the URL. Optional: OpenAlex answers without a key, with a smaller daily budget. */
   apiKey?: string;
+  /** Called with the cost (`meta.cost_usd`) of every answer that states one, for the monthly tally. */
+  onCost?: (usd: number) => void;
   /** Waits between tries. Passed in because this file may not touch timers (the plugin passes `window.setTimeout`, tests a no-op). */
   sleep: (ms: number) => Promise<void>;
   /** Tries per request on HTTP 429, first try included. */
@@ -145,8 +208,10 @@ export class OpenAlexClient {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxTries: number;
   private readonly backoffMs: number;
+  private readonly onCost?: (usd: number) => void;
 
   constructor(opts: ClientOptions) {
+    this.onCost = opts.onCost;
     this.request = opts.request;
     this.headers = { Accept: "application/json" };
     if (opts.apiKey) this.headers.Authorization = `Bearer ${opts.apiKey}`;
@@ -177,8 +242,112 @@ export class OpenAlexClient {
       if (typeof res.json !== "object" || res.json === null) {
         throw new OpenAlexError("OpenAlex answered with something that is not JSON", res.status);
       }
-      return res.json as Record<string, unknown>;
+      const body = res.json as Record<string, unknown>;
+      const cost = (body.meta as { cost_usd?: unknown } | undefined)?.cost_usd;
+      if (typeof cost === "number" && cost > 0) this.onCost?.(cost);
+      return body;
     }
+  }
+
+  /** How many works a topic matches, for the price of one tiny request. Used to estimate a review before it spends anything. */
+  async countTopic(topic: string, opts: SearchUrlOptions = {}): Promise<{ count: number; costUsd: number }> {
+    const body = await this.get(buildSearchUrl(topic, { ...opts, page: 1, perPage: 1, select: "id" }));
+    const meta = (body.meta ?? {}) as { count?: number; cost_usd?: number };
+    return { count: meta.count ?? 0, costUsd: meta.cost_usd ?? 0 };
+  }
+
+  /** One page of one topic. `fetched` is how many works came back (works without a title are left out of `papers`). */
+  async searchPage(topic: string, page: number, opts: SearchUrlOptions = {}): Promise<{ papers: Candidate[]; fetched: number; count: number; costUsd: number }> {
+    const body = await this.get(buildSearchUrl(topic, { ...opts, page }));
+    const meta = (body.meta ?? {}) as { count?: number; cost_usd?: number };
+    const results = Array.isArray(body.results) ? (body.results as OpenAlexWork[]) : [];
+    const papers: Candidate[] = [];
+    for (const work of results) {
+      const candidate = toCandidate(work);
+      if (candidate) papers.push(candidate);
+    }
+    return { papers, fetched: results.length, count: meta.count ?? 0, costUsd: meta.cost_usd ?? 0 };
+  }
+
+  /** Works by short id, in batches of 50 (one request each); works without a title are left out. */
+  async getWorks(ids: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }> {
+    const unique = [...new Set(ids.filter((id) => /^W\d+$/.test(id)))];
+    const papers: Candidate[] = [];
+    let costUsd = 0;
+    for (let i = 0; i < unique.length; i += 50) {
+      const body = await this.get(buildWorksByIdUrl(unique.slice(i, i + 50)));
+      costUsd += ((body.meta ?? {}) as { cost_usd?: number }).cost_usd ?? 0;
+      for (const work of Array.isArray(body.results) ? (body.results as OpenAlexWork[]) : []) {
+        const candidate = toCandidate(work);
+        if (candidate) papers.push(candidate);
+      }
+    }
+    return { papers, costUsd };
+  }
+
+  /** One page of works that cite any of up to 50 given works. */
+  async citingPage(ids: readonly string[], page = 1): Promise<{ papers: Candidate[]; fetched: number; count: number; costUsd: number }> {
+    const body = await this.get(buildCitingUrl(ids, page));
+    const meta = (body.meta ?? {}) as { count?: number; cost_usd?: number };
+    const results = Array.isArray(body.results) ? (body.results as OpenAlexWork[]) : [];
+    const papers: Candidate[] = [];
+    for (const work of results) {
+      const candidate = toCandidate(work);
+      if (candidate) papers.push(candidate);
+    }
+    return { papers, fetched: results.length, count: meta.count ?? 0, costUsd: meta.cost_usd ?? 0 };
+  }
+
+  /** An author's works that cite at least one of `citedIds` (at most 50 of them), most cited first; one filtered list. */
+  async authorWorks(authorId: string, citedIds: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }> {
+    if (!/^A\d+$/.test(authorId)) return { papers: [], costUsd: 0 };
+    const body = await this.get(buildAuthorWorksUrl(authorId, citedIds));
+    const papers: Candidate[] = [];
+    for (const work of Array.isArray(body.results) ? (body.results as OpenAlexWork[]) : []) {
+      const candidate = toCandidate(work);
+      if (candidate) papers.push(candidate);
+    }
+    return { papers, costUsd: ((body.meta ?? {}) as { cost_usd?: number }).cost_usd ?? 0 };
+  }
+
+  /** Works by DOI, in batches of 50 (a filtered list, one credit each); DOIs that cannot sit in a filter are skipped. */
+  async getWorksByDoi(dois: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }> {
+    const unique = [...new Set(dois.filter(filterSafeDoi))];
+    const papers: Candidate[] = [];
+    let costUsd = 0;
+    for (let i = 0; i < unique.length; i += 50) {
+      const body = await this.get(buildWorksByDoiUrl(unique.slice(i, i + 50)));
+      costUsd += ((body.meta ?? {}) as { cost_usd?: number }).cost_usd ?? 0;
+      for (const work of Array.isArray(body.results) ? (body.results as OpenAlexWork[]) : []) {
+        const candidate = toCandidate(work);
+        if (candidate) papers.push(candidate);
+      }
+    }
+    return { papers, costUsd };
+  }
+
+  /** One work by DOI or short id, with its references and citation count. A single record is free. Null when OpenAlex has none. */
+  async getFullWork(ref: { doi?: string | null; id?: string | null }): Promise<Candidate | null> {
+    const path = ref.id && /^W\d+$/.test(ref.id) ? ref.id : ref.doi && filterSafeDoi(ref.doi) ? `https://doi.org/${ref.doi}` : null;
+    if (path === null) return null;
+    try {
+      const body = await this.get(`${API_URL}/${path}?select=${SELECT_EXTRA}`);
+      return typeof body.id === "string" ? toCandidate(body as unknown as OpenAlexWork) : null;
+    } catch (e) {
+      if (e instanceof OpenAlexError && e.status === 404) return null;
+      throw e;
+    }
+  }
+
+  /** A few works that match a title or a reference line (one search, ten credits). */
+  async findByTitle(title: string): Promise<{ papers: Candidate[]; costUsd: number }> {
+    const body = await this.get(buildTitleSearchUrl(title));
+    const papers: Candidate[] = [];
+    for (const work of Array.isArray(body.results) ? (body.results as OpenAlexWork[]) : []) {
+      const candidate = toCandidate(work);
+      if (candidate) papers.push(candidate);
+    }
+    return { papers, costUsd: ((body.meta ?? {}) as { cost_usd?: number }).cost_usd ?? 0 };
   }
 
   /** One work by its short id (`W123`), with the same fields as a search result. Used when a ticked paper goes to Zotero. */

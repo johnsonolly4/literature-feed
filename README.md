@@ -88,6 +88,14 @@ Sync adds a paper's **metadata** (title, authors, abstract, DOI, venue, date) to
 
 [Lab Kit](https://github.com/johnsonolly4/lab-kit) is a separate plugin for a chemistry lab notebook. Literature Feed works with it through note conventions only (the `reading-inbox` kind, and Lab Kit's styling classes when they are present) but does not need it. Without Lab Kit the inbox note uses the plain Obsidian look.
 
+If you use Lab Kit's planning vault, set these folders so the two do not get in each other's way:
+
+- **Inbox folder: not Lab Kit's `00 Inbox`.** That folder is for quick captures, and Lab Kit's **Sort inbox** command walks through every note in it and offers to move or delete it, which would take the reading-inbox note with it. Use a folder of its own, such as `04 Literature/Suggested`.
+- **Archive folder:** for example `99 Archive/Suggested` (Lab Kit archives captured notes to `99 Archive/Inbox`).
+- **Literature notes folder:** `04 Literature/ZotLit Imports`, where ZotLit writes the notes.
+- Papers you sync carry the Zotero tags `feed/<name>` and `found-by/openalex`. Lab Kit's ZotLit settings put Zotero tags into the literature note's `Zotero Tags` property, so those tags show up there after **Update literature note** and in Lab Kit's "Papers by Zotero tag" list, with no template change.
+- The Zotero add-on and browser extension named under "Needed for PDFs" belong on the per-computer list in Lab Kit's `Setting up a computer` note.
+
 ## Development
 
 ```bash

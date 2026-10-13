@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildTitleSearchUrl, buildWorksByDoiUrl, filterSafeDoi, type Candidate } from "../src/openalex/client";
 import { Budget } from "../src/review/budget";
 import { emptyCache, getTitle, normaliseCache } from "../src/review/cache";
-import { MAX_TITLE_SEARCHES, emptyGapsSession, estimateGaps, normaliseGapsSession, parseReferenceList, parseWorkInput, searchZoteroIndex, titleInReference } from "../src/review/gaps-input";
+import { MAX_TITLE_SEARCHES, emptyGapsSession, estimateGaps, normaliseGapsSession, parseDoiList, parseReferenceList, parseWorkInput, searchZoteroIndex, titleInReference } from "../src/review/gaps-input";
 import { gapsRecordFromNote, renderGapsNote } from "../src/review/gaps-note";
 import { runGaps, type GapsClient } from "../src/review/gaps-fetch";
 import { sharedHubs } from "../src/review/network";
@@ -253,7 +253,7 @@ describe("the gaps note and the saved tool state", () => {
   });
 
   it("says what was pasted and what was not found, and handles a run with no result", () => {
-    const run = { subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: ["10.1000/x"], searches: 0, stopped: null, message: "None of the references could be found in OpenAlex.", spentUsd: 0.0001 };
+    const run = { subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: ["10.1000/x"], searches: 0, stopped: null, deeper: null, citedAuthors: [], addedDois: [], message: "None of the references could be found in OpenAlex.", spentUsd: 0.0001 };
     const text = renderGapsNote({ date: "2026-10-13", ranAt: "t", input: { kind: "references", dois: ["10.1000/x"], lines: ["A reference line"] }, minCount: 3, run, flags: [] });
     expect(text).toContain("1 with a DOI and 1 without");
     expect(text).toContain("Not found in OpenAlex");
@@ -330,5 +330,68 @@ describe("runGaps with the second level", () => {
     const { deps: d } = deps(works);
     const run = await runGaps({ kind: "work", doi: null, id: "W1" }, d, 3);
     expect(run.gaps).toHaveLength(100);
+  });
+});
+
+describe("adding DOIs by hand and the cited authors", () => {
+  it("picks every DOI out of a text, once each", () => {
+    expect(parseDoiList("10.1000/a, https://doi.org/10.1000/B. and doi:10.1000/a again\n(10.2000/c)")).toEqual(["10.1000/a", "10.1000/b", "10.2000/c"]);
+    expect(parseDoiList("nothing here")).toEqual([]);
+  });
+
+  it("counts the lookup of added DOIs in the estimate", () => {
+    expect(estimateGaps({ kind: "work", doi: "10.1000/a", id: null }, false, 0).filtered).toBe(4);
+    expect(estimateGaps({ kind: "work", doi: "10.1000/a", id: null }, false, 3).filtered).toBe(5);
+    expect(estimateGaps({ kind: "work", doi: "10.1000/a", id: null }, false, 51).filtered).toBe(6);
+  });
+
+  it("treats an added DOI as cited: it is no longer suggested, and its record is read", async () => {
+    const { deps: d } = deps(WORKS);
+    const run = await runGaps({ kind: "work", doi: "10.1000/p.1", id: null }, d, 3, null, ["10.1000/p.9", "10.1000/nope"]);
+    expect(run.gaps).toEqual([]);
+    expect(run.addedDois).toEqual(["10.1000/p.9"]);
+    expect(run.unresolved).toEqual(["10.1000/nope (added by hand)"]);
+  });
+
+  it("can work from added DOIs alone when OpenAlex lists no references for the paper", async () => {
+    const others = WORKS.filter((w) => w.openalexId !== "https://openalex.org/W1");
+    const { deps: d } = deps([cand(5, []), ...others]);
+    const none = await runGaps({ kind: "work", doi: null, id: "W5" }, d, 2);
+    expect(none.message).toContain("add DOIs by hand");
+    const { deps: d2 } = deps([cand(5, []), ...others]);
+    const run = await runGaps({ kind: "work", doi: null, id: "W5" }, d2, 2, null, ["10.1000/p.2", "10.1000/p.3"]);
+    expect(run.message).toBeNull();
+    expect(run.gaps.map((g) => g.gap.id)).toEqual(["W8", "W9"]);
+  });
+
+  it("returns the authors of the references that were read and of the paper", async () => {
+    const { deps: d } = deps(WORKS);
+    const run = await runGaps({ kind: "work", doi: "10.1000/p.1", id: null }, d);
+    expect(run.citedAuthors).toEqual([["A. Author"], ["A. Author"], ["A. Author"]]);
+    expect(run.subject?.authors).toEqual(["A. Author"]);
+  });
+});
+
+describe("the gaps note with the second level, the authors and the added DOIs", () => {
+  it("writes the deeper section, the authors table and the DOIs added by hand", async () => {
+    const works = [
+      cand(1, [2, 3, 4, 5], { authors: ["Anna Smith", "Bob Jones"] }), cand(2, [10, 11], { authors: ["Bob Jones"] }), cand(3, [10, 11], { authors: ["Bob Jones"] }), cand(4, [10], { authors: ["Cy Lee"] }),
+      cand(5, [11, 12], { authors: ["Bob Jones"] }), cand(10, [20, 21], { title: "Shared ten", authors: ["Dee Wu"] }), cand(11, [20, 21], { title: "Shared eleven", authors: ["Dee Wu"] }),
+      cand(12, [], { authors: ["Eve Ng"] }), cand(20, [], { title: "Deeper twenty", authors: ["Fay Oh"] }), cand(21, [], { title: "Deeper twenty one", authors: ["Fay Oh"] }),
+    ];
+    const { deps: d } = deps(works);
+    const input = { kind: "work" as const, doi: "10.1000/p.1", id: null };
+    const run = await runGaps(input, d, 3, 2, ["10.1000/p.12"]);
+    const text = renderGapsNote({ date: "2026-10-13", ranAt: "t", input, minCount: 3, run, flags: run.gaps.map(() => ({ zotero: null, vault: null, listedBefore: [] })), deeperFlags: (run.deeper?.gaps ?? []).map(() => ({ zotero: null, vault: null, listedBefore: [] })) });
+    expect(text).toContain("## Deeper: what the shared works rest on");
+    expect(text).toContain("Deeper twenty");
+    expect(text).toContain("## Authors: cited and not cited");
+    expect(text).toContain("| Author | Cited works | % of cited | Uncited works | % of uncited | Difference | |");
+    expect(text).toContain("| ★ Bob Jones | 3 | 60% | 0 | 0% | −60 points | Over-cited |");
+    expect(text).toContain("| Dee Wu | 0 | 0% | 2 | 100% | +100 points |");
+    expect(text).toContain("Added by hand");
+    expect(text).toContain("https://doi.org/10.1000/p.12");
+    expect(gapsRecordFromNote(text)?.addedDois).toEqual(["10.1000/p.12"]);
+    expect(gapsRecordFromNote(text)?.deeper?.gaps.map((g) => g.id)).toEqual(["W20", "W21"]);
   });
 });

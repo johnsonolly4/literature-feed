@@ -2,7 +2,7 @@
 // list of references, resolved to OpenAlex works, then what many of them cite and the paper does not. The client is passed in
 // (a fake in tests); nothing here touches Obsidian.
 import { shortOpenAlexId } from "../inbox/write";
-import type { Candidate } from "../openalex/client";
+import { filterSafeDoi, type Candidate } from "../openalex/client";
 import { titleKey } from "../zotero/client";
 import { bareDoi } from "../zotero/map";
 import { COST_FILTER, COST_SEARCH } from "./budget";
@@ -33,7 +33,7 @@ export interface DeeperRun {
 
 export interface GapsRun {
   /** The paper asked about (not for a pasted list). */
-  subject: { title: string; doi: string | null; id: string | null; year: number | null } | null;
+  subject: { title: string; doi: string | null; id: string | null; year: number | null; authors: string[] } | null;
   /** References read (with their own reference lists) and how many of them had a list. */
   referencesRead: number;
   referencesWithLists: number;
@@ -44,17 +44,21 @@ export interface GapsRun {
   stopped: string | null;
   /** The second level, when it was asked for. */
   deeper: DeeperRun | null;
+  /** The author names of each reference that was read (the cited side of the authors table). */
+  citedAuthors: string[][];
+  /** DOIs added by hand that OpenAlex knew. */
+  addedDois: string[];
   /** Something to tell the user instead of a list (no record, no references). */
   message: string | null;
   spentUsd: number;
 }
 
 function subjectOf(c: Candidate): NonNullable<GapsRun["subject"]> {
-  return { title: c.title, doi: c.doi ? bareDoi(c.doi) : null, id: shortOpenAlexId(c.openalexId), year: c.year ?? null };
+  return { title: c.title, doi: c.doi ? bareDoi(c.doi) : null, id: shortOpenAlexId(c.openalexId), year: c.year ?? null, authors: c.authors };
 }
 
 const empty = (spentUsd: number, over: Partial<GapsRun>): GapsRun => ({
-  subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: [], searches: 0, stopped: null, deeper: null, message: null, spentUsd, ...over,
+  subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: [], searches: 0, stopped: null, deeper: null, citedAuthors: [], addedDois: [], message: null, spentUsd, ...over,
 });
 
 /** A reference line or title searched in OpenAlex (or remembered from before); "stop" when the budget does not allow another search. */
@@ -86,6 +90,31 @@ async function recordOf(input: Extract<GapInput, { kind: "work" }>, deps: GapsDe
   return got;
 }
 
+/** DOIs added by hand, looked up in lists of 50 (a filtered list each); the ones OpenAlex does not know are reported, never dropped. */
+async function resolveExtra(dois: readonly string[], deps: GapsDeps): Promise<{ ids: string[]; found: string[]; notFound: string[]; stopped: string | null }> {
+  const list = [...new Set(dois.map((d) => d.trim().toLowerCase()).filter((d) => d !== ""))];
+  const safe = list.filter(filterSafeDoi);
+  const ids: string[] = [];
+  const found: string[] = [];
+  let stopped: string | null = null;
+  for (let i = 0; i < safe.length; i += 50) {
+    if (!deps.budget.canAfford(COST_FILTER)) {
+      stopped = `stopped at $${deps.budget.spent.toFixed(4)} before looking up the DOIs you added`;
+      break;
+    }
+    const res = await deps.client.getWorksByDoi(safe.slice(i, i + 50));
+    deps.budget.add(res.costUsd > 0 ? res.costUsd : COST_FILTER);
+    putWorks(deps.cache, res.papers, deps.now);
+    for (const p of res.papers) {
+      const id = shortOpenAlexId(p.openalexId);
+      if (id) ids.push(id);
+      if (p.doi) found.push(bareDoi(p.doi));
+    }
+  }
+  const got = new Set(found);
+  return { ids, found, notFound: list.filter((d) => !got.has(d)), stopped };
+}
+
 /**
  * The second level. The shared works (cited by at least two of the references) are read, and what at least `minCount` of them cite is
  * reported, leaving out the paper, its references and the shared works themselves.
@@ -108,7 +137,7 @@ async function goDeeper(paper: { id: string; referencedWorks: readonly string[] 
  * Runs the tool for one input. `deeperMin` (null = off) adds the second level. Errors from the client propagate (the window shows
  * them); a budget stop is reported in the result.
  */
-export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3, deeperMin: number | null = null): Promise<GapsRun> {
+export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3, deeperMin: number | null = null, extraDois: readonly string[] = []): Promise<GapsRun> {
   if (input.kind === "references") return runReferenceList(input, deps, minCount, deeperMin);
 
   let record: Candidate | null;
@@ -121,14 +150,20 @@ export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3, dee
     if (record && !record.referencedWorks) record = (await deps.client.getFullWork({ id: shortOpenAlexId(record.openalexId) })) ?? record;
   }
   if (record === null) return empty(deps.budget.spent, { message: "OpenAlex has no record for that paper, so there is nothing to compare. Try its DOI, or paste its reference list." });
-  const refs = record.referencedWorks ?? [];
   const subject = subjectOf(record);
-  if (refs.length === 0) return empty(deps.budget.spent, { subject, message: "OpenAlex lists no references for this paper, so its gaps cannot be worked out. Paste its reference list instead." });
+  const added = await resolveExtra(extraDois, deps);
+  const notFound = added.notFound.map((d) => `${d} (added by hand)`);
+  // The DOIs added by hand come first, so the limit on how many references are read never cuts them off.
+  const refs = [...new Set([...added.ids, ...(record.referencedWorks ?? [])])];
+  if (refs.length === 0) return empty(deps.budget.spent, { subject, unresolved: notFound, stopped: added.stopped, message: "OpenAlex lists no references for this paper, so its gaps cannot be worked out. Paste its reference list instead, or add DOIs by hand." });
   const id = shortOpenAlexId(record.openalexId) ?? "paper";
   const paper = { id, referencedWorks: refs };
   const g = await fetchCitationGaps(paper, deps, minCount, MAX_GAPS);
   const deep = deeperMin === null ? null : await goDeeper(paper, g.records, deps, deeperMin);
-  return empty(deps.budget.spent, { subject, referencesRead: g.referencesRead, referencesWithLists: g.referencesWithLists, gaps: g.gaps, stopped: g.stopped ?? deep?.stopped ?? null, deeper: deep?.deeper ?? null });
+  return empty(deps.budget.spent, {
+    subject, referencesRead: g.referencesRead, referencesWithLists: g.referencesWithLists, gaps: g.gaps, stopped: g.stopped ?? deep?.stopped ?? added.stopped,
+    deeper: deep?.deeper ?? null, citedAuthors: g.referenceAuthors, addedDois: added.found, unresolved: notFound,
+  });
 }
 
 async function runReferenceList(input: Extract<GapInput, { kind: "references" }>, deps: GapsDeps, minCount: number, deeperMin: number | null): Promise<GapsRun> {
@@ -165,6 +200,7 @@ async function runReferenceList(input: Extract<GapInput, { kind: "references" }>
 
   const refs = resolved.flatMap((c) => { const id = shortOpenAlexId(c.openalexId); return id ? [{ id, referencedWorks: c.referencedWorks ?? [] }] : []; });
   const unique = [...new Map(refs.map((r) => [r.id, r])).values()];
+  const authorsOf = new Map(resolved.flatMap((c) => { const id = shortOpenAlexId(c.openalexId); return id ? [[id, c.authors] as const] : []; }));
   if (unique.length === 0) return empty(deps.budget.spent, { unresolved, searches, stopped, message: "None of the references could be found in OpenAlex." });
   const pasted = { id: "pasted", referencedWorks: unique.map((r) => r.id) };
   const gaps = citationGaps(pasted, unique, minCount, MAX_GAPS);
@@ -174,5 +210,6 @@ async function runReferenceList(input: Extract<GapInput, { kind: "references" }>
   return empty(deps.budget.spent, {
     referencesRead: unique.length, referencesWithLists: unique.filter((r) => r.referencedWorks.length > 0).length,
     gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })), unresolved, searches, stopped: stopped ?? details.stopped ?? deep?.stopped ?? null, deeper: deep?.deeper ?? null,
+    citedAuthors: unique.map((r) => authorsOf.get(r.id) ?? []),
   });
 }

@@ -10,10 +10,11 @@ import type { ReviewCache } from "./cache";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
 import { RefsPanel, normaliseRefsSession, type RefsSession } from "../refs/panel";
 import type { ReferenceSearcher } from "../refs/resolve";
+import { authorShares, authorTableCsv } from "./gaps-authors";
 import { runGaps, type GapsClient, type GapsRun } from "./gaps-fetch";
 import { renderGapsNote } from "./gaps-note";
 import {
-  MAX_TITLE_SEARCHES, emptyGapsSession, estimateGaps, parseReferenceList, parseWorkInput, searchZoteroIndex, type GapInput, type GapsMode, type GapsSession,
+  MAX_TITLE_SEARCHES, emptyGapsSession, estimateGaps, parseDoiList, parseReferenceList, parseWorkInput, searchZoteroIndex, type GapInput, type GapsMode, type GapsSession,
 } from "./gaps-input";
 
 /** What the tool needs from the plugin. */
@@ -34,6 +35,8 @@ export interface GapsHost {
 }
 
 /** Kept as constants: they hold capitalised words, which the sentence-case lint rule reads only in literals. */
+const EXTRA_NAME = "Add references by DOI";
+const COPIED_CSV = "Copied as CSV (opens in Excel).";
 const SEARCH_UNFOUND_NAME = "Also search the ones not found in OpenAlex";
 const PRESS_TIDY = "Press Tidy and find DOIs first: it finds DOIs for free. Searching lines without a DOI in OpenAlex costs $0.001 each (switch that on below).";
 
@@ -105,6 +108,11 @@ export class GapsPanel {
       new Setting(el).setName(SEARCH_UNFOUND_NAME).setDesc(`References no DOI was found for are searched in OpenAlex by their text: about $0.001 each, at most ${MAX_TITLE_SEARCHES}. Off by default; most are better looked at by hand.`)
         .addToggle((t) => t.setValue(this.s.searchUnfound).onChange((v) => { this.s.searchUnfound = v; this.estimate = null; this.saveSoon(); }));
     }
+    new Setting(el).setName(EXTRA_NAME).setDesc("DOIs of works this paper cites that OpenAlex or the pasted list left out. They count as cited, so they are not suggested as gaps, and their own references are read too. Paste any text: the DOIs are picked out. About $0.0001 for 50.")
+      .addTextArea((t) => {
+        t.inputEl.rows = 3;
+        t.setPlaceholder("10.1021/…").setValue(this.s.extraDois).onChange((v) => { this.s.extraDois = v; this.estimate = null; this.saveSoon(); });
+      });
     new Setting(el).setName("Count as a gap when cited by at least").setDesc("This many of the paper's references must cite the work (3 is a good start; 2 finds more, with more noise).")
       .addText((t) => {
         t.inputEl.type = "number";
@@ -183,7 +191,7 @@ export class GapsPanel {
         new Notice("No reference is ticked. Tick the ones to use, or type the identifier of one that was not found.");
         return null;
       }
-      return { kind: "references", dois: sel.dois, lines };
+      return { kind: "references", dois: [...new Set([...sel.dois, ...parseDoiList(this.s.extraDois)])], lines };
     }
     // Not looked up yet: DOIs in the text are used; lines without one need the look-up first (it is free), or a paid search.
     const r = parseReferenceList(this.refsPanel?.currentText() ?? this.s.pasted);
@@ -195,13 +203,13 @@ export class GapsPanel {
       new Notice(PRESS_TIDY);
       return null;
     }
-    return { kind: "references", dois: r.dois, lines: this.s.searchUnfound ? r.lines : [] };
+    return { kind: "references", dois: [...new Set([...r.dois, ...parseDoiList(this.s.extraDois)])], lines: this.s.searchUnfound ? r.lines : [] };
   }
 
   private doEstimate(): void {
     const input = this.input();
     if (input === null) return;
-    const e = estimateGaps(input, this.s.deeper);
+    const e = estimateGaps(input, this.s.deeper, input.kind === "references" ? 0 : parseDoiList(this.s.extraDois).length);
     const limit = this.host.settings.reviewBudgetUsd;
     const over = e.usd > limit + 1e-9;
     const parts = [e.free > 0 ? `${e.free} free record` : "", e.filtered > 0 ? `up to ${e.filtered} lookups` : "", e.searches > 0 ? `${e.searches} search${e.searches === 1 ? "" : "es"}` : ""].filter((p) => p !== "");
@@ -219,7 +227,7 @@ export class GapsPanel {
     const budget = new Budget(this.host.settings.reviewBudgetUsd);
     let run: GapsRun;
     try {
-      run = await runGaps(input, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget }, this.s.minCount, this.s.deeper ? this.s.deeperMin : null);
+      run = await runGaps(input, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget }, this.s.minCount, this.s.deeper ? this.s.deeperMin : null, input.kind === "references" ? [] : parseDoiList(this.s.extraDois));
     } catch (e) {
       this.out.empty();
       this.out.createEl("p", { cls: "literature-feed-warning", text: `The lookup failed: ${e instanceof Error ? e.message : "unknown error"}` });
@@ -278,6 +286,7 @@ export class GapsPanel {
       const drawDeep = (shown: number): void => this.drawList(deepList, deeper.gaps, deeperFlags, shown, (x) => `cited by ${x.gap.count} of ${deeper.hubsRead} shared works`, drawDeep);
       drawDeep(15);
     }
+    this.renderAuthors(out, run);
     if (run.unresolved.length > 0) {
       const details = out.createEl("details");
       details.createEl("summary", { text: `${run.unresolved.length} reference${run.unresolved.length === 1 ? "" : "s"} not found in OpenAlex` });
@@ -285,6 +294,61 @@ export class GapsPanel {
       for (const u of run.unresolved) ul.createEl("li", { text: u });
     }
     new Setting(out).addButton((b) => b.setButtonText("Create gaps note").onClick(() => void this.createNote(run, input, ranAt, flags, deeperFlags)));
+  }
+
+  /** Authors on the cited and on the uncited works, as shares of each, so over- and under-represented ones stand out. */
+  private renderAuthors(out: HTMLElement, run: GapsRun): void {
+    if (run.citedAuthors.length === 0 || run.gaps.length === 0) return;
+    out.createEl("h4", { text: "Authors: cited and not cited" });
+    out.createEl("p", { cls: "literature-feed-meta", text: "For each author, the share of the paper's references they appear on, and the share of the gaps (works its references cite that it does not). An author with a bigger share of the gaps than of the references may be under-cited by this paper; the reverse (starred: the paper's own authors) may be over-cited. Authors are matched by family name and first initial, so two people who share both are counted as one." });
+    const lists = (items: GapsRun["gaps"]): string[][] => items.flatMap((g) => (g.paper ? [g.paper.authors] : []));
+    let which: "first" | "second" | "both" = "first";
+    let min = 2;
+    let shown = 25;
+    const bar = out.createDiv({ cls: "literature-feed-chip-row" });
+    const holder = out.createDiv();
+    const draw = (): void => {
+      holder.empty();
+      const uncited = which === "first" ? lists(run.gaps) : which === "second" ? lists(run.deeper?.gaps ?? []) : [...lists(run.gaps), ...lists(run.deeper?.gaps ?? [])];
+      const table = authorShares(run.citedAuthors, uncited, { min, own: run.subject?.authors ?? [] });
+      holder.createEl("p", { text: `Shares are of the ${table.citedWorks} cited works and the ${table.uncitedWorks} uncited works that have an author list.` });
+      if (table.rows.length === 0) {
+        holder.createEl("p", { text: "No author is on enough works to compare. Try a lower minimum." });
+        return;
+      }
+      const t = holder.createEl("table", { cls: "literature-feed-papers" });
+      const head = t.createEl("tr");
+      for (const h of ["Author", "Cited", "% of cited", "Uncited", "% of uncited", "Difference", ""]) head.createEl("th", { text: h });
+      for (const r of table.rows.slice(0, shown)) {
+        const tr = t.createEl("tr");
+        tr.createEl("td", { text: `${r.own ? "★ " : ""}${r.name}` });
+        tr.createEl("td", { text: String(r.cited) });
+        tr.createEl("td", { text: `${r.citedPct.toFixed(r.citedPct > 0 && r.citedPct < 10 ? 1 : 0)}%` });
+        tr.createEl("td", { text: String(r.uncited) });
+        tr.createEl("td", { text: `${r.uncitedPct.toFixed(r.uncitedPct > 0 && r.uncitedPct < 10 ? 1 : 0)}%` });
+        tr.createEl("td", { text: `${r.diff >= 0 ? "+" : "−"}${Math.abs(r.diff).toFixed(0)} points` });
+        const label = tr.createEl("td");
+        if (r.label !== "") label.createSpan({ cls: `literature-feed-status ${r.label === "Under-cited" ? "status-check" : "status-over"}`, text: r.label });
+      }
+      const buttons = new Setting(holder);
+      if (table.rows.length > shown) buttons.addButton((b) => b.setButtonText(`Show all ${table.rows.length}`).onClick(() => { shown = table.rows.length; draw(); }));
+      buttons.addButton((b) => b.setButtonText("Copy as CSV").onClick(() => { void navigator.clipboard.writeText(authorTableCsv(table)).then(() => new Notice(COPIED_CSV)); }));
+    };
+    if (run.deeper) {
+      const chips = new Map<"first" | "second" | "both", HTMLElement>();
+      for (const [key, label] of [["first", "First-level gaps"], ["second", "Second-level gaps"], ["both", "Both"]] as const) {
+        const chip = bar.createEl("button", { cls: "literature-feed-chip", text: label });
+        chip.toggleClass("is-active", key === which);
+        chips.set(key, chip);
+        chip.addEventListener("click", () => { which = key; for (const [k, c] of chips) c.toggleClass("is-active", k === key); draw(); });
+      }
+    }
+    new Setting(bar).setName("Minimum works").addText((t) => {
+      t.inputEl.type = "number";
+      t.inputEl.addClass("literature-feed-narrow");
+      t.setValue(String(min)).onChange((v) => { const n = Math.floor(Number(v)); min = Number.isFinite(n) && n >= 1 ? n : 2; draw(); });
+    });
+    draw();
   }
 
   private async createNote(run: GapsRun, input: GapInput, ranAt: string, flags: Flags[], deeperFlags: Flags[]): Promise<void> {

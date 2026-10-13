@@ -21,6 +21,16 @@ function cleanDoi(raw: string): string {
   return bareDoi(raw.replace(/[.,;:)\]}>'"]+$/, ""));
 }
 
+/** All the DOIs in a text (bare or as links), lower case, each once. */
+export function parseDoiList(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.match(new RegExp(DOI_PATTERN, "gi")) ?? []) {
+    const doi = cleanDoi(m);
+    if (!out.includes(doi)) out.push(doi);
+  }
+  return out;
+}
+
 /** One paper from what the user typed: a DOI (bare or as a link) or an OpenAlex id (bare or as a link). Null when there is none. */
 export function parseWorkInput(text: string): { doi: string | null; id: string | null } | null {
   const id = /\bW\d{4,}\b/.exec(text)?.[0] ?? null;
@@ -118,7 +128,7 @@ function round(usd: number): number {
  * What a gaps run costs at most. A work's own references are read in lists of 50 (at most 100), then the details of the gaps (up to 100) in
  * lists of 50. The second level adds the shared works (up to 300, six lists) and the details of what they cite (up to 50, one list).
  */
-export function estimateGaps(input: GapInput, deeper = false): GapEstimate {
+export function estimateGaps(input: GapInput, deeper = false, extraDois = 0): GapEstimate {
   const refLists = Math.ceil(MAX_GAP_REFERENCES / 50);
   const detailLists = Math.ceil(MAX_GAPS / 50);
   const deeperLists = deeper ? Math.ceil(MAX_HUBS / 50) + Math.ceil(MAX_DEEPER / 50) : 0;
@@ -128,10 +138,10 @@ export function estimateGaps(input: GapInput, deeper = false): GapEstimate {
   let skippedLines = 0;
   if (input.kind === "work") {
     free = 1;
-    filtered = refLists + detailLists + deeperLists;
+    filtered = refLists + detailLists + deeperLists + Math.ceil(extraDois / 50);
   } else if (input.kind === "title") {
     searches = 1;
-    filtered = refLists + detailLists + deeperLists;
+    filtered = refLists + detailLists + deeperLists + Math.ceil(extraDois / 50);
   } else {
     filtered = Math.ceil(input.dois.length / 50) + (input.dois.length + input.lines.length > 0 ? detailLists + deeperLists : 0);
     searches = Math.min(input.lines.length, MAX_TITLE_SEARCHES);
@@ -158,6 +168,8 @@ export interface GapsSession {
   /** Also search, in OpenAlex ($0.001 each), the references no DOI was found for. */
   searchUnfound: boolean;
   minCount: number;
+  /** DOIs added by hand to the paper's references (any text; the DOIs are picked out). */
+  extraDois: string;
   /** Go a second level: what the works that several references cite rest on. */
   deeper: boolean;
   /** A deeper gap is cited by at least this many of those shared works (2 to 20). */
@@ -167,7 +179,7 @@ export interface GapsSession {
 }
 
 export function emptyGapsSession(): GapsSession {
-  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, deeper: false, deeperMin: 5, last: null };
+  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, extraDois: "", deeper: false, deeperMin: 5, last: null };
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -186,6 +198,7 @@ export function normaliseGapsSession(raw: unknown): GapsSession | null {
   if (isObj(raw.refs)) out.refs = raw.refs;
   out.searchUnfound = raw.searchUnfound === true;
   if (typeof raw.minCount === "number" && Number.isFinite(raw.minCount)) out.minCount = Math.min(10, Math.max(2, Math.floor(raw.minCount)));
+  if (typeof raw.extraDois === "string") out.extraDois = raw.extraDois;
   out.deeper = raw.deeper === true;
   if (typeof raw.deeperMin === "number" && Number.isFinite(raw.deeperMin)) out.deeperMin = Math.min(20, Math.max(2, Math.floor(raw.deeperMin)));
   const last = raw.last;

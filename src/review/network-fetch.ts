@@ -122,6 +122,8 @@ export interface GapResult {
   gaps: { gap: Gap; paper: Candidate | null }[];
   /** The references that were read, with their own reference lists (the second level starts from these). */
   records: { id: string; referencedWorks: string[] }[];
+  /** The author names of each reference that was read: one list per reference. */
+  referenceAuthors: string[][];
   stopped: string | null;
 }
 
@@ -138,6 +140,7 @@ export async function fetchCitationGaps(paper: { id: string; referencedWorks: re
     referencesWithLists: withIds.filter((r) => r.referencedWorks.length > 0).length,
     gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })),
     records: withIds,
+    referenceAuthors: read.papers.map((p) => p.authors),
     stopped: read.stopped ?? details.stopped,
   };
 }

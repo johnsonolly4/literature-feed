@@ -713,6 +713,8 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
 .literature-feed-status { padding: 1px 8px; border-radius: 999px; font-size: var(--font-ui-smaller); background: var(--background-modifier-hover); }
 .literature-feed-status.status-ok { background: rgba(var(--vt-done, 16, 185, 129), 0.25); }
 .literature-feed-status.status-check { background: rgba(var(--vt-waiting, 245, 158, 11), 0.25); }
+.literature-feed-status.status-over { background: rgba(var(--vt-doing, 59, 130, 246), 0.25); }
+.literature-feed-narrow { width: 5em; }
 .literature-feed-status.status-not-found, .literature-feed-status.status-error { background: rgba(239, 68, 68, 0.25); }
 .literature-feed-refs td input[type="text"] { width: 100%; min-width: 14em; }
 

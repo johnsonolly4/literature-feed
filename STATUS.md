@@ -4,7 +4,7 @@ _Updated: 2026-10-13 (literature review: tab, graph in the note, record and repe
 **Version:** 0.2.0 released (moves only at `/release`; TypeScript in `src/`). Releases so far: 0.1.0, 0.1.1, 0.2.0, all desktop-only, squash-merged via PRs #2 to #4.
 
 ## Now
-Branch `feat/lit-review` (from main 0.2.0, **unpushed**, last commit `8250bc4`, 598 tests, lint and build clean). The literature review (`src/review/`, `src/zotero/library-index.ts`) is built and was run once by the owner in `test-vault` (Lipoic acid copolymers, 60 of 172 papers, $0.010, LLM answer pasted). Since then, from their feedback:
+Branch `feat/lit-review` (from main 0.2.0, **unpushed**, last commit see `git log`, 621 tests, lint and build clean). The literature review (`src/review/`, `src/zotero/library-index.ts`) is built and was run once by the owner in `test-vault` (Lipoic acid copolymers, 60 of 172 papers, $0.010, LLM answer pasted). Since then, from their feedback:
 - OpenAlex lookups priced as filtered lists ($0.0001) and a reference-list coverage line (`a36712e`).
 - The graph is drawn inside the review note (`literature-feed-graph` block, **Open full graph**), at the top of the window, in the commands (`c6a6c60`). The owner had never seen it because **Open graph** sat below the table and charts.
 - The review opens in a **tab**, is saved as you go (`review-session.json`, Resume / Start new), and a telescope ribbon icon opens a menu (`9e36087`).
@@ -13,6 +13,7 @@ Branch `feat/lit-review` (from main 0.2.0, **unpushed**, last commit `8250bc4`, 
 - Graph controls are chips with explanations, there is a **Timeline** layout (year on the vertical axis), groups are laid out on their own, and old saved graphs are laid out again when read (`064ea0a`). The owner's screenshot showed an old stored layout because **Open review graph** reopened the saved file.
 - **Find DOIs for a reference list** (`src/refs/`, a TypeScript port of the owner's `check_refs.py`: split ragged pasted references, Crossref look-up, statuses, Needs a look first, copy with DOIs / CSV / note; also inside the gaps tool's paste mode). **New host `api.crossref.org`**: README Network use updated; list it in the store submission notes. One live run from a script worked; not run in Obsidian (`8250bc4`).
 - The graph in notes shares the tab's chips, the canvas is a reading board by theme (`930583f`).
+- Citation gaps now keep up to 100 gaps (Show more), have an optional second level, accept DOIs added by hand and show an authors table of cited against uncited (committed; not run in Obsidian).
 - **Citation gaps** is its own tab (DOI/id, Zotero item or pasted references; about $0.0003 a paper; gaps note with record) (`aa385e2`).
 None of these has run in Obsidian (code and unit tests only). `test-vault`'s plugin folder already holds the latest build (the dev watcher was running); reload the plugin.
 

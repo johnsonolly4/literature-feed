@@ -2,6 +2,7 @@
 // already have, and how it was made (input, threshold, date, cost) so it can be repeated. Pure: the plugin writes it.
 import { doiUrl, escapeMd } from "../inbox/write";
 import type { Flags } from "./flags";
+import { authorShares, authorTableMarkdown } from "./gaps-authors";
 import type { GapInput } from "./gaps-input";
 import type { GapsRun } from "./gaps-fetch";
 import { cell, flagText } from "./note";
@@ -21,6 +22,8 @@ export interface GapsRecord {
   searches: number;
   stopped: string | null;
   spentUsd: number;
+  /** DOIs added by hand that OpenAlex knew (absent in older notes). */
+  addedDois?: string[];
   /** The second level, when it was run (absent in older notes). */
   deeper?: { minCount: number; hubsRead: number; gaps: { id: string; count: number; share: number }[] } | null;
 }
@@ -29,7 +32,7 @@ export function buildGapsRecord(ranAt: string, input: GapInput, minCount: number
   return {
     version: 1, ranAt, input, minCount, subject: run.subject, referencesRead: run.referencesRead, referencesWithLists: run.referencesWithLists,
     gaps: run.gaps.map((g) => ({ id: g.gap.id, count: g.gap.count, share: Math.round(g.gap.share * 1000) / 1000 })), unresolved: run.unresolved,
-    searches: run.searches, stopped: run.stopped, spentUsd: run.spentUsd,
+    searches: run.searches, stopped: run.stopped, spentUsd: run.spentUsd, addedDois: run.addedDois,
     deeper: run.deeper ? { minCount: run.deeper.minCount, hubsRead: run.deeper.hubsRead, gaps: run.deeper.gaps.map((g) => ({ id: g.gap.id, count: g.gap.count, share: Math.round(g.gap.share * 1000) / 1000 })) } : null,
   };
 }
@@ -107,8 +110,13 @@ export function renderGapsNote(n: GapsNoteInput): string {
       lines.push("Nothing is cited by that many of them.", "");
     }
   }
+  if (run.citedAuthors.length > 0 && run.gaps.length > 0) {
+    const uncited = run.gaps.flatMap((g) => (g.paper ? [g.paper.authors] : []));
+    lines.push("## Authors: cited and not cited", "", ...authorTableMarkdown(authorShares(run.citedAuthors, uncited, { own: run.subject?.authors ?? [] })));
+  }
   lines.push("## How this was made", "", ...describeInput(n.input), `- **Run:** ${n.ranAt}. Minimum: cited by ${n.minCount} of the references.`);
   lines.push(`- **OpenAlex requests:** ${run.searches} title search${run.searches === 1 ? "" : "es"}, the rest lookups by id or DOI; about $${run.spentUsd.toFixed(4)}.`);
+  if (run.addedDois.length > 0) lines.push(`- **Added by hand:** ${run.addedDois.map((d) => `[${d}](https://doi.org/${d})`).join(", ")}`);
   if (run.unresolved.length > 0) lines.push("- **Not found in OpenAlex:**", ...run.unresolved.map((u) => `  - ${escapeMd(u)}`));
   lines.push("", "```" + GAPS_RECORD_BLOCK, JSON.stringify(buildGapsRecord(n.ranAt, n.input, n.minCount, run)), "```", "");
   return lines.join("\n");

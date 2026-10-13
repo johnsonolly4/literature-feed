@@ -3,7 +3,10 @@ import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
 import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, type LiteratureNote, type RefreshReport } from "./inbox/state";
-import { NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setTick, tidySynced } from "./inbox/write";
+import { NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setTick, tidySynced, type ParsedPaper } from "./inbox/write";
+import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordScan, updateFromNotes, type Ledger } from "./ledger/ledger";
+import { buildReport, reportMarkdown } from "./ledger/report";
+import { ReportModal } from "./ledger/report-modal";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
@@ -13,22 +16,29 @@ import { ZoteroClient, describeCollections } from "./zotero/client";
 import { CollectionsModal } from "./zotero/collections-modal";
 import { zoteroRequester } from "./zotero/request";
 
+/** An inbox note in the archive folder; a number after the name is added when a note of that name was already there. */
+const ARCHIVED_NOTE_PATTERN = /^\d{4}-W\d{2} Reading inbox( \d+)?\.md$/;
+
 export default class LiteratureFeedPlugin extends Plugin implements SettingsHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
   private syncing = false;
+  /** The long-term record of how each search does (`ledger.json` in the plugin folder). */
+  private ledger: Ledger = emptyLedger();
   /** Open status blocks and cards; they redraw after a scan. */
   readonly scanListeners = new Set<() => void>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.ledger = await this.loadLedger();
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
     this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
     this.addCommand({ id: "update-read-archive", name: "Update read state and archive", callback: () => void this.refreshAndReport(true) });
+    this.addCommand({ id: "search-effectiveness", name: "Show search effectiveness", callback: () => void this.showEffectiveness() });
     this.addCommand({ id: "show-zotero-collections", name: "Show Zotero collections", callback: () => void this.showCollections() });
     // The weekly schedule, the ribbon icon and the Zotero sync come in later phases (see docs/plans/literature-feed.md).
   }
@@ -88,6 +98,9 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       });
       const now = new Date();
       const outcome = await runScan(this.settings, { client, now });
+      const scanned = this.settings.feeds.filter((f) => outcome.topicStats.some((s) => s.feedId === f.id));
+      const ledgerChanged = recordDefinitions(this.ledger, scanned, localDay(now)) || recordScan(this.ledger, localDay(now), outcome.topicStats);
+      if (ledgerChanged) await this.saveLedger();
       const path = outcome.note ? await this.writeNote(outcome.note) : null;
       this.settings.lastScan = outcome.lastScan;
       this.settings.seen = updatedSeen(this.settings.seen, outcome.seenAdd);
@@ -207,6 +220,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     const today = localDay(new Date());
     let read = 0;
     let archived = 0;
+    const forLedger: { name: string; papers: ParsedPaper[] }[] = [];
     for (const note of inbox) {
       let text = note.text;
       const withClasses = ensureNoteClasses(text);
@@ -229,6 +243,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
           text = next;
         }
       }
+      forLedger.push({ name: note.file.name, papers: parseInbox(text).papers });
       const folder = this.settings.archiveFolder;
       if (this.settings.archiveFinished && folder !== "" && isFinished(parseInbox(text).papers, note.file.name, today, this.settings.dismissAfterWeeks)) {
         if (!vault.getFolderByPath(folder)) await vault.createFolder(folder);
@@ -239,10 +254,69 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         archived++;
       }
     }
+    await this.recordLedger(forLedger);
     return {
       inboxFolder: this.settings.inboxFolder, inboxNotes: inbox.length, literatureFolder: this.settings.literatureFolder,
       literatureNotes: literature.length, papers, read, archived,
     };
+  }
+
+  /** Where the ledger is kept: next to `data.json`, in the plugin's folder. Null when Obsidian does not say where that is. */
+  private ledgerPath(): string | null {
+    return this.manifest.dir ? normalizePath(`${this.manifest.dir}/ledger.json`) : null;
+  }
+
+  /** The ledger from disk; an empty one when there is none or it cannot be read (the next refresh rebuilds it from the notes). */
+  private async loadLedger(): Promise<Ledger> {
+    const path = this.ledgerPath();
+    if (path === null) return emptyLedger();
+    try {
+      if (!(await this.app.vault.adapter.exists(path))) return emptyLedger();
+      return normaliseLedger(JSON.parse(await this.app.vault.adapter.read(path)));
+    } catch {
+      return emptyLedger();
+    }
+  }
+
+  private async saveLedger(): Promise<void> {
+    const path = this.ledgerPath();
+    if (path === null) return;
+    try {
+      await this.app.vault.adapter.write(path, JSON.stringify(this.ledger));
+    } catch (e) {
+      new Notice(`Could not save the search history: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    }
+  }
+
+  /** Inbox-named notes that were moved to the archive folder, so archived weeks keep counting. */
+  private async readArchivedNotes(): Promise<{ name: string; papers: ParsedPaper[] }[]> {
+    const folder = this.settings.archiveFolder === "" ? null : this.app.vault.getFolderByPath(this.settings.archiveFolder);
+    const files = (folder?.children ?? []).filter((f): f is TFile => f instanceof TFile && ARCHIVED_NOTE_PATTERN.test(f.name));
+    return Promise.all(files.map(async (file) => ({ name: file.name, papers: parseInbox(await this.app.vault.read(file)).papers })));
+  }
+
+  /** Brings the ledger up to date from the given inbox notes and the archived ones. */
+  private async recordLedger(inbox: { name: string; papers: ParsedPaper[] }[]): Promise<void> {
+    const notes = [...inbox, ...(await this.readArchivedNotes())];
+    if (updateFromNotes(this.ledger, notes, localDay(new Date()))) await this.saveLedger();
+  }
+
+  /** The report window: how each search has done so far, and candidate changes to its rules. */
+  async showEffectiveness(): Promise<void> {
+    try {
+      await this.saveOpenInboxNotes();
+      const inbox = (await this.readInboxNotes()).map((n) => ({ name: n.file.name, papers: parseInbox(n.text).papers }));
+      await this.recordLedger(inbox);
+      const report = buildReport(this.ledger, this.settings.feeds, localDay(new Date()), this.settings.dismissAfterWeeks);
+      const forgettable = report.feeds.filter((f) => !f.known).length;
+      new ReportModal(this.app, reportMarkdown(report), forgettable, async () => {
+        const removed = forgetFeeds(this.ledger, new Set(this.settings.feeds.map((f) => f.id)));
+        await this.saveLedger();
+        return removed;
+      }).open();
+    } catch (e) {
+      new Notice(`Could not build the report: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    }
   }
 
   /** Lists the collections Zotero's server reports (a diagnostic: compare it with what Zotero shows). */

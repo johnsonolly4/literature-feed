@@ -7,7 +7,7 @@ import type { ParsedPaper } from "../src/inbox/write";
 function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
   return {
     openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false,
-    title: `Paper ${id}`, topics: [], authors: "", venue: "", year: 2026, preprint: false, titleOnly: false, readLink: null, ...overrides,
+    title: `Paper ${id}`, topics: [], authors: "", venue: "", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: [], ...overrides,
   };
 }
 

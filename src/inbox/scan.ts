@@ -16,6 +16,13 @@ export interface ScanDeps {
   now: Date;
 }
 
+/** What one search topic did in one scan: papers it returned, new ones it got listed, new ones the feed's rules removed. */
+export interface TopicStat {
+  returned: number;
+  listed: number;
+  dropped: number;
+}
+
 export interface ScanOutcome {
   /**
    * What to put in this week's note; null when nothing new was found. The caller creates the note (`renderNote`) or, if
@@ -30,6 +37,8 @@ export interface ScanOutcome {
   failures: { feed: string; message: string }[];
   /** One entry per feed that was scanned, in feed order. */
   perFeed: FeedCounts[];
+  /** Per feed that was scanned without failing, in feed order: one entry per search topic. */
+  topicStats: { feedId: string; topics: TopicStat[] }[];
   /** Number of feeds that were scanned (enabled and with topics). */
   feedsScanned: number;
   /** Store these after the note is written. `lastScan` only moves when every feed succeeded. */
@@ -84,6 +93,7 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
   const perFeed: FeedCounts[] = [];
   const sections: FeedSection[] = [];
   const seenAdd: string[] = [];
+  const topicStats: ScanOutcome["topicStats"] = [];
   let costUsd = 0;
   let dropped = 0;
 
@@ -101,6 +111,14 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
       const built = buildPapers(feed, unseen, (c) => topicsFor(c, scan.perTopic));
       dropped += built.dropped;
       row.dropped = built.dropped;
+      topicStats.push({
+        feedId: feed.id,
+        topics: scan.perTopic.map((t, i) => ({
+          returned: t.papers.length,
+          listed: built.papers.filter((p) => p.topics.includes(i + 1)).length,
+          dropped: built.droppedCandidates.filter((c) => topicsFor(c, scan.perTopic).includes(i + 1)).length,
+        })),
+      });
       if (built.papers.length === 0) continue;
       for (const p of built.papers) {
         perTier[p.tier]++;
@@ -116,10 +134,10 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
 
   const lastScan = failures.length === 0 && feeds.length > 0 ? today : settings.lastScan;
   if (sections.length === 0) {
-    return { note: null, perTier, dropped, costUsd, failures, perFeed, feedsScanned: feeds.length, lastScan, seenAdd };
+    return { note: null, perTier, dropped, costUsd, failures, perFeed, topicStats, feedsScanned: feeds.length, lastScan, seenAdd };
   }
   const note = { path: inboxPath(settings.inboxFolder, deps.now), input: { week: weekLabel(deps.now), scanned: today, sections } };
-  return { note, perTier, dropped, costUsd, failures, perFeed, feedsScanned: feeds.length, lastScan, seenAdd };
+  return { note, perTier, dropped, costUsd, failures, perFeed, topicStats, feedsScanned: feeds.length, lastScan, seenAdd };
 }
 
 /** The `seen` list after a scan: new keys added at the end, the oldest dropped beyond the cap. */

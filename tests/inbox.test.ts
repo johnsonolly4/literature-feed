@@ -181,15 +181,28 @@ describe("parseInbox", () => {
     expect(parseInbox(text)).toEqual({
       scanned: "2026-10-12",
       papers: [
-        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null },
-        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null },
+        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: ["lipoic acid"] },
+        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: ["lipoic acid"] },
       ],
     });
   });
 
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
-    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [], authors: "", venue: "", year: null, preprint: false, titleOnly: false, readLink: null }]);
+    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [], authors: "", venue: "", year: null, preprint: false, titleOnly: false, readLink: null, matched: [] }]);
+  });
+});
+
+describe("parseInbox, matched terms", () => {
+  it("reads the terms after the tier, also with preprint, title only and the \"…\" for more", () => {
+    const many = { ...paper(1, "strong"), isPreprint: true, noAbstract: true, matched: ["a b", "c", "d", "e", "f", "g", "h"] };
+    const none = { ...paper(2, "possible"), matched: [] };
+    const text = renderNote(input([{ feedId: "f", feedName: "F", papers: [many, none] }]));
+    const [one, two] = parseInbox(text).papers;
+    expect(one.matched).toEqual(["a b", "c", "d", "e", "f", "g"]);
+    expect(one.preprint).toBe(true);
+    expect(one.titleOnly).toBe(true);
+    expect(two.matched).toEqual([]);
   });
 });
 

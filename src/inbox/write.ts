@@ -112,17 +112,19 @@ export interface BuiltPapers {
   papers: InboxPaper[];
   /** Papers the feed's rules removed (Dropped), or that have no usable id. */
   dropped: number;
+  /** The candidates counted in `dropped`. */
+  droppedCandidates: Candidate[];
 }
 
 /** Scores candidates with the feed's rules; Dropped papers are not listed. Best first, then newest. */
 export function buildPapers(feed: FeedConfig, candidates: readonly Candidate[], topicsOf: (c: Candidate) => number[] = () => []): BuiltPapers {
   const papers: InboxPaper[] = [];
-  let dropped = 0;
+  const droppedCandidates: Candidate[] = [];
   for (const c of candidates) {
     const score = scorePaper(c, feed);
     const id = shortOpenAlexId(c.openalexId);
     if (score.tier === "dropped" || id === null) {
-      dropped++;
+      droppedCandidates.push(c);
       continue;
     }
     papers.push({
@@ -144,7 +146,7 @@ export function buildPapers(feed: FeedConfig, candidates: readonly Candidate[], 
     RANK.indexOf(a.tier) - RANK.indexOf(b.tier)
     || (b.publicationDate ?? "").localeCompare(a.publicationDate ?? "")
     || a.title.localeCompare(b.title));
-  return { papers, dropped };
+  return { papers, dropped: droppedCandidates.length, droppedCandidates };
 }
 
 // ---- rendering --------------------------------------------------------------------------------------------------------
@@ -252,6 +254,8 @@ export interface ParsedPaper {
   titleOnly: boolean;
   /** The path in the line's Read link (no ".md"), or null. */
   readLink: string | null;
+  /** The feed terms the line shows after the tier (at most six; the "…" that marks more is left out); empty if none. */
+  matched: string[];
 }
 
 export type NoteList = "ranked" | "unchecked" | "synced";
@@ -290,8 +294,8 @@ function unescape(text: string): string {
 }
 
 /** Authors, venue, year and marks from what follows the title; the line's order is fixed by `paperLine`. */
-function detailsOfLine(line: string): Pick<ParsedPaper, "authors" | "venue" | "year" | "preprint" | "titleOnly"> {
-  const empty = { authors: "", venue: "", year: null, preprint: false, titleOnly: false };
+function detailsOfLine(line: string): Pick<ParsedPaper, "authors" | "venue" | "year" | "preprint" | "titleOnly" | "matched"> {
+  const empty = { authors: "", venue: "", year: null, preprint: false, titleOnly: false, matched: [] };
   const head = TITLE_BLOCK.exec(line);
   if (!head) return empty;
   let rest = line.slice(head[0].length).replace(/\s*%%tp:[\d,]+%%/, "").replace(/\s*%%oa:[^%]+%%\s*$/, "");
@@ -304,7 +308,12 @@ function detailsOfLine(line: string): Pick<ParsedPaper, "authors" | "venue" | "y
   const segments = rest.split(" · ").map((s) => s.trim()).filter((s) => s !== "");
   const venueMatch = segments.map((s) => /^\*((?:\\.|[^*])+)\*$/.exec(s)).find((m) => m !== null);
   const yearSegment = segments.find((s) => /^\d{4}$/.test(s));
+  // The terms are the last segment, after the tier label and the optional "preprint" and "title only".
+  const tierAt = segments.findIndex((s) => Object.values<string>(TIER_LABEL).includes(s));
+  const termsText = tierAt === -1 ? undefined : segments.slice(tierAt + 1).find((s) => s !== "preprint" && s !== "title only");
+  const matched = termsText === undefined ? [] : termsText.split(", ").map((t) => unescape(t.trim())).filter((t) => t !== "" && t !== "…");
   return {
+    matched,
     authors,
     venue: venueMatch ? unescape(venueMatch[1]) : "",
     year: yearSegment ? Number(yearSegment) : null,

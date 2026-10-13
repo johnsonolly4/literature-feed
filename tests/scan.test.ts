@@ -171,6 +171,30 @@ describe("topicsFor and the topics of listed papers", () => {
   });
 });
 
+describe("per-topic stats", () => {
+  it("counts, per topic, what it returned, what got listed and what the rules removed", async () => {
+    const a = cand(priorityFlow, 1);
+    const b = cand(possible, 2);
+    const d = cand(droppedNoLipoic, 3);
+    const client = {
+      scan: async (): Promise<ScanResult> => ({
+        perTopic: [
+          { topic: "t1", count: 2, papers: [a, d], costUsd: 0.001 },
+          { topic: "t2", count: 2, papers: [a, b], costUsd: 0.001 },
+        ],
+        papers: [a, b, d], costUsd: 0.002,
+      }),
+    } as ScanDeps["client"];
+    const out = await runScan(settings(), { client, now: NOW });
+    expect(out.topicStats).toEqual([{ feedId: "a", topics: [{ returned: 2, listed: 1, dropped: 1 }, { returned: 2, listed: 2, dropped: 0 }] }]);
+  });
+
+  it("has no entry for a feed that failed", async () => {
+    const { client } = fakeClient(() => new Error("HTTP 500"));
+    expect((await runScan(settings(), { client, now: NOW })).topicStats).toEqual([]);
+  });
+});
+
 describe("last scan counts", () => {
   it("turns an outcome into the stored counts, with the failed feeds counted", async () => {
     const { client } = fakeClient((_t, _f, call) => (call === 0 ? new Error("HTTP 500") : scanResult([cand(priorityFlow, 1), cand(possible, 2), cand(droppedNoLipoic, 3)])));

@@ -35,6 +35,11 @@ Run the command **Scan now** (command palette). It searches OpenAlex for every f
 - The block `` ```literature-feed `` with the line `show: home` gives a small card (papers waiting, last scan, buttons) for another note, such as a home page. Put it inside a callout (for example a column of a Home note) and it drops its own box and title. It counts the unticked papers of the latest inbox note, each paper once even if two feeds found it; older weeks are not counted.
 - Titles and names come from OpenAlex and are written as plain text with markdown characters escaped; links are rebuilt from the DOI.
 
+## Search effectiveness
+- The plugin keeps a small history of how each search does in `ledger.json` in its own folder (`.obsidian/plugins/literature-feed/`). It stays on your computer: nothing is sent anywhere, and Obsidian Sync or another sync service may or may not carry it to other devices. It holds, per listed paper, the title, tier, week, the search topics and terms that found it, and the first day a refresh saw it ticked, sent to Zotero or read; per scan, how many papers each topic returned, listed and had removed by the rules; and a numbered version of a search's rules each time they change. No abstracts. Delete the file to start again: the next refresh rebuilds what it can from the notes in your inbox and archive folders (topics and terms come from the lines; scan numbers cannot be rebuilt).
+- The command **Show search effectiveness** opens a report for each search: papers listed, **wanted** (ticked, sent to Zotero or read), **dismissed** (not wanted and the note's week plus the "mark papers done after" weeks have passed), and **undecided** (still waiting; left out of the rates), then the same by tier, by search topic (with the returned and dropped numbers from the scans), by month and by version of the rules. It also lists feed terms and title words that do better or worse than the search's own average (at least four decided papers each) as candidates for a boost, priority, lower or drop term. These are suggestions: nothing changes a search by itself. **Copy as Markdown** puts the report on the clipboard. **Forget history of N removed searches** clears what the ledger holds about searches you have deleted from the settings.
+- Rates are weak evidence until a search has about 20 decided papers, and papers ticked or read are counted from the day a refresh saw them, not the day you clicked.
+
 ## Sync to Zotero
 
 Tick the papers you want, then press **Sync** in the status block or run the command **Sync ticked papers**. For every ticked paper in the inbox notes that has no "in Zotero" link yet:
@@ -111,9 +116,10 @@ npm run dev     # watch build into test-vault/.obsidian/plugins/literature-feed/
 npm run build   # type-check and build main.js
 npm test        # vitest
 npm run lint    # eslint
+npm run demo    # write a demo set (fake papers, notes and a guide) into test-vault/Demo/
 ```
 
-Open `test-vault/` as a vault in Obsidian to try the plugin. Never develop against your own vault. API keys go into the plugin's settings in `test-vault` only, never into code, tests or docs.
+Open `test-vault/` as a vault in Obsidian to try the plugin. `npm run demo` fills `test-vault/Demo/` with fake weekly notes, literature notes and a guide with a checklist for every feature (import `docs/feeds/demo-polymers.json` and `demo-catalysts.json` as searches). Never develop against your own vault. API keys go into the plugin's settings in `test-vault` only, never into code, tests or docs.
 
 ## Licence
 

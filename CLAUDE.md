@@ -20,7 +20,7 @@ If the user asks for another task without clearing, remind them to `/clear` firs
 
 ## Commands
 - Tests: `npm test` (vitest, failures only) · Lint: `npm run lint` · Build: `npm run build`
-- Run: `npm run dev` (watch build into `test-vault/.obsidian/plugins/literature-feed/`)
+- Run: `npm run dev` (watch build into `test-vault/.obsidian/plugins/literature-feed/`) · Demo data: `npm run demo` (writes `test-vault/Demo/`)
 
 ## Hard rules
 - Never read or write the user's real vault. Only `test-vault/`.

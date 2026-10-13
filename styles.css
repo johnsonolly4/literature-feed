@@ -716,6 +716,33 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
 }
 
 .literature-feed-node { cursor: pointer; }
+.literature-feed-node.is-top .literature-feed-nodelabel,
+.literature-feed-node.is-hovered .literature-feed-nodelabel,
+.literature-feed-node.is-neighbour .literature-feed-nodelabel { display: block; }
+.is-hovering .literature-feed-node { opacity: 0.2; }
+.is-hovering .literature-feed-node.is-hovered,
+.is-hovering .literature-feed-node.is-neighbour { opacity: 1; }
+.literature-feed-edge.is-lit { stroke: var(--text-normal); opacity: 0.9; stroke-width: 2; }
+.literature-feed-grouplabel {
+  fill: var(--text-normal);
+  font-size: 15px;
+  font-weight: 600;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--background-primary);
+  stroke-width: 4px;
+}
+.literature-feed-legend-item { display: inline-flex; align-items: center; gap: 4px; margin-right: var(--size-4-3); }
+.literature-feed-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.sw-0, .mode-theme.t-0 .literature-feed-dotnode { fill: #3b82f6; background: #3b82f6; }
+.sw-1, .mode-theme.t-1 .literature-feed-dotnode { fill: #10b981; background: #10b981; }
+.sw-2, .mode-theme.t-2 .literature-feed-dotnode { fill: #f59e0b; background: #f59e0b; }
+.sw-3, .mode-theme.t-3 .literature-feed-dotnode { fill: #a855f7; background: #a855f7; }
+.sw-4, .mode-theme.t-4 .literature-feed-dotnode { fill: #ef4444; background: #ef4444; }
+.sw-5, .mode-theme.t-5 .literature-feed-dotnode { fill: #06b6d4; background: #06b6d4; }
+.sw-6, .mode-theme.t-6 .literature-feed-dotnode { fill: #ec4899; background: #ec4899; }
+.sw-7, .mode-theme.t-7 .literature-feed-dotnode { fill: #84cc16; background: #84cc16; }
+.mode-theme.t-none .literature-feed-dotnode { fill: var(--text-faint); }
 .literature-feed-node.is-dim { opacity: 0.15; }
 .literature-feed-dotnode { stroke: var(--background-primary); stroke-width: 1.5; fill: var(--text-faint); }
 .literature-feed-node.is-selected .literature-feed-dotnode { stroke: var(--text-normal); stroke-width: 2.5; }

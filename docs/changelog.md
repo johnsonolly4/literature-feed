@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## Next version (not released)
+- Review graph: the 12 most cited papers are always labelled, pointing at a paper lights its neighbours, big groups carry a name, a new colour mode by the LLM's themes, bigger papers, zoom buttons and a legend.
 - Citation gaps of one paper as its own tab: a DOI, link or OpenAlex id, an item picked from your Zotero library, or a pasted reference list; the cost is shown first (about $0.0003 for a paper, $0.001 per pasted reference without a DOI); a note records how it was made.
 - Literature review graph: papers are drawn again (they were missing from the graph tab, so its controls did nothing), and papers with no link to another sit in a row along the bottom instead of against the walls.
 - Literature review: the note records how the review was made (**How this review was made**: topics as written, matches found, ranking rules, window and sort, first request of each topic, LLM named, prompt hash and the prompt kept as a note, the answer as pasted, which paper was P1, P2 …). The command **Repeat the review in this note** runs it again with the recorded or the current search definitions and shows what changed.

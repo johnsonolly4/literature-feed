@@ -8,12 +8,13 @@ import { parseGraphBlock, type GraphData, type GraphNode } from "./graph-data";
 
 export const GRAPH_VIEW = "literature-feed-graph";
 
-export type ColourMode = "group" | "cluster" | "year" | "level";
+export type ColourMode = "group" | "cluster" | "theme" | "year" | "level";
 
-const MODES: Record<ColourMode, string> = { group: "In the set, missing, citing", cluster: "Papers that cite each other", year: "Year", level: "Reading level" };
+const MODES: Record<ColourMode, string> = { group: "In the set, missing, citing", cluster: "Papers that cite each other", theme: "Themes (from the LLM)", year: "Year", level: "Reading level" };
 const LEGEND: Record<ColourMode, string> = {
   group: "Blue: in the set. Amber: cited by several of them but not in it. Purple: cites several of them.",
   cluster: "One colour per group of papers that cite each other; grey: no link to another paper.",
+  theme: "One colour per theme in the LLM's answer; grey: not in a theme.",
   year: "Light to dark: older to newer.",
   level: "Green: must read. Blue: should read. Grey: skim. Faint: skip. Outlined: not rated.",
 };
@@ -28,6 +29,15 @@ function svgEl<K extends keyof SVGElementTagNameMap>(parent: Element, tag: K, cl
   return el;
 }
 
+/** Papers that always carry their label. */
+const TOP_LABELS = 12;
+
+interface DrawnLine {
+  from: string;
+  to: string;
+  el: SVGLineElement;
+}
+
 export interface DrawOptions {
   mode: ColourMode;
   showExtras: boolean;
@@ -39,20 +49,36 @@ export interface DrawOptions {
 /** Draws the edges and papers into `viewport` (emptied first) and returns the papers drawn. Shared by the tab and the note's block. */
 export function drawGraph(viewport: SVGGElement, graph: GraphData, o: DrawOptions): GraphNode[] {
   viewport.empty();
+  viewport.removeAttribute("class");
   const nodes = graph.nodes.filter((n) => o.showExtras || n.kind === "set");
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const edges = svgEl(viewport, "g", "");
+  const lines: DrawnLine[] = [];
   for (const e of graph.edges) {
     const a = byId.get(e.from);
     const b = byId.get(e.to);
     if (!a || !b) continue;
     const touching = o.selected !== null && (e.from === o.selected || e.to === o.selected);
-    svgEl(edges, "line", `literature-feed-edge${touching ? " is-touching" : ""}`, { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y) });
+    lines.push({ from: e.from, to: e.to, el: svgEl(edges, "line", `literature-feed-edge${touching ? " is-touching" : ""}`, { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y) }) });
+  }
+  // The most cited papers are always labelled; the rest when there are few papers, when zoomed in, or when pointed at.
+  const top = new Set([...nodes].sort((p, q) => q.citedBy - p.citedBy || p.id.localeCompare(q.id)).slice(0, TOP_LABELS).map((n) => n.id));
+  const els = new Map<string, SVGGElement>();
+  const neighbours = new Map<string, Set<string>>();
+  const link = (from: string, to: string): void => {
+    const set = neighbours.get(from) ?? new Set<string>();
+    set.add(to);
+    neighbours.set(from, set);
+  };
+  for (const e of lines) {
+    link(e.from, e.to);
+    link(e.to, e.from);
   }
   for (const n of nodes) {
-    const r = 4 + Math.min(14, Math.sqrt(n.citedBy) * 0.5);
+    const r = 5 + Math.min(16, Math.sqrt(n.citedBy) * 0.7);
     const dim = o.filter !== "" && !n.title.toLowerCase().includes(o.filter);
-    const g = svgEl(viewport, "g", `literature-feed-node mode-${o.mode} k-${n.kind} c-${n.cluster < 0 ? "none" : n.cluster % 8} y-${n.yearBucket} l-${n.level ?? "none"}${dim ? " is-dim" : ""}${n.id === o.selected ? " is-selected" : ""}`);
+    const g = svgEl(viewport, "g", `literature-feed-node mode-${o.mode} k-${n.kind} c-${n.cluster < 0 ? "none" : n.cluster % 8} t-${(n.theme ?? -1) < 0 ? "none" : (n.theme as number) % 8} y-${n.yearBucket} l-${n.level ?? "none"}${top.has(n.id) ? " is-top" : ""}${dim ? " is-dim" : ""}${n.id === o.selected ? " is-selected" : ""}`);
+    els.set(n.id, g);
     svgEl(g, "title", "").textContent = `${n.label}: ${n.title}${n.year === null ? "" : ` (${n.year})`}`;
     if (n.zotero) svgEl(g, "circle", "literature-feed-ring", { cx: String(n.x), cy: String(n.y), r: String(r + 3) });
     svgEl(g, "circle", "literature-feed-dotnode", { cx: String(n.x), cy: String(n.y), r: String(r) });
@@ -60,7 +86,44 @@ export function drawGraph(viewport: SVGGElement, graph: GraphData, o: DrawOption
     svgEl(g, "text", "literature-feed-nodelabel", { x: String(n.x), y: String(n.y + r + 11), "text-anchor": "middle" }).textContent = n.label;
     if (o.onSelect) g.addEventListener("click", (ev) => { ev.stopPropagation(); o.onSelect?.(n); });
   }
+  // Pointing at a paper lights it, its neighbours and the lines between them, and dims the rest.
+  for (const n of nodes) {
+    const el = els.get(n.id);
+    if (!el) continue;
+    const near = neighbours.get(n.id) ?? new Set<string>();
+    el.addEventListener("pointerenter", () => {
+      viewport.classList.add("is-hovering");
+      el.classList.add("is-hovered");
+      for (const id of near) els.get(id)?.classList.add("is-neighbour");
+      for (const e of lines) if (e.from === n.id || e.to === n.id) e.el.classList.add("is-lit");
+    });
+    el.addEventListener("pointerleave", () => {
+      viewport.classList.remove("is-hovering");
+      el.classList.remove("is-hovered");
+      for (const id of near) els.get(id)?.classList.remove("is-neighbour");
+      for (const e of lines) e.el.classList.remove("is-lit");
+    });
+  }
+  drawGroupNames(viewport, graph, nodes, o.mode);
   return nodes;
+}
+
+/** A name over each big group of papers: "Group 1 · P14" (the most cited paper) by citing groups, the theme's name by theme. */
+function drawGroupNames(viewport: SVGGElement, graph: GraphData, nodes: readonly GraphNode[], mode: ColourMode): void {
+  if (mode !== "cluster" && mode !== "theme") return;
+  const groups = new Map<number, GraphNode[]>();
+  for (const n of nodes) {
+    const k = mode === "cluster" ? n.cluster : (n.theme ?? -1);
+    if (k >= 0) groups.set(k, [...(groups.get(k) ?? []), n]);
+  }
+  for (const [k, members] of groups) {
+    if (members.length < 3) continue;
+    const x = members.reduce((s, m) => s + m.x, 0) / members.length;
+    const y = Math.min(...members.map((m) => m.y)) - 14;
+    const best = [...members].sort((a, b) => b.citedBy - a.citedBy)[0];
+    const name = mode === "theme" ? (graph.themes?.[k] ?? `Theme ${k + 1}`) : `Group ${k + 1} · ${best.label}`;
+    svgEl(viewport, "text", "literature-feed-grouplabel", { x: String(x), y: String(y), "text-anchor": "middle" }).textContent = name.length > 34 ? `${name.slice(0, 33)}…` : name;
+  }
 }
 
 /** The code block `literature-feed-graph` in a review note: the graph drawn in place, with a button for the full view. */
@@ -73,7 +136,7 @@ export function graphBlockProcessor(source: string, el: HTMLElement, open: (grap
   const box = el.createDiv({ cls: "literature-feed-graph-inline" });
   const svg = svgEl(box, "svg", "literature-feed-graph-svg is-inline", { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" });
   const nodes = drawGraph(svgEl(svg, "g", ""), graph, { mode: "group", showExtras: true, filter: "", selected: null });
-  svg.toggleClass("show-labels", nodes.length <= 30);
+  svg.toggleClass("show-labels", nodes.length <= 20);
   box.createDiv({ cls: "literature-feed-meta", text: LEGEND.group });
   const buttons = box.createDiv({ cls: "literature-feed-buttons" });
   buttons.createEl("button", { text: "Open full graph", cls: "mod-cta" }).addEventListener("click", () => open(graph));
@@ -131,10 +194,28 @@ export class GraphView extends ItemView {
     }
     const bar = root.createDiv({ cls: "literature-feed-graph-bar" });
     const colour = bar.createEl("select");
-    for (const [k, label] of Object.entries(MODES)) colour.createEl("option", { value: k, text: label });
+    for (const [k, label] of Object.entries(MODES)) {
+      if (k === "theme" && !(graph.themes && graph.themes.length > 0)) continue;
+      colour.createEl("option", { value: k, text: label });
+    }
+    if (this.mode === "theme" && !(graph.themes && graph.themes.length > 0)) this.mode = "group";
     colour.value = this.mode;
-    const legend = root.createDiv({ cls: "literature-feed-meta", text: LEGEND[this.mode] });
-    colour.addEventListener("change", () => { this.mode = colour.value as ColourMode; legend.setText(LEGEND[this.mode]); this.draw(); });
+    const legend = root.createDiv({ cls: "literature-feed-meta" });
+    const drawLegend = (): void => {
+      legend.empty();
+      if (this.mode === "theme" && graph.themes) {
+        graph.themes.slice(0, 8).forEach((name, i) => {
+          const item = legend.createSpan({ cls: "literature-feed-legend-item" });
+          item.createSpan({ cls: `literature-feed-swatch sw-${i}` });
+          item.appendText(` ${name}`);
+        });
+      } else {
+        legend.appendText(LEGEND[this.mode]);
+      }
+      legend.createDiv({ text: "Size: citations. Ring: in Zotero. Dot: you have a literature note. Point at a paper to light its neighbours." });
+    };
+    drawLegend();
+    colour.addEventListener("change", () => { this.mode = colour.value as ColourMode; drawLegend(); this.draw(); });
     const extras = bar.createEl("label");
     const box = extras.createEl("input", { type: "checkbox" });
     box.checked = this.showExtras;
@@ -143,7 +224,9 @@ export class GraphView extends ItemView {
     const search = bar.createEl("input", { type: "text", placeholder: "Filter by title" });
     search.value = this.filter;
     search.addEventListener("input", () => { this.filter = search.value.trim().toLowerCase(); this.draw(); });
-    bar.createEl("button", { text: "Reset view" }).addEventListener("click", () => { this.scale = 1; this.tx = 0; this.ty = 0; this.applyTransform(); });
+    bar.createEl("button", { text: "+" }).addEventListener("click", () => this.zoomCentre(1.3, graph));
+    bar.createEl("button", { text: "−" }).addEventListener("click", () => this.zoomCentre(1 / 1.3, graph));
+    bar.createEl("button", { text: "Fit" }).addEventListener("click", () => { this.scale = 1; this.tx = 0; this.ty = 0; this.applyTransform(); });
 
     this.svg = svgEl(root, "svg", "literature-feed-graph-svg", { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" });
     this.viewport = svgEl(this.svg, "g", "");
@@ -158,7 +241,7 @@ export class GraphView extends ItemView {
     if (!graph || !viewport || !this.svg) return;
     const nodes = drawGraph(viewport, graph, { mode: this.mode, showExtras: this.showExtras, filter: this.filter, selected: this.selected, onSelect: (n) => { this.selected = n.id; this.draw(); this.showPanel(n); } });
     const byId = new Map(nodes.map((n) => [n.id, n]));
-    this.svg.toggleClass("show-labels", nodes.length <= 60);
+    this.svg.toggleClass("show-labels", nodes.length <= 30);
     this.applyTransform();
     const current = this.selected ? byId.get(this.selected) : undefined;
     if (current) this.showPanel(current);
@@ -209,6 +292,14 @@ export class GraphView extends ItemView {
       this.applyTransform();
     }, { passive: false });
     svg.addEventListener("click", () => { if (this.selected !== null) { this.selected = null; this.draw(); } });
+  }
+
+  /** Zooms by `factor` around the middle of the picture. */
+  private zoomCentre(factor: number, graph: GraphData): void {
+    const rect = this.svg?.getBoundingClientRect();
+    if (!rect) return;
+    this.zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, factor, graph);
+    this.applyTransform();
   }
 
   /** Zooms by `factor` keeping the graph point under the screen position (clientX, clientY) where it is. */

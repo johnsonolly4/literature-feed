@@ -170,3 +170,32 @@ describe("forceLayout with unlinked papers", () => {
     expect(Math.hypot(hub.x - BOX.width / 2, hub.y - BOX.height / 2)).toBeLessThan(250);
   });
 });
+
+describe("themes in the graph", () => {
+  const papers = [paper(1, [2], 2019), paper(2, [], 2021), paper(3, [], 2023)];
+  const net = buildNetwork(papers);
+  const noFlag = { zotero: null, vault: null, listedBefore: [] as string[] };
+  const label = (id: string): string => `P${id.slice(1)}`;
+  const links = { missingCiters: new Map(), citingCites: new Map() };
+
+  it("gives each paper the index of its theme, -1 for none, and keeps the theme names", () => {
+    const g = buildGraphData(papers, papers.map(() => noFlag), net, { missing: [], alsoCite: [] }, label, links, new Map(), [{ name: "Synthesis", papers: ["P1", "P2"] }, { name: "Uses", papers: ["P3"] }]);
+    expect(g.themes).toEqual(["Synthesis", "Uses"]);
+    expect(g.nodes.map((n) => n.theme)).toEqual([0, 0, 1]);
+    const back = normaliseGraph(JSON.parse(JSON.stringify(g)));
+    expect(back?.themes).toEqual(["Synthesis", "Uses"]);
+    expect(back?.nodes.map((n) => n.theme)).toEqual([0, 0, 1]);
+  });
+
+  it("has no themes without an answer", () => {
+    const g = buildGraphData(papers, papers.map(() => noFlag), net, { missing: [], alsoCite: [] }, label, links);
+    expect(g.themes).toBeUndefined();
+    expect(g.nodes.every((n) => n.theme === undefined)).toBe(true);
+    expect(normaliseGraph(JSON.parse(JSON.stringify(g)))?.themes).toBeUndefined();
+  });
+
+  it("puts a paper outside every theme at -1", () => {
+    const g = buildGraphData(papers, papers.map(() => noFlag), net, { missing: [], alsoCite: [] }, label, links, new Map(), [{ name: "Only", papers: ["P1"] }]);
+    expect(g.nodes.map((n) => n.theme)).toEqual([0, -1, -1]);
+  });
+});

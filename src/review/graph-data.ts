@@ -24,11 +24,15 @@ export interface GraphNode {
   doi: string | null;
   /** The LLM's reading level, when an answer has been checked. */
   level: ReadLevel | null;
+  /** Index into the graph's `themes` (the LLM's themes, when an answer has been checked), or -1 / absent. */
+  theme?: number;
   x: number;
   y: number;
 }
 
 export interface GraphData {
+  /** Names of the LLM's themes, in the order `theme` indexes them; absent without a checked answer. */
+  themes?: string[];
   nodes: GraphNode[];
   edges: { from: string; to: string }[];
   width: number;
@@ -51,6 +55,7 @@ export function buildGraphData(
   papers: readonly ReviewPaper[], flags: readonly Flags[], network: Network, rows: { missing: ExtraRow[]; alsoCite: ExtraRow[] },
   labelOf: (id: string) => string, links: { missingCiters: ReadonlyMap<string, readonly string[]>; citingCites: ReadonlyMap<string, readonly string[]> },
   levels: ReadonlyMap<string, ReadLevel> = new Map(),
+  themes: readonly { name: string; papers: readonly string[] }[] = [],
 ): GraphData {
   const bucket = yearBuckets([...papers.map((p) => p.year), ...rows.missing.map((r) => r.year), ...rows.alsoCite.map((r) => r.year)]);
   const clusterOf = new Map<string, number>();
@@ -81,7 +86,13 @@ export function buildGraphData(
       n.y = p.y;
     }
   }
-  return { nodes, edges, width: GRAPH_WIDTH, height: GRAPH_HEIGHT };
+  if (themes.length > 0) {
+    for (const n of nodes) {
+      const i = themes.findIndex((t) => t.papers.includes(n.label));
+      n.theme = i;
+    }
+  }
+  return { ...(themes.length > 0 ? { themes: themes.map((t) => t.name) } : {}), nodes, edges, width: GRAPH_WIDTH, height: GRAPH_HEIGHT };
 }
 
 /** The graph data from whatever the file held; null when it is not usable. */
@@ -101,7 +112,8 @@ export function normaliseGraph(raw: unknown): GraphData | null {
     const x = e as { from?: unknown; to?: unknown };
     return typeof x.from === "string" && typeof x.to === "string" && ids.has(x.from) && ids.has(x.to);
   });
-  return nodes.length === 0 ? null : { nodes, edges, width: r.width, height: r.height };
+  const themes = Array.isArray((r as { themes?: unknown }).themes) ? ((r as { themes: unknown[] }).themes.filter((t): t is string => typeof t === "string")) : [];
+  return nodes.length === 0 ? null : { ...(themes.length > 0 ? { themes } : {}), nodes, edges, width: r.width, height: r.height };
 }
 
 /** The code block language of a graph in a note. */

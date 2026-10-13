@@ -683,7 +683,8 @@ export class ReviewPanel {
     const net = this.network;
     if (!result || !net) return null;
     const levels = new Map((this.checked && this.checked.ok ? this.checked.value.priorities : []).map((p) => [p.paper, p.level] as const));
-    return buildGraphData(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, this.citationLinks(), levels);
+    const themes = this.checked && this.checked.ok ? this.checked.value.themes.map((t) => ({ name: t.name, papers: t.papers })) : [];
+    return buildGraphData(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, this.citationLinks(), levels, themes);
   }
 
   private async openGraph(): Promise<void> {

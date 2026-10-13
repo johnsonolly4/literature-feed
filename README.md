@@ -26,8 +26,6 @@ Run the command **Scan now** (command palette). It searches OpenAlex for every f
 - The block `` ```literature-feed `` with the line `show: home` gives a small card (papers waiting, last scan, buttons) for another note, such as a home page. Put it inside a callout (for example a column of a Home note) and it drops its own box and title. It counts the unticked papers of the latest inbox note, each paper once even if two feeds found it; older weeks are not counted.
 - Titles and names come from OpenAlex and are written as plain text with markdown characters escaped; links are rebuilt from the DOI.
 
-## Settings
-
 ## Sync to Zotero
 
 Tick the papers you want, then press **Sync** in the status block or run the command **Sync ticked papers**. For every ticked paper in the inbox notes that has no "in Zotero" link yet:
@@ -74,6 +72,14 @@ Your API keys are kept in Obsidian's secret storage, on your device and outside 
 
 - **OpenAlex:** a free account and API key, from `openalex.org/settings/api`.
 - **Zotero:** an API key with write access to your library, and your numeric user ID, both under the API keys part of your account settings on `zotero.org`.
+
+## Needed for PDFs
+
+Sync adds a paper's **metadata** (title, authors, abstract, DOI, venue, date) to your Zotero library; it does not fetch PDFs. For full texts you need, alongside this plugin:
+
+- **Zotero desktop** (7 or later; tried with 10), which pulls the new items from zotero.org at its own sync. ZotLit reads Zotero desktop's local database, so a paper reaches ZotLit only after that sync.
+- **The Zotero Connector** browser extension, to save a paper's PDF from the publisher page while you are logged in through your library.
+- **The Zotero add-on [Better Find Full Text](https://github.com/ppavlidis/better-find-full-text)** (its README lists Zotero 7.0, 8.x, 9.x and 10.x). Select the papers in Zotero, right-click, and use it: it tries Zotero's own PDF finder and the publisher's PDF link, and for a paywalled paper it opens the DOI page in your browser. After you log in and click the Connector, it moves the PDF onto the existing item and deletes the duplicate the Connector made, so the paper stays in its inbox collection. It is a separate project with no connection to this plugin, and a paywalled paper still needs your own click on the Connector.
 
 ## Works with Lab Kit
 

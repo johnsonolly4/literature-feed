@@ -487,3 +487,8 @@ button.literature-feed-icon {
   background: var(--text-faint);
   opacity: 0.5;
 }
+
+/* The dismiss cross is red (the owner's choice; Lab Kit otherwise keeps red for overdue only) */
+button.literature-feed-icon.is-dismiss {
+  color: rgb(var(--vt-overdue, 239, 68, 68));
+}

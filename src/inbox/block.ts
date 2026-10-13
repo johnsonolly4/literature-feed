@@ -326,10 +326,10 @@ class StatusBlock extends MarkdownRenderChild {
 
       const act = tr.createEl("td", { cls: "literature-feed-act" });
       if (paper.dismissed) {
-        const undo = act.createEl("button", { text: "↩", cls: "literature-feed-icon", attr: { title: "Undo dismiss", "aria-label": "Undo dismiss" } });
+        const undo = act.createEl("button", { text: "↩", cls: "literature-feed-icon", attr: { "aria-label": "Undo dismiss" } });
         undo.addEventListener("click", () => { void this.host.setDismissed(note.path, paper.feedId, paper.openalexId, null); });
       } else {
-        const dismiss = act.createEl("button", { text: "✕", cls: "literature-feed-icon", attr: { title: "Dismiss this paper", "aria-label": "Dismiss this paper" } });
+        const dismiss = act.createEl("button", { text: "✕", cls: "literature-feed-icon is-dismiss", attr: { "aria-label": "Dismiss this paper" } });
         dismiss.addEventListener("click", (e) => {
           const menu = new Menu();
           menu.addItem((item) => item.setTitle("Not relevant").onClick(() => { void this.host.setDismissed(note.path, paper.feedId, paper.openalexId, "irrelevant"); }));

@@ -106,6 +106,17 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       },
       {
         type: "group",
+        heading: "Reference look-up (Crossref)",
+        items: [
+          {
+            name: "Contact email (optional)",
+            desc: "Finding DOIs for pasted references asks Crossref (api.crossref.org) about each reference. An email address lets Crossref serve you from its faster pool; it is sent only with those requests, and nothing is sent if you leave this empty.",
+            control: { type: "text", key: "crossrefEmail" },
+          },
+        ],
+      },
+      {
+        type: "group",
         heading: "Zotero",
         items: [
           {
@@ -163,6 +174,7 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       case "autoSync": return s.autoSync;
       case "reviewBudgetUsd": return s.reviewBudgetUsd;
       case "reviewMonthlyLimitUsd": return s.reviewMonthlyLimitUsd;
+      case "crossrefEmail": return s.crossrefEmail;
       case "dismissAfterWeeks": return s.dismissAfterWeeks;
       default: return undefined;
     }
@@ -173,6 +185,7 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
     const text = typeof value === "string" ? value.trim() : "";
     switch (key) {
       case "zoteroUserId": s.zoteroUserId = text; break;
+      case "crossrefEmail": s.crossrefEmail = /^[^\s@]+@[^\s@]+$/.test(text) ? text : ""; break;
       case "inboxFolder": s.inboxFolder = normaliseFolder(text === "" ? "" : normalizePath(text)); break;
       case "archiveFolder": s.archiveFolder = normaliseFolder(text === "" ? "" : normalizePath(text)); break;
       case "scanDay": {

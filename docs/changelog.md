@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## Next version (not released)
+- Find DOIs for a reference list: paste references copied from a PDF (ragged lines, no numbers or DOIs), and each is split out and looked up on Crossref (new host `api.crossref.org`, only when you press the button; optional contact email in the settings). Results are marked Found, Check, Not found, Manual or Error, the ones that need a look come first and are skipped unless ticked, and you can copy the list with DOIs or as CSV, or make a note. The citation-gaps paste mode uses it, so pasted references now cost about $0.0001 per 50 instead of $0.001 each.
 - Review graph in a review note: the same chips, legend and details as the tab (hold Ctrl or Cmd to zoom, so scrolling the note still works), and an Open in a tab chip. Pointing at a paper names only its ten most cited neighbours.
 - The canvas is now a reading board instead of a copy of the network: a labelled group per theme (or per group of papers that cite each other), a readable card per paper with its link, citations, what you have and the LLM's advice, colours by reading level, and one line per paper to the most cited paper in the set that it cites.
 - Review graph: chips instead of a drop-down, each explained; a **Timeline** layout with the year on the vertical axis; groups laid out on their own so small ones sit beside the main one; papers with no link hidden at first; the view fits the window; older saved graphs get the current layout when opened.

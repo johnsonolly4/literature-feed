@@ -8,6 +8,8 @@ import type { ZoteroIndex } from "../zotero/library-index";
 import { Budget } from "./budget";
 import type { ReviewCache } from "./cache";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
+import { RefsPanel, normaliseRefsSession, type RefsSession } from "../refs/panel";
+import type { ReferenceSearcher } from "../refs/resolve";
 import { runGaps, type GapsClient, type GapsRun } from "./gaps-fetch";
 import { renderGapsNote } from "./gaps-note";
 import {
@@ -19,6 +21,7 @@ export interface GapsHost {
   app: App;
   settings: Settings;
   newReviewClient(): GapsClient;
+  newCrossrefClient(): ReferenceSearcher;
   reviewCache: ReviewCache;
   saveReviewCache(): Promise<void>;
   zoteroIndex: ZoteroIndex;
@@ -29,6 +32,10 @@ export interface GapsHost {
   gapsSession: GapsSession | null;
   saveGapsSession(session: GapsSession): void;
 }
+
+/** Kept as constants: they hold capitalised words, which the sentence-case lint rule reads only in literals. */
+const SEARCH_UNFOUND_NAME = "Also search the ones not found in OpenAlex";
+const PRESS_TIDY = "Press Tidy and find DOIs first: it finds DOIs for free. Searching lines without a DOI in OpenAlex costs $0.001 each (switch that on below).";
 
 const MODES: Record<GapsMode, string> = { paper: "A paper (DOI or OpenAlex id)", zotero: "A paper from my Zotero library", paste: "A pasted reference list" };
 
@@ -47,6 +54,7 @@ export class GapsPanel {
   private estimate: { input: GapInput; text: string; over: boolean } | null = null;
   private out!: HTMLElement;
   private saveTimer: number | null = null;
+  private refsPanel: RefsPanel | null = null;
 
   constructor(private readonly host: GapsHost, private readonly root: HTMLElement) {
     this.s = host.gapsSession ?? emptyGapsSession();
@@ -59,6 +67,7 @@ export class GapsPanel {
   }
 
   flush(): void {
+    this.refsPanel?.flush();
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = null;
     this.host.saveGapsSession(this.s);
@@ -86,11 +95,15 @@ export class GapsPanel {
     } else if (this.s.mode === "zotero") {
       this.renderZotero(el);
     } else {
-      el.createEl("p", { cls: "setting-item-description", text: `Paste the references of a paper, one per line. A line with a DOI is looked up by it (about $0.0001 for 50). A line without one is searched for (about $0.001 each, at most ${MAX_TITLE_SEARCHES}).` });
-      const area = el.createEl("textarea", { cls: "literature-feed-prompt" });
-      area.rows = 8;
-      area.value = this.s.pasted;
-      area.addEventListener("input", () => { this.s.pasted = area.value; this.estimate = null; this.saveSoon(); });
+      el.createEl("p", { cls: "setting-item-description", text: "Paste the references of a paper as they came out of the PDF. Press the button to split them and find their DOIs for free; then only the ticked ones are looked up in OpenAlex, about $0.0001 for 50." });
+      this.refsPanel = new RefsPanel(
+        this.host, el.createDiv(), normaliseRefsSession(this.s.refs),
+        (s: RefsSession) => { this.s.refs = s as unknown as Record<string, unknown>; this.saveSoon(); },
+        () => { this.estimate = null; },
+      );
+      this.refsPanel.mount();
+      new Setting(el).setName(SEARCH_UNFOUND_NAME).setDesc(`References no DOI was found for are searched in OpenAlex by their text: about $0.001 each, at most ${MAX_TITLE_SEARCHES}. Off by default; most are better looked at by hand.`)
+        .addToggle((t) => t.setValue(this.s.searchUnfound).onChange((v) => { this.s.searchUnfound = v; this.estimate = null; this.saveSoon(); }));
     }
     new Setting(el).setName("Count as a gap when cited by at least").setDesc("This many of the paper's references must cite the work (3 is a good start; 2 finds more, with more noise).")
       .addText((t) => {
@@ -152,12 +165,26 @@ export class GapsPanel {
       }
       return item.doi !== "" ? { kind: "work", doi: item.doi, id: null } : { kind: "title", title: item.title };
     }
-    const r = parseReferenceList(this.s.pasted);
+    const sel = this.refsPanel?.selection();
+    if (sel?.looked) {
+      const lines = this.s.searchUnfound ? sel.unfound.slice(0, MAX_TITLE_SEARCHES) : [];
+      if (sel.dois.length + lines.length === 0) {
+        new Notice("No reference is ticked. Tick the ones to use, or type the identifier of one that was not found.");
+        return null;
+      }
+      return { kind: "references", dois: sel.dois, lines };
+    }
+    // Not looked up yet: DOIs in the text are used; lines without one need the look-up first (it is free), or a paid search.
+    const r = parseReferenceList(this.refsPanel?.currentText() ?? this.s.pasted);
     if (r.dois.length + r.lines.length === 0) {
-      new Notice("Paste some references first, one per line.");
+      new Notice("Paste some references first.");
       return null;
     }
-    return { kind: "references", dois: r.dois, lines: r.lines };
+    if (r.lines.length > 0 && !this.s.searchUnfound) {
+      new Notice(PRESS_TIDY);
+      return null;
+    }
+    return { kind: "references", dois: r.dois, lines: this.s.searchUnfound ? r.lines : [] };
   }
 
   private doEstimate(): void {

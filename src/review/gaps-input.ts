@@ -148,13 +148,17 @@ export interface GapsSession {
   /** Zotero key of the picked item, or null. */
   zoteroPick: string | null;
   pasted: string;
+  /** The reference tidy-up inside the paste mode (its own saved state; read by `normaliseRefsSession`). */
+  refs: Record<string, unknown> | null;
+  /** Also search, in OpenAlex ($0.001 each), the references no DOI was found for. */
+  searchUnfound: boolean;
   minCount: number;
   /** The last run and the input it was made from, with when. */
   last: { input: GapInput; run: import("./gaps-fetch").GapsRun; ranAt: string } | null;
 }
 
 export function emptyGapsSession(): GapsSession {
-  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", minCount: 3, last: null };
+  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, last: null };
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -170,6 +174,8 @@ export function normaliseGapsSession(raw: unknown): GapsSession | null {
   if (typeof raw.zoteroQuery === "string") out.zoteroQuery = raw.zoteroQuery;
   if (typeof raw.zoteroPick === "string") out.zoteroPick = raw.zoteroPick;
   if (typeof raw.pasted === "string") out.pasted = raw.pasted;
+  if (isObj(raw.refs)) out.refs = raw.refs;
+  out.searchUnfound = raw.searchUnfound === true;
   if (typeof raw.minCount === "number" && Number.isFinite(raw.minCount)) out.minCount = Math.min(10, Math.max(2, Math.floor(raw.minCount)));
   const last = raw.last;
   if (isObj(last) && typeof last.ranAt === "string" && isObj(last.input) && isObj(last.run) && Array.isArray(last.run.gaps) && typeof last.input.kind === "string") {

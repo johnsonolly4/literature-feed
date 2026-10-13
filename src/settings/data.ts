@@ -55,6 +55,8 @@ export interface Settings {
   reviewBudgetUsd: number;
   /** Warn before a review that would take this month's OpenAlex spending past this many dollars (0 = no limit). */
   reviewMonthlyLimitUsd: number;
+  /** Optional contact email sent to Crossref with reference look-ups, which puts them in Crossref's faster pool ("" = none sent). */
+  crossrefEmail: string;
 }
 
 /** One feed's part of a scan. */
@@ -94,7 +96,7 @@ export function defaultSettings(): Settings {
   return {
     openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
     lastScan: "", seen: [], lastScanResult: null, createInboxCollections: false, createProjectCollections: false,
-    literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4, autoScan: true, autoSync: false, lastSync: "", reviewBudgetUsd: 0.05, reviewMonthlyLimitUsd: 0,
+    literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4, autoScan: true, autoSync: false, lastSync: "", reviewBudgetUsd: 0.05, reviewMonthlyLimitUsd: 0, crossrefEmail: "",
   };
 }
 
@@ -220,6 +222,7 @@ export function normaliseSettings(raw: unknown): Settings {
   out.lastSync = typeof raw.lastSync === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastSync) ? raw.lastSync : "";
   if (typeof raw.reviewBudgetUsd === "number" && Number.isFinite(raw.reviewBudgetUsd) && raw.reviewBudgetUsd >= 0.005 && raw.reviewBudgetUsd <= 5) out.reviewBudgetUsd = raw.reviewBudgetUsd;
   if (typeof raw.reviewMonthlyLimitUsd === "number" && Number.isFinite(raw.reviewMonthlyLimitUsd) && raw.reviewMonthlyLimitUsd >= 0 && raw.reviewMonthlyLimitUsd <= 100) out.reviewMonthlyLimitUsd = raw.reviewMonthlyLimitUsd;
+  out.crossrefEmail = /^[^\s@]+@[^\s@]+$/.test(text(raw.crossrefEmail)) ? text(raw.crossrefEmail) : "";
   const taken = new Set<string>();
   if (Array.isArray(raw.feeds)) {
     for (const entry of raw.feeds) {

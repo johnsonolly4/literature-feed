@@ -14,6 +14,11 @@ import type { FlagSources } from "./review/flags";
 import { chartBlockProcessor } from "./review/chart-view";
 import { GRAPH_BLOCK, graphFromNote, normaliseGraph, type GraphData } from "./review/graph-data";
 import { GRAPH_VIEW, GraphView, graphBlockProcessor, type GraphHost } from "./review/graph-view";
+import { CrossrefClient } from "./refs/crossref";
+import { TEXT } from "./refs/text";
+import { normaliseRefsSession, type RefsSession } from "./refs/panel";
+import { crossrefRequester } from "./refs/request";
+import { REFS_VIEW, RefsView } from "./refs/view";
 import { GAPS_VIEW, GapsView } from "./review/gaps-view";
 import { normaliseGapsSession, type GapsSession } from "./review/gaps-input";
 import { recordFromNote, type ReviewRecord } from "./review/record";
@@ -61,6 +66,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   reviewCache: ReviewCache = emptyCache();
   /** The literature review in progress (`review-session.json`), so closing the tab does not lose it. */
   session: ReviewSession | null = null;
+  /** The reference tidy-up's last list and results (`refs-session.json`). */
+  refsSession: RefsSession | null = null;
   /** The citation-gaps tool's last input and run (`gaps-session.json`). */
   gapsSession: GapsSession | null = null;
   /** How the review tab starts the next time it is created. */
@@ -84,6 +91,9 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.graph = normaliseGraph(await this.readPluginJson("review-graph.json"));
     this.session = normaliseSession(await this.readPluginJson("review-session.json"));
     this.gapsSession = normaliseGapsSession(await this.readPluginJson("gaps-session.json"));
+    this.refsSession = normaliseRefsSession(await this.readPluginJson("refs-session.json"));
+    this.registerView(REFS_VIEW, (leaf) => new RefsView(leaf, this));
+    this.addCommand({ id: "find-dois", name: TEXT.command, callback: () => void this.openRefs() });
     this.registerView(GAPS_VIEW, (leaf) => new GapsView(leaf, this));
     this.addCommand({ id: "citation-gaps", name: "Citation gaps of one paper", callback: () => void this.openGaps() });
     this.registerView(REVIEW_VIEW, (leaf) => {
@@ -490,6 +500,24 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  /** Opens the reference tidy-up in a tab (the one that is open, if any). */
+  async openRefs(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(REFS_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: REFS_VIEW, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  saveRefsSession(session: RefsSession): void {
+    this.refsSession = session;
+    void this.writePluginJson("refs-session.json", session);
+  }
+
+  /** A Crossref client for looking up references: one request at a time; the contact email only if the user gave one. */
+  newCrossrefClient(): CrossrefClient {
+    return new CrossrefClient({ request: crossrefRequester, sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)), mailto: this.settings.crossrefEmail });
+  }
+
   saveGapsSession(session: GapsSession): void {
     this.gapsSession = session;
     void this.writePluginJson("gaps-session.json", session);
@@ -504,6 +532,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       const names = new Map(this.settings.feeds.map((f) => [f.id, f.name]));
       menu.addItem((item) => item.setTitle(`Resume: ${describeSession(saved, names)}`).setIcon("history").onClick(() => void this.openReview("resume")));
     }
+    menu.addItem((item) => item.setTitle(TEXT.command).setIcon("list-checks").onClick(() => void this.openRefs()));
     menu.addItem((item) => item.setTitle("Citation gaps of one paper").setIcon("search-check").onClick(() => void this.openGaps()));
     if (this.graph) menu.addItem((item) => item.setTitle("Open review graph").setIcon("network").onClick(() => void this.openGraph(this.graph)));
     menu.showAtMouseEvent(evt);

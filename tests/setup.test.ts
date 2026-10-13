@@ -83,13 +83,30 @@ const ctx = { inboxFolder: "Reading" };
 const LINK = (id: string): string => `[Reading inbox](obsidian://literature-feed-inbox?tile=${id})`;
 
 describe("planIntegration and removeIntegration", () => {
-  it("adds the Home tile at the end of the note as a reading-inbox callout with a title link, once, and no marker comments", () => {
+  it("adds the Home tile as the last tile of the columns callout, a reading-inbox callout with a title link, once, and no marker comments", () => {
     const plan = planIntegration("home-tile", HOME, ctx);
     expect(plan.state).toBe("addable");
-    expect(plan.next).toBe(`${HOME.trimEnd()}\n\n> [!reading-inbox] ${LINK("home-tile")}\n> \`\`\`literature-feed\n> show: home\n> limit: 3\n> \`\`\`\n`);
+    expect(plan.next).toBe(`${HOME.trimEnd()}\n>\n> > [!reading-inbox] ${LINK("home-tile")}\n> > \`\`\`literature-feed\n> > show: home\n> > limit: 3\n> > \`\`\`\n`);
     expect(plan.next).not.toContain("%%");
-    expect(plan.anchor).toBe("after: > > [!planning] This week");
+    expect(plan.anchor).toBe("after the last tile in the columns: > > [!planning] This week");
     expect(planIntegration("home-tile", plan.next ?? "", ctx).state).toBe("already-added");
+  });
+
+  it("adds the Home tile at the end of the note when there are no columns", () => {
+    const plain = "---\ncssclasses:\n  - home\n---\n\n# Home\n\nSome text.\n";
+    const plan = planIntegration("home-tile", plain, ctx);
+    expect(plan.next).toBe(`${plain.trimEnd()}\n\n> [!reading-inbox] ${LINK("home-tile")}\n> \`\`\`literature-feed\n> show: home\n> limit: 3\n> \`\`\`\n`);
+    expect(plan.anchor).toBe("after: Some text.");
+    expect(removeIntegration("home-tile", plan.next ?? "")).toBe(plain);
+  });
+
+  it("keeps the columns' other tiles when a tile in the columns is removed, even ones added after it", () => {
+    const added = planIntegration("home-tile", HOME, ctx).next ?? "";
+    const withMore = added.replace("> > limit: 3\n> > ```\n", "> > limit: 3\n> > ```\n>\n> > [!question] Next meetings\n");
+    const removed = removeIntegration("home-tile", withMore);
+    expect(removed).toContain("> > [!question] Next meetings");
+    expect(removed).not.toContain("reading-inbox");
+    expect(removed).toContain("> > [!planning] This week");
   });
 
   it("puts the Literature tile, the same callout, before the first columns callout", () => {

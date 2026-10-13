@@ -18,9 +18,9 @@ export interface IntegrationInfo {
 
 export const INTEGRATIONS: IntegrationInfo[] = [
   {
-    id: "home-tile", noteName: "00 Home", where: "at the end of the note",
+    id: "home-tile", noteName: "00 Home", where: "as the last tile of the columns",
     label: "Reading inbox tile on the Home note",
-    description: "A Reading inbox tile (book icon, a title that opens the newest weekly note, papers to read with the first three titles, Scan now and Sync buttons) at the end of the Home note.",
+    description: "A Reading inbox tile (book icon, a title that opens the newest weekly note, papers to read with the first three titles, Scan now and Sync buttons) as the last tile of the Home note's columns, or at the end of the note when it has no columns.",
   },
   {
     id: "literature-tile", noteName: "Literature", where: "before the first columns callout",
@@ -38,7 +38,6 @@ export const INTEGRATIONS: IntegrationInfo[] = [
 export const BY_HAND = [
   "Changing Lab Kit's Dataview queries (for example hiding the feed/ and found-by/ tags in Papers by Zotero tag).",
   "Adding a toggle to the weekly review checklist (it needs a property in that note as well).",
-  "Moving the tile inside one of the Home note's columns.",
 ];
 
 export interface IntegrationContext {
@@ -115,7 +114,18 @@ export function planIntegration(id: IntegrationId, text: string | null, ctx: Int
     const next = [...lines.slice(0, at), ...added, "", ...lines.slice(at)].join("\n");
     return { id, state: "addable", next: next.replace(/\n/g, eol), added, anchor: `before: ${lines[at]}` };
   }
-  // The others go at the end, after one empty line.
+  if (id === "home-tile") {
+    // Inside the Home note's columns callout, as its last tile: after the callout's last quoted line, a separator, then the tile one level deeper.
+    const columns = lines.findIndex((l) => /^>\s*\[!columns\]/.test(l));
+    if (columns !== -1) {
+      let end = columns + 1;
+      while (end < lines.length && lines[end].startsWith(">")) end++;
+      const nested = added.map((l) => `> ${l}`);
+      const next = [...lines.slice(0, end), ">", ...nested, ...lines.slice(end)].join("\n");
+      return { id, state: "addable", next: next.replace(/\n/g, eol), added: nested, anchor: `after the last tile in the columns: ${lines[end - 1]}` };
+    }
+  }
+  // Otherwise at the end, after one empty line.
   const body = [...lines];
   while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
   const last = body.length > 0 ? body[body.length - 1] : "";
@@ -132,13 +142,21 @@ export function removeIntegration(id: IntegrationId, text: string): string {
   const from = startOf(lines, id);
   if (from === -1) return text;
   let to = from + 1; // exclusive end of the block
+  // A tile is its title line and the lines after it that are quoted at least as deep (inside the columns callout that stops at its separator).
+  const depth = (lines[from].match(/^(?:>\s?)+/)?.[0] ?? ">").trimEnd();
+  const nested = id !== "vault-spec" && depth.length > 1;
   if (id === "vault-spec") {
     while (to < lines.length && !/^#{1,6}\s/.test(lines[to])) to++;
     while (to > from + 1 && lines[to - 1].trim() === "") to--; // keep the empty lines that belong to what follows
   } else {
-    while (to < lines.length && lines[to].startsWith(">")) to++;
+    while (to < lines.length && lines[to].startsWith(depth)) to++;
   }
   const out = [...lines.slice(0, from), ...lines.slice(to)];
+  if (nested) {
+    // The separator that came with the tile goes too.
+    if (out[from - 1]?.trim() === ">") out.splice(from - 1, 1);
+    return out.join("\n").replace(/\n/g, eol);
+  }
   // Drop one blank line left behind: before the block when it ended the note, after it otherwise.
   if (from > 0 && out[from - 1]?.trim() === "" && (from >= out.length || out[from]?.trim() === "")) out.splice(from - 1, 1);
   else if (out[from]?.trim() === "" && from > 0) out.splice(from, 1);

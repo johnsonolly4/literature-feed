@@ -2,7 +2,7 @@
 
 An Obsidian plugin that finds new papers on your topics each week, lists them in a reading-inbox note, and sends the ones you tick to Zotero.
 
-> **Status: under development.** So far (Phase 5 of [the plan](docs/plans/literature-feed.md)) the plugin has a settings tab with feeds, a **Test** search, a **Scan now** command that writes the weekly reading-inbox note, and a **Sync ticked papers** command that sends the ticked papers to Zotero; the weekly schedule is not built yet. Everything below describes what it is being built to do, and it is not in the Obsidian community plugin store.
+> **Status: under development.** So far (Phase 6 of [the plan](docs/plans/literature-feed.md)) the plugin has a settings tab with feeds, a **Test** search, a **Scan now** command that writes the weekly reading-inbox note, and a **Sync ticked papers** command that sends the ticked papers to Zotero; the weekly schedule is not built yet. A paper with a literature note shows **Read**, and finished inbox notes move to an archive folder. Everything below describes what it is being built to do, and it is not in the Obsidian community plugin store.
 
 ## What it does
 
@@ -22,6 +22,8 @@ Run the command **Scan now** (command palette). It searches OpenAlex for every f
 - The status block and card also say what the latest scan found, for example "Last scan 2026-10-12: 3 new (0 priority, 2 strong, 1 possible, 0 without abstract), 11 dropped by the feed rules."
 - With more than one feed switched on, the block and card add one row per feed: what is waiting for that feed and what the latest scan found for it (new and dropped, or failed).
 - A paper judged on its title alone because no abstract came back carries "title only".
+- **Read:** when a literature note for a paper exists in your literature notes folder (a setting; for example the folder ZotLit writes to), the paper's line gets a `Read` link to it. The match does not depend on property names: a frontmatter value that holds the paper's DOI, or its Zotero item key (alone in a property whose name mentions "key" or "Zotero", or inside a `zotero://` link), counts. It runs after **Scan now** and **Sync**, and with the command **Update read state and archive**.
+- **Archive:** a weekly note is moved to the archive folder (a setting, empty by default; nothing moves until you set it) when every paper in it is in Zotero, read, or dismissed. A paper is dismissed when it is unticked and its note's week ended at least N weeks ago (default 4, a setting). A ticked paper not yet in Zotero, a younger unticked paper, or a paper unticked in the "In Zotero" list to be sent again keeps the note open. The switch "Archive finished inbox notes" turns this off.
 - Ticking a box changes only that line; scanning again keeps your ticks.
 - The block `` ```literature-feed `` with the line `show: home` gives a small card (papers waiting, last scan, buttons) for another note, such as a home page. Put it inside a callout (for example a column of a Home note) and it drops its own box and title. It counts the unticked papers of the latest inbox note, each paper once even if two feeds found it; older weeks are not counted.
 - Titles and names come from OpenAlex and are written as plain text with markdown characters escaped; links are rebuilt from the DOI.

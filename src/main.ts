@@ -2,7 +2,8 @@ import { MarkdownView, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
-import { NOTE_NAME_PATTERN, markSynced, mergeIntoNote, renderNote, tidySynced } from "./inbox/write";
+import { buildLiteratureIndex, findLiteratureNote, isFinished, type LiteratureNote } from "./inbox/state";
+import { NOTE_NAME_PATTERN, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, tidySynced } from "./inbox/write";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
@@ -27,6 +28,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
     this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
+    this.addCommand({ id: "update-read-archive", name: "Update read state and archive", callback: () => void this.refreshAndReport() });
     this.addCommand({ id: "show-zotero-collections", name: "Show Zotero collections", callback: () => void this.showCollections() });
     // The weekly schedule, the ribbon icon and the Zotero sync come in later phases (see docs/plans/literature-feed.md).
   }
@@ -93,7 +95,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       await this.saveSettings();
       for (const redraw of this.scanListeners) redraw();
       new Notice(describeOutcome(outcome), outcome.failures.length > 0 ? 10_000 : 6_000);
-      if (path) await this.app.workspace.openLinkText(path, "", "tab");
+      await this.refreshAndReport();
+      if (path && this.app.vault.getFileByPath(path)) await this.app.workspace.openLinkText(path, "", "tab");
     } catch (e) {
       new Notice(`The scan failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
     } finally {
@@ -141,12 +144,80 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         if (marks.length > 0) await this.app.vault.process(note.file, (current) => markSynced(current, marks));
       }
       new Notice(describeSync(result), result.failed.length > 0 || result.blocked.length > 0 ? 15_000 : 8_000);
+      await this.refreshAndReport();
       for (const redraw of this.scanListeners) redraw();
     } catch (e) {
       new Notice(`The sync failed: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
     } finally {
       this.syncing = false;
     }
+  }
+
+  /** Marks papers that have a literature note as read and archives finished notes; says so when it changed something. */
+  async refreshAndReport(): Promise<void> {
+    try {
+      await this.saveOpenInboxNotes();
+      const { read, archived } = await this.refreshInbox();
+      const parts = [
+        read > 0 ? `${read} paper${read === 1 ? "" : "s"} marked read` : "",
+        archived > 0 ? `${archived} note${archived === 1 ? "" : "s"} archived` : "",
+      ].filter((p) => p !== "");
+      if (parts.length > 0) new Notice(`${parts.join(", ")}.`);
+    } catch (e) {
+      new Notice(`Could not update the read state: ${e instanceof Error ? e.message : "unknown error"}`, 10_000);
+    }
+  }
+
+  /** The literature folder's notes with their frontmatter (from Obsidian's cache). */
+  private literatureNotes(): LiteratureNote[] {
+    const folder = this.settings.literatureFolder === "" ? null : this.app.vault.getFolderByPath(this.settings.literatureFolder);
+    const out: LiteratureNote[] = [];
+    const walk = (f: { children: unknown[] }): void => {
+      for (const child of f.children) {
+        if (child instanceof TFile) {
+          if (child.extension === "md") out.push({ path: child.path, frontmatter: this.app.metadataCache.getFileCache(child)?.frontmatter });
+        } else if (typeof child === "object" && child !== null && "children" in child) {
+          walk(child as { children: unknown[] });
+        }
+      }
+    };
+    if (folder) walk(folder);
+    return out;
+  }
+
+  /** For each inbox note: Read links for papers with a literature note, then the move to the archive if it is finished. */
+  async refreshInbox(): Promise<{ read: number; archived: number }> {
+    const { vault } = this.app;
+    const index = buildLiteratureIndex(this.literatureNotes());
+    const today = localDay(new Date());
+    let read = 0;
+    let archived = 0;
+    for (const note of await this.readInboxNotes()) {
+      let text = note.text;
+      if (this.settings.literatureFolder !== "") {
+        const marks: { feedId: string; openalexId: string; link: string }[] = [];
+        for (const p of parseInbox(text).papers) {
+          const link = findLiteratureNote(index, p.doi, p.key);
+          if (link !== null) marks.push({ feedId: p.feedId, openalexId: p.openalexId, link });
+        }
+        const next = markRead(text, marks);
+        if (next !== text) {
+          read += parseInbox(next).papers.filter((p) => p.read).length - parseInbox(text).papers.filter((p) => p.read).length;
+          await vault.process(note.file, (current) => markRead(current, marks));
+          text = next;
+        }
+      }
+      const folder = this.settings.archiveFolder;
+      if (this.settings.archiveFinished && folder !== "" && isFinished(parseInbox(text).papers, note.file.name, today, this.settings.dismissAfterWeeks)) {
+        if (!vault.getFolderByPath(folder)) await vault.createFolder(folder);
+        const base = note.file.name.replace(/\.md$/i, "");
+        let path = normalizePath(`${folder}/${base}.md`);
+        for (let n = 2; vault.getAbstractFileByPath(path); n++) path = normalizePath(`${folder}/${base} ${n}.md`);
+        await this.app.fileManager.renameFile(note.file, path);
+        archived++;
+      }
+    }
+    return { read, archived };
   }
 
   /** Lists the collections Zotero's server reports (a diagnostic: compare it with what Zotero shows). */

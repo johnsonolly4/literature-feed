@@ -53,6 +53,27 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       },
       {
         type: "group",
+        heading: "Read state and archive",
+        items: [
+          {
+            name: "Literature notes folder",
+            desc: "Where your literature notes are (for example the folder ZotLit writes to). A paper with a note there, found by its DOI or Zotero key, gets a Read link. Empty: no read state.",
+            control: { type: "folder", key: "literatureFolder", includeRoot: true },
+          },
+          {
+            name: "Archive finished inbox notes",
+            desc: "Move a weekly note to the archive folder once every paper in it is in Zotero, read, or dismissed. Needs the archive folder above.",
+            control: { type: "toggle", key: "archiveFinished" },
+          },
+          {
+            name: "Dismiss unticked papers after (weeks)",
+            desc: "An unticked paper counts as dismissed once its note's week ended this many weeks ago.",
+            control: { type: "number", key: "dismissAfterWeeks", min: 1, max: 52, step: 1 },
+          },
+        ],
+      },
+      {
+        type: "group",
         heading: "Zotero",
         items: [
           {
@@ -93,6 +114,9 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       case "scanDay": return String(s.scanDay);
       case "createInboxCollections": return s.createInboxCollections;
       case "createProjectCollections": return s.createProjectCollections;
+      case "literatureFolder": return s.literatureFolder;
+      case "archiveFinished": return s.archiveFinished;
+      case "dismissAfterWeeks": return s.dismissAfterWeeks;
       default: return undefined;
     }
   }
@@ -111,6 +135,13 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
       }
       case "createInboxCollections": s.createInboxCollections = value === true; break;
       case "createProjectCollections": s.createProjectCollections = value === true; break;
+      case "literatureFolder": s.literatureFolder = normaliseFolder(text === "" ? "" : normalizePath(text)); break;
+      case "archiveFinished": s.archiveFinished = value === true; break;
+      case "dismissAfterWeeks": {
+        const weeks = Number(value);
+        if (Number.isInteger(weeks) && weeks >= 1 && weeks <= 52) s.dismissAfterWeeks = weeks;
+        break;
+      }
       default: return;
     }
     await this.host.saveSettings();

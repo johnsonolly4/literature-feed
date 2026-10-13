@@ -3,7 +3,7 @@ import type { Candidate } from "../src/openalex/client";
 import type { FeedConfig } from "../src/settings/data";
 import {
   buildNote, buildPapers, doiUrl, escapeMd, isoWeek, mergeIntoNote, noteName, parseInbox, renderNote, shortOpenAlexId, weekLabel,
-  NOTE_NAME_PATTERN, markSynced, tidySynced, waitingByFeed, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
+  NOTE_NAME_PATTERN, markRead, markSynced, tidySynced, waitingByFeed, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
 } from "../src/inbox/write";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
 import { priorityFlow, strongComonomer, possible, droppedNoLipoic, withSentence } from "./fixtures/lipoic-papers";
@@ -181,15 +181,15 @@ describe("parseInbox", () => {
     expect(parseInbox(text)).toEqual({
       scanned: "2026-10-12",
       papers: [
-        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null },
-        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null },
+        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false },
+        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false },
       ],
     });
   });
 
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
-    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null }]);
+    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false }]);
   });
 });
 
@@ -289,6 +289,56 @@ describe("markSynced", () => {
     const note = renderNote(input([{ feedId: "a", feedName: "Lipoic [acid] · copolymers", papers: [paper(1, "strong"), paper(2, "possible")] }]));
     const out = markSynced(note, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
     expect(out).toContain("> [!literature-feed]- Lipoic \\[acid\\] · copolymers · 1 paper %%feed:a%%");
+  });
+});
+
+describe("markRead", () => {
+  const nl = String.fromCharCode(10);
+  const base = renderNote(input([
+    { feedId: "a", feedName: "A", papers: [paper(1, "strong"), paper(2, "possible")] },
+    { feedId: "b", feedName: "B", papers: [paper(1, "possible")] },
+  ]));
+
+  it("adds a Read link to the named paper in the named feed, and changes nothing else", () => {
+    const out = markRead(base, [{ feedId: "a", openalexId: "W1", link: "Lit/Smith 2026.md" }]);
+    const before = base.split(nl);
+    const after = out.split(nl);
+    expect(after).toHaveLength(before.length);
+    const changed = after.filter((l, i) => l !== before[i]);
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toContain(" · [[Lit/Smith 2026|Read]] %%oa:W1:s%%");
+    const p = parseInbox(out).papers.find((x) => x.feedId === "a" && x.openalexId === "W1");
+    expect(p).toMatchObject({ read: true, ticked: false, list: "ranked" });
+    expect(parseInbox(out).papers.filter((x) => x.read)).toHaveLength(1);
+  });
+
+  it("points an existing Read link at a different note, once, and does nothing when it is the same", () => {
+    const once = markRead(base, [{ feedId: "a", openalexId: "W1", link: "Lit/old" }]);
+    const moved = markRead(once, [{ feedId: "a", openalexId: "W1", link: "Lit/new.md" }]);
+    expect(moved).toContain("[[Lit/new|Read]]");
+    expect(moved).not.toContain("Lit/old");
+    expect(moved.match(/\|Read\]\]/g)).toHaveLength(1);
+    expect(markRead(moved, [{ feedId: "a", openalexId: "W1", link: "Lit/new" }])).toBe(moved);
+  });
+
+  it("works together with the Zotero link and keeps the paper's list and tick", () => {
+    const synced = markSynced(base, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
+    const out = markRead(synced, [{ feedId: "a", openalexId: "W1", link: "Lit/x" }]);
+    const p = parseInbox(out).papers.find((x) => x.feedId === "a" && x.openalexId === "W1");
+    expect(p).toMatchObject({ read: true, synced: true, list: "synced", ticked: true, key: "ABCD2345" });
+  });
+
+  it("ignores a path that could break the link, papers that are not there, and an empty list", () => {
+    for (const bad of ["a]b", "a|b", "a#b", "a^b", "a" + nl + "b", "", ".md"]) {
+      expect(markRead(base, [{ feedId: "a", openalexId: "W1", link: bad }]), JSON.stringify(bad)).toBe(base);
+    }
+    expect(markRead(base, [{ feedId: "a", openalexId: "W99", link: "Lit/x" }])).toBe(base);
+    expect(markRead(base, [])).toBe(base);
+  });
+
+  it("is read back with the DOI of the line", () => {
+    const doi = parseInbox(base).papers.find((p) => p.openalexId === "W2")?.doi;
+    expect(doi).toBe("10.1000/p.2");
   });
 });
 

@@ -27,6 +27,7 @@ describe("normaliseSettings", () => {
   it("defaults hold no secrets, no paths and no feeds", () => {
     expect(defaultSettings()).toEqual({
       openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [], lastScan: "", seen: [], lastScanResult: null, createInboxCollections: false, createProjectCollections: false,
+      literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4,
     });
   });
 
@@ -68,6 +69,14 @@ describe("normaliseSettings", () => {
     }
     const saved = normaliseSettings({ createProjectCollections: true });
     expect(normaliseSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
+  });
+
+  it("reads the read-state and archive settings, with safe fallbacks", () => {
+    expect(normaliseSettings({ literatureFolder: " Lit/ZotLit ", archiveFinished: false, dismissAfterWeeks: 8 }))
+      .toMatchObject({ literatureFolder: "Lit/ZotLit", archiveFinished: false, dismissAfterWeeks: 8 });
+    for (const bad of [0, 53, 2.5, "4", null, -1]) expect(normaliseSettings({ dismissAfterWeeks: bad }).dismissAfterWeeks, String(bad)).toBe(4);
+    for (const odd of ["no", 0, null]) expect(normaliseSettings({ archiveFinished: odd }).archiveFinished, String(odd)).toBe(true);
+    expect(normaliseSettings({ literatureFolder: "/" }).literatureFolder).toBe("");
   });
 
   it("stores the vault root as an empty folder", () => {

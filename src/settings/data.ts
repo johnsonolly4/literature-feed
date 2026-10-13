@@ -39,6 +39,12 @@ export interface Settings {
   createInboxCollections: boolean;
   /** Sync may create a missing project collection (the last name of the feed's "Project" path). Off = create it in Zotero yourself. */
   createProjectCollections: boolean;
+  /** Folder of the literature notes (ZotLit's): a paper with a note there shows "Read". "" = read state off. */
+  literatureFolder: string;
+  /** Move a finished weekly inbox note to the archive folder (needs the archive folder to be set). */
+  archiveFinished: boolean;
+  /** An unticked paper counts as dismissed once its note's week ended this many weeks ago. 1 to 52. */
+  dismissAfterWeeks: number;
 }
 
 /** One feed's part of a scan. */
@@ -78,6 +84,7 @@ export function defaultSettings(): Settings {
   return {
     openAlexKeySecret: "", zoteroKeySecret: "", zoteroUserId: "", inboxFolder: "", archiveFolder: "", scanDay: 1, feeds: [],
     lastScan: "", seen: [], lastScanResult: null, createInboxCollections: false, createProjectCollections: false,
+    literatureFolder: "", archiveFinished: true, dismissAfterWeeks: 4,
   };
 }
 
@@ -194,6 +201,10 @@ export function normaliseSettings(raw: unknown): Settings {
   out.lastScanResult = normaliseScanCounts(raw.lastScanResult);
   out.createInboxCollections = raw.createInboxCollections === true;
   out.createProjectCollections = raw.createProjectCollections === true;
+  out.literatureFolder = normaliseFolder(text(raw.literatureFolder));
+  out.archiveFinished = raw.archiveFinished !== false;
+  const weeks = raw.dismissAfterWeeks;
+  if (typeof weeks === "number" && Number.isInteger(weeks) && weeks >= 1 && weeks <= 52) out.dismissAfterWeeks = weeks;
   const taken = new Set<string>();
   if (Array.isArray(raw.feeds)) {
     for (const entry of raw.feeds) {

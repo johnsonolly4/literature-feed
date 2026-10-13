@@ -223,6 +223,10 @@ export interface ParsedPaper {
   list: NoteList;
   /** The Zotero item key from the link, or null. */
   key: string | null;
+  /** The DOI from the line's DOI link (lower case, bare), or null. */
+  doi: string | null;
+  /** The line carries a "Read" link to a literature note. */
+  read: boolean;
 }
 
 export type NoteList = "ranked" | "unchecked" | "synced";
@@ -236,8 +240,21 @@ export interface ParsedNote {
 const ZOTERO_LINK = "](zotero://select/library/items/";
 const HEADER = /^>\s*\[!literature-feed(?:-unchecked|-synced)?\][+-]?\s.*%%feed:([a-z0-9-]+)(?::(unchecked|synced))?%%\s*$/;
 const ZOTERO_KEY = /zotero:\/\/select\/library\/items\/([A-Z0-9]{8})/;
+const DOI_LINK = /\]\(https:\/\/doi\.org\/(10\.[^)\s]+)\)/;
+const READ_LINK = /\[\[[^\]|]+\|Read\]\]/;
 const PAPER = /^>\s*-\s\[( |x|X)\]\s.*%%oa:(W\d+):([psou])%%\s*$/;
 const CODE_TO_TIER = Object.fromEntries(Object.entries(TIER_CODE).map(([tier, code]) => [code, tier])) as Record<string, ListedTier>;
+
+/** The DOI in a line's DOI link, decoded, bare and lower case; null when there is none. */
+function doiOfLine(line: string): string | null {
+  const raw = DOI_LINK.exec(line)?.[1];
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw).toLowerCase();
+  } catch {
+    return raw.toLowerCase();
+  }
+}
 
 /** The papers of a note with their tick state and feed, and the scan date. Lines that do not look like ours are ignored. */
 export function parseInbox(text: string): ParsedNote {
@@ -265,6 +282,7 @@ export function parseInbox(text: string): ParsedNote {
       papers.push({
         openalexId: paper[2], feedId, tier: CODE_TO_TIER[paper[3]], ticked: paper[1] !== " ",
         synced: line.includes(ZOTERO_LINK), list, key: ZOTERO_KEY.exec(line)?.[1] ?? null,
+        doi: doiOfLine(line), read: READ_LINK.test(line),
       });
     }
   });
@@ -453,4 +471,39 @@ export function tidySynced(text: string): string {
     .filter((p) => p.synced && p.ticked && p.list !== "synced" && p.key !== null)
     .map((p) => ({ feedId: p.feedId, openalexId: p.openalexId, key: p.key as string }));
   return markSynced(text, marks);
+}
+
+export interface ReadMark {
+  feedId: string;
+  openalexId: string;
+  /** Path of the literature note, with or without ".md". */
+  link: string;
+}
+
+/**
+ * Adds ` · [[<path>|Read]]` before the hidden marker of each paper named (in that feed's callouts), or points an existing
+ * Read link at the new note. Changes nothing else: not the tick, not the list. A path that could break a link ("]", "|", a
+ * line break, "#", "^") is ignored.
+ */
+export function markRead(text: string, marks: readonly ReadMark[]): string {
+  const wanted = new Map(
+    marks
+      .map((m) => [`${m.feedId}|${m.openalexId}`, m.link.replace(/\.md$/i, "")] as const)
+      .filter(([, link]) => link !== "" && !/[\]|[#^\n\r]/.test(link)),
+  );
+  if (wanted.size === 0) return text;
+  let feedId = "";
+  return text.split("\n").map((line) => {
+    const header = HEADER.exec(line);
+    if (header) {
+      feedId = header[1];
+      return line;
+    }
+    const paper = PAPER.exec(line);
+    const link = paper ? wanted.get(`${feedId}|${paper[2]}`) : undefined;
+    if (!paper || link === undefined) return line;
+    const read = `[[${link}|Read]]`;
+    if (READ_LINK.test(line)) return line.replace(READ_LINK, read);
+    return line.replace(/ (%%oa:W\d+:[psou]%%)(\s*)$/, ` · ${read} $1$2`);
+  }).join("\n");
 }

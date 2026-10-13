@@ -27,6 +27,7 @@ export class Plugin extends Component {
   register(_cleanup: () => void): void { /* ignored */ }
   registerInterval(_id: number): number { return 0; }
   registerObsidianProtocolHandler(_action: string, _handler: unknown): void { /* ignored */ }
+  registerView(_type: string, _creator: unknown): void { /* ignored */ }
   registerMarkdownCodeBlockProcessor(_language: string, _handler: unknown): void { /* ignored */ }
 }
 
@@ -37,6 +38,11 @@ export class MarkdownRenderChild extends Component {
 export class TFile {}
 
 export class MarkdownView {}
+
+export class ItemView extends Component {
+  contentEl: unknown = {};
+  constructor(readonly leaf: unknown) { super(); }
+}
 
 export class PluginSettingTab {
   constructor(readonly app: unknown, readonly plugin: unknown) { /* nothing */ }

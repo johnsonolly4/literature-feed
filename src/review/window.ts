@@ -14,6 +14,7 @@ import { chartBlock, chartSpecs } from "./chart";
 import { drawChart } from "./chart-view";
 import { planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewPlan, type ReviewResult } from "./collect";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
+import { buildGraphData, type GraphData } from "./graph-data";
 import { buildNetwork, chartData, type Network } from "./network";
 import { MAX_GAP_REFERENCES, estimateGapRequests, estimateNetworkRequests, fetchCitationGaps, fetchNetworkExtras, type GapResult, type NetworkClient, type NetworkExtras } from "./network-fetch";
 import { buildExtraRows, networkMarkdown, networkText, type ExtraRow } from "./network-text";
@@ -33,6 +34,8 @@ export interface ReviewHost {
   flagSources(): FlagSources;
   /** The folder review notes go in ("" = the vault root). */
   reviewFolder(): string;
+  /** Opens the review graph (a tab) with this data. */
+  openGraph(data: GraphData): Promise<void>;
   /** Makes a file (adding a number to the name when it exists), opens it when asked, and returns its path. */
   createReviewNote(path: string, text: string, open?: boolean): Promise<string>;
 }
@@ -385,7 +388,11 @@ export class ReviewModal extends Modal {
         }
       }
     }
-    new Setting(this.out).setName("Network as a canvas").setDesc("A canvas file with a card per paper by year, and the citations between them.").addButton((b) => b.setButtonText("Save canvas").onClick(() => void this.saveCanvas()));
+    new Setting(this.out)
+      .setName("Show the network")
+      .setDesc("The graph opens in a tab (pan, zoom, click a paper). The canvas is a file with a card per paper by year, and the citations between them.")
+      .addButton((b) => b.setButtonText("Open graph").setCta().onClick(() => void this.openGraph()))
+      .addButton((b) => b.setButtonText("Save canvas").onClick(() => void this.saveCanvas()));
   }
 
   private async findMissing(requests: number): Promise<void> {
@@ -474,13 +481,25 @@ export class ReviewModal extends Modal {
     this.renderResult();
   }
 
+  private citationLinks(): { missingCiters: Map<string, readonly string[]>; citingCites: Map<string, readonly string[]> } {
+    const missingCiters = new Map((this.extras?.missing ?? []).flatMap((m) => { const id = shortOpenAlexId(m.paper.openalexId); return id ? [[id, m.citers] as const] : []; }));
+    const citingCites = new Map((this.extras?.alsoCite ?? []).flatMap((a) => { const id = shortOpenAlexId(a.paper.openalexId); return id ? [[id, a.cites] as const] : []; }));
+    return { missingCiters, citingCites };
+  }
+
+  private async openGraph(): Promise<void> {
+    const result = this.result;
+    const net = this.network;
+    if (!result || !net) return;
+    const levels = new Map((this.checked && this.checked.ok ? this.checked.value.priorities : []).map((p) => [p.paper, p.level] as const));
+    await this.host.openGraph(buildGraphData(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, this.citationLinks(), levels));
+  }
+
   private async saveCanvas(): Promise<void> {
     const result = this.result;
     const net = this.network;
     if (!result || !net) return;
-    const missingCiters = new Map((this.extras?.missing ?? []).flatMap((m) => { const id = shortOpenAlexId(m.paper.openalexId); return id ? [[id, m.citers] as const] : []; }));
-    const citingCites = new Map((this.extras?.alsoCite ?? []).flatMap((a) => { const id = shortOpenAlexId(a.paper.openalexId); return id ? [[id, a.cites] as const] : []; }));
-    const file = buildCanvas(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, { missingCiters, citingCites });
+    const file = buildCanvas(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, this.citationLinks());
     const folder = this.host.reviewFolder();
     const path = await this.host.createReviewNote(`${folder === "" ? "" : `${folder}/`}Literature review network ${today()}.canvas`, JSON.stringify(file), false);
     new Notice(`Canvas saved: ${path}`);

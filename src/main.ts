@@ -12,6 +12,8 @@ import { addSpend, emptyTally, monthOf, normaliseTally, type SpendTally } from "
 import { emptyCache, normaliseCache, type ReviewCache } from "./review/cache";
 import type { FlagSources } from "./review/flags";
 import { chartBlockProcessor } from "./review/chart-view";
+import { normaliseGraph, type GraphData } from "./review/graph-data";
+import { GRAPH_VIEW, GraphView, type GraphHost } from "./review/graph-view";
 import { ReviewModal, type ReviewHost } from "./review/window";
 import { buildLookup, emptyIndex, mergeIndex, normaliseIndex, type ZoteroIndex } from "./zotero/library-index";
 import type { FixAction, SetupSnapshot } from "./setup/checks";
@@ -38,7 +40,7 @@ const START_DELAY_MS = 15_000;
 /** While Obsidian stays open the schedule is checked this often. */
 const CHECK_EVERY_MS = 60 * 60 * 1000;
 
-export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost, ReviewHost {
+export default class LiteratureFeedPlugin extends Plugin implements SettingsHost, PromptHost, SetupHost, ReviewHost, GraphHost {
   settings: Settings = defaultSettings();
   private tab: LiteratureFeedSettingTab | null = null;
   private scanning = false;
@@ -52,6 +54,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   private spendTimer: number | null = null;
   /** What the last literature reviews fetched, kept 24 hours (`review-cache.json`). */
   reviewCache: ReviewCache = emptyCache();
+  /** The graph of the last literature review (`review-graph.json`). */
+  graph: GraphData | null = null;
   /** The Zotero library as a local, read-only index (`zotero-index.json`). */
   zoteroIndex: ZoteroIndex = emptyIndex();
   /** Earlier LLM suggestions and what the user decided (`decisions.json` in the plugin folder). */
@@ -66,6 +70,9 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.spend = normaliseTally(await this.readPluginJson("openalex-spend.json"));
     this.reviewCache = normaliseCache(await this.readPluginJson("review-cache.json"));
     this.zoteroIndex = normaliseIndex(await this.readPluginJson("zotero-index.json"));
+    this.graph = normaliseGraph(await this.readPluginJson("review-graph.json"));
+    this.registerView(GRAPH_VIEW, (leaf) => new GraphView(leaf, this));
+    this.addCommand({ id: "open-review-graph", name: "Open review graph", callback: () => void this.openGraph(this.graph) });
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
@@ -417,6 +424,21 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   async openReview(): Promise<void> {
     await this.updateLedgerNow();
     new ReviewModal(this).open();
+  }
+
+  /** Shows the review graph in a tab (the given one, which is also kept for next time). */
+  async openGraph(data: GraphData | null): Promise<void> {
+    if (data === null) {
+      new Notice("No review graph yet. Make a literature review first.");
+      return;
+    }
+    this.graph = data;
+    await this.writePluginJson("review-graph.json", data);
+    const existing = this.app.workspace.getLeavesOfType(GRAPH_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: GRAPH_VIEW, active: true });
+    else if (leaf.view instanceof GraphView) leaf.view.render();
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   async saveReviewCache(): Promise<void> {

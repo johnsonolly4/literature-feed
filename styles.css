@@ -664,3 +664,95 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
   fill: var(--text-muted);
   font-size: 11px;
 }
+
+/* The review graph view */
+.literature-feed-graph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.literature-feed-graph-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-4-3);
+}
+
+.literature-feed-graph-svg {
+  width: 100%;
+  height: 65vh;
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+  background: var(--vt-card-bg, var(--background-secondary));
+  touch-action: none;
+  cursor: grab;
+}
+
+.literature-feed-edge {
+  stroke: var(--text-faint);
+  stroke-width: 1;
+  opacity: 0.35;
+}
+
+.literature-feed-edge.is-touching {
+  stroke: rgb(var(--vt-doing, 59, 130, 246));
+  stroke-width: 2;
+  opacity: 0.95;
+}
+
+.literature-feed-node { cursor: pointer; }
+.literature-feed-node.is-dim { opacity: 0.15; }
+.literature-feed-dotnode { stroke: var(--background-primary); stroke-width: 1.5; fill: var(--text-faint); }
+.literature-feed-node.is-selected .literature-feed-dotnode { stroke: var(--text-normal); stroke-width: 2.5; }
+.literature-feed-ring { fill: none; stroke: rgb(var(--vt-done, 16, 185, 129)); stroke-width: 2; }
+.literature-feed-vaultdot { fill: rgb(var(--vt-waiting, 245, 158, 11)); stroke: var(--background-primary); stroke-width: 1; }
+
+.literature-feed-nodelabel {
+  fill: var(--text-muted);
+  font-size: 10px;
+  pointer-events: none;
+  display: none;
+}
+
+.literature-feed-graph-svg.show-labels .literature-feed-nodelabel,
+.literature-feed-graph-svg.is-zoomed .literature-feed-nodelabel,
+.literature-feed-node.is-selected .literature-feed-nodelabel {
+  display: block;
+}
+
+/* Colours by group */
+.mode-group.k-set .literature-feed-dotnode { fill: rgb(var(--vt-doing, 59, 130, 246)); }
+.mode-group.k-missing .literature-feed-dotnode { fill: rgb(var(--vt-waiting, 245, 158, 11)); }
+.mode-group.k-citing .literature-feed-dotnode { fill: rgb(var(--vt-project, 168, 85, 247)); }
+
+/* Colours by group of papers that cite each other (eight, repeating) */
+.mode-cluster.c-0 .literature-feed-dotnode { fill: #3b82f6; }
+.mode-cluster.c-1 .literature-feed-dotnode { fill: #10b981; }
+.mode-cluster.c-2 .literature-feed-dotnode { fill: #f59e0b; }
+.mode-cluster.c-3 .literature-feed-dotnode { fill: #a855f7; }
+.mode-cluster.c-4 .literature-feed-dotnode { fill: #ef4444; }
+.mode-cluster.c-5 .literature-feed-dotnode { fill: #06b6d4; }
+.mode-cluster.c-6 .literature-feed-dotnode { fill: #ec4899; }
+.mode-cluster.c-7 .literature-feed-dotnode { fill: #84cc16; }
+.mode-cluster.c-none .literature-feed-dotnode { fill: var(--text-faint); }
+
+/* Colours by year: light (old) to dark (new) */
+.mode-year.y-0 .literature-feed-dotnode { fill: #dbeafe; }
+.mode-year.y-1 .literature-feed-dotnode { fill: #bfdbfe; }
+.mode-year.y-2 .literature-feed-dotnode { fill: #93c5fd; }
+.mode-year.y-3 .literature-feed-dotnode { fill: #60a5fa; }
+.mode-year.y-4 .literature-feed-dotnode { fill: #3b82f6; }
+.mode-year.y-5 .literature-feed-dotnode { fill: #1d4ed8; }
+.mode-year.y--1 .literature-feed-dotnode { fill: var(--text-faint); }
+
+/* Colours by the LLM's reading level */
+.mode-level.l-must .literature-feed-dotnode { fill: rgb(var(--vt-done, 16, 185, 129)); }
+.mode-level.l-should .literature-feed-dotnode { fill: rgb(var(--vt-doing, 59, 130, 246)); }
+.mode-level.l-skim .literature-feed-dotnode { fill: var(--text-muted); }
+.mode-level.l-skip .literature-feed-dotnode { fill: var(--text-faint); opacity: 0.5; }
+.mode-level.l-none .literature-feed-dotnode { fill: transparent; stroke: var(--text-faint); }
+
+.literature-feed-graph-panel {
+  min-height: 3em;
+}

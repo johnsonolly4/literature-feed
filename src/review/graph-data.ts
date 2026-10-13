@@ -103,3 +103,27 @@ export function normaliseGraph(raw: unknown): GraphData | null {
   });
   return nodes.length === 0 ? null : { nodes, edges, width: r.width, height: r.height };
 }
+
+/** The code block language of a graph in a note. */
+export const GRAPH_BLOCK = "literature-feed-graph";
+
+/** The graph as a code block for a review note (positions rounded to keep it small). */
+export function graphBlock(graph: GraphData): string[] {
+  const small: GraphData = { ...graph, nodes: graph.nodes.map((n) => ({ ...n, x: Math.round(n.x), y: Math.round(n.y) })) };
+  return ["```" + GRAPH_BLOCK, JSON.stringify(small), "```"];
+}
+
+/** A graph from the text of a code block; null when it is not one. */
+export function parseGraphBlock(source: string): GraphData | null {
+  try {
+    return normaliseGraph(JSON.parse(source));
+  } catch {
+    return null;
+  }
+}
+
+/** The first graph block in a note's text, or null. */
+export function graphFromNote(text: string): GraphData | null {
+  const m = new RegExp("```" + GRAPH_BLOCK + "\\s*\\r?\\n([\\s\\S]*?)\\r?\\n```").exec(text);
+  return m ? parseGraphBlock(m[1]) : null;
+}

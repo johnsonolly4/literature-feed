@@ -12,8 +12,8 @@ import { addSpend, emptyTally, monthOf, normaliseTally, type SpendTally } from "
 import { emptyCache, normaliseCache, type ReviewCache } from "./review/cache";
 import type { FlagSources } from "./review/flags";
 import { chartBlockProcessor } from "./review/chart-view";
-import { normaliseGraph, type GraphData } from "./review/graph-data";
-import { GRAPH_VIEW, GraphView, type GraphHost } from "./review/graph-view";
+import { GRAPH_BLOCK, graphFromNote, normaliseGraph, type GraphData } from "./review/graph-data";
+import { GRAPH_VIEW, GraphView, graphBlockProcessor, type GraphHost } from "./review/graph-view";
 import { ReviewModal, type ReviewHost } from "./review/window";
 import { buildLookup, emptyIndex, mergeIndex, normaliseIndex, type ZoteroIndex } from "./zotero/library-index";
 import type { FixAction, SetupSnapshot } from "./setup/checks";
@@ -72,7 +72,18 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.zoteroIndex = normaliseIndex(await this.readPluginJson("zotero-index.json"));
     this.graph = normaliseGraph(await this.readPluginJson("review-graph.json"));
     this.registerView(GRAPH_VIEW, (leaf) => new GraphView(leaf, this));
-    this.addCommand({ id: "open-review-graph", name: "Open review graph", callback: () => void this.openGraph(this.graph) });
+    this.addCommand({ id: "open-review-graph", name: "Open review graph", callback: () => void (this.graph ? this.openGraph(this.graph) : this.openReview()) });
+    this.addRibbonIcon("network", "Open review graph", () => void (this.graph ? this.openGraph(this.graph) : this.openReview()));
+    // In a review note: opens the graph that the note holds (older reviews too).
+    this.addCommand({
+      id: "open-note-graph", name: "Open the graph in this note",
+      editorCheckCallback: (checking, editor) => {
+        const graph = graphFromNote(editor.getValue());
+        if (graph && !checking) void this.openGraph(graph);
+        return graph !== null;
+      },
+    });
+    this.registerMarkdownCodeBlockProcessor(GRAPH_BLOCK, (source, el) => graphBlockProcessor(source, el, (g) => void this.openGraph(g)));
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
     registerInboxBlock(this);

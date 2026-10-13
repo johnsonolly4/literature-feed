@@ -689,6 +689,20 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
   cursor: grab;
 }
 
+.literature-feed-graph-svg.is-inline {
+  height: auto;
+  aspect-ratio: 1000 / 700;
+  cursor: default;
+  touch-action: auto;
+}
+
+.literature-feed-graph-inline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  margin-block: var(--size-4-2);
+}
+
 .literature-feed-edge {
   stroke: var(--text-faint);
   stroke-width: 1;

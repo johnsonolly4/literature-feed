@@ -4,7 +4,7 @@
 // fingers, click a paper for its details. Colours come from CSS classes in styles.css. The layout is worked out beforehand (graph-data.ts).
 import { ItemView, type WorkspaceLeaf, type App } from "obsidian";
 import { doiUrl } from "../inbox/write";
-import type { GraphData, GraphNode } from "./graph-data";
+import { parseGraphBlock, type GraphData, type GraphNode } from "./graph-data";
 
 export const GRAPH_VIEW = "literature-feed-graph";
 
@@ -17,6 +17,57 @@ const LEGEND: Record<ColourMode, string> = {
   year: "Light to dark: older to newer.",
   level: "Green: must read. Blue: should read. Grey: skim. Faint: skip. Outlined: not rated.",
 };
+
+export interface DrawOptions {
+  mode: ColourMode;
+  showExtras: boolean;
+  filter: string;
+  selected: string | null;
+  onSelect?: (n: GraphNode) => void;
+}
+
+/** Draws the edges and papers into `viewport` (emptied first) and returns the papers drawn. Shared by the tab and the note's block. */
+export function drawGraph(viewport: SVGGElement, graph: GraphData, o: DrawOptions): GraphNode[] {
+  viewport.empty();
+  const nodes = graph.nodes.filter((n) => o.showExtras || n.kind === "set");
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const edges = viewport.createSvg("g");
+  for (const e of graph.edges) {
+    const a = byId.get(e.from);
+    const b = byId.get(e.to);
+    if (!a || !b) continue;
+    const touching = o.selected !== null && (e.from === o.selected || e.to === o.selected);
+    edges.createSvg("line", { cls: `literature-feed-edge${touching ? " is-touching" : ""}`, attr: { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y) } });
+  }
+  for (const n of nodes) {
+    const r = 4 + Math.min(14, Math.sqrt(n.citedBy) * 0.5);
+    const dim = o.filter !== "" && !n.title.toLowerCase().includes(o.filter);
+    const g = viewport.createSvg("g", { cls: `literature-feed-node mode-${o.mode} k-${n.kind} c-${n.cluster < 0 ? "none" : n.cluster % 8} y-${n.yearBucket} l-${n.level ?? "none"}${dim ? " is-dim" : ""}${n.id === o.selected ? " is-selected" : ""}` });
+    g.createSvg("title").setText(`${n.label}: ${n.title}${n.year === null ? "" : ` (${n.year})`}`);
+    if (n.zotero) g.createSvg("circle", { cls: "literature-feed-ring", attr: { cx: String(n.x), cy: String(n.y), r: String(r + 3) } });
+    g.createSvg("circle", { cls: "literature-feed-dotnode", attr: { cx: String(n.x), cy: String(n.y), r: String(r) } });
+    if (n.vault) g.createSvg("circle", { cls: "literature-feed-vaultdot", attr: { cx: String(n.x + r * 0.7), cy: String(n.y - r * 0.7), r: "3" } });
+    g.createSvg("text", { cls: "literature-feed-nodelabel", attr: { x: String(n.x), y: String(n.y + r + 11), "text-anchor": "middle" } }).setText(n.label);
+    if (o.onSelect) g.addEventListener("click", (ev) => { ev.stopPropagation(); o.onSelect?.(n); });
+  }
+  return nodes;
+}
+
+/** The code block `literature-feed-graph` in a review note: the graph drawn in place, with a button for the full view. */
+export function graphBlockProcessor(source: string, el: HTMLElement, open: (graph: GraphData) => void): void {
+  const graph = parseGraphBlock(source);
+  if (graph === null) {
+    el.createEl("p", { cls: "literature-feed-warning", text: "This graph block is not valid." });
+    return;
+  }
+  const box = el.createDiv({ cls: "literature-feed-graph-inline" });
+  const svg = box.createSvg("svg", { cls: "literature-feed-graph-svg is-inline", attr: { viewBox: `0 0 ${graph.width} ${graph.height}`, role: "img", "aria-label": "Citation network" } });
+  const nodes = drawGraph(svg.createSvg("g"), graph, { mode: "group", showExtras: true, filter: "", selected: null });
+  svg.toggleClass("show-labels", nodes.length <= 30);
+  box.createDiv({ cls: "literature-feed-meta", text: LEGEND.group });
+  const buttons = box.createDiv({ cls: "literature-feed-buttons" });
+  buttons.createEl("button", { text: "Open full graph", cls: "mod-cta" }).addEventListener("click", () => open(graph));
+}
 
 /** What the view needs from the plugin. */
 export interface GraphHost {
@@ -91,38 +142,13 @@ export class GraphView extends ItemView {
     this.draw();
   }
 
-  private visible(n: GraphNode): boolean {
-    return this.showExtras || n.kind === "set";
-  }
-
   private draw(): void {
     const graph = this.host.graph;
     const viewport = this.viewport;
     if (!graph || !viewport || !this.svg) return;
-    viewport.empty();
-    const nodes = graph.nodes.filter((n) => this.visible(n));
+    const nodes = drawGraph(viewport, graph, { mode: this.mode, showExtras: this.showExtras, filter: this.filter, selected: this.selected, onSelect: (n) => { this.selected = n.id; this.draw(); this.showPanel(n); } });
     const byId = new Map(nodes.map((n) => [n.id, n]));
-    const edges = viewport.createSvg("g");
-    for (const e of graph.edges) {
-      const a = byId.get(e.from);
-      const b = byId.get(e.to);
-      if (!a || !b) continue;
-      const touching = this.selected !== null && (e.from === this.selected || e.to === this.selected);
-      edges.createSvg("line", { cls: `literature-feed-edge${touching ? " is-touching" : ""}`, attr: { x1: String(a.x), y1: String(a.y), x2: String(b.x), y2: String(b.y) } });
-    }
-    const showLabels = nodes.length <= 60;
-    this.svg.toggleClass("show-labels", showLabels);
-    for (const n of nodes) {
-      const r = 4 + Math.min(14, Math.sqrt(n.citedBy) * 0.5);
-      const dim = this.filter !== "" && !n.title.toLowerCase().includes(this.filter);
-      const g = viewport.createSvg("g", { cls: `literature-feed-node mode-${this.mode} k-${n.kind} c-${n.cluster < 0 ? "none" : n.cluster % 8} y-${n.yearBucket} l-${n.level ?? "none"}${dim ? " is-dim" : ""}${n.id === this.selected ? " is-selected" : ""}` });
-      g.createSvg("title").setText(`${n.label}: ${n.title}${n.year === null ? "" : ` (${n.year})`}`);
-      if (n.zotero) g.createSvg("circle", { cls: "literature-feed-ring", attr: { cx: String(n.x), cy: String(n.y), r: String(r + 3) } });
-      g.createSvg("circle", { cls: "literature-feed-dotnode", attr: { cx: String(n.x), cy: String(n.y), r: String(r) } });
-      if (n.vault) g.createSvg("circle", { cls: "literature-feed-vaultdot", attr: { cx: String(n.x + r * 0.7), cy: String(n.y - r * 0.7), r: "3" } });
-      g.createSvg("text", { cls: "literature-feed-nodelabel", attr: { x: String(n.x), y: String(n.y + r + 11), "text-anchor": "middle" } }).setText(n.label);
-      g.addEventListener("click", (ev) => { ev.stopPropagation(); this.selected = n.id; this.draw(); this.showPanel(n); });
-    }
+    this.svg.toggleClass("show-labels", nodes.length <= 60);
     this.applyTransform();
     const current = this.selected ? byId.get(this.selected) : undefined;
     if (current) this.showPanel(current);

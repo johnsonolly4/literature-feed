@@ -1,10 +1,10 @@
 // Phase C of the literature review: the force-directed layout and the graph data the view draws. The view itself is checked by hand.
 import { describe, expect, it } from "vitest";
 import type { ReviewPaper } from "../src/review/collect";
-import { GRAPH_HEIGHT, GRAPH_WIDTH, buildGraphData, normaliseGraph } from "../src/review/graph-data";
+import { GRAPH_HEIGHT, GRAPH_WIDTH, buildGraphData, graphBlock, graphFromNote, normaliseGraph, parseGraphBlock } from "../src/review/graph-data";
 import { forceLayout } from "../src/review/layout";
 import { buildNetwork } from "../src/review/network";
-import { buildExtraRows } from "../src/review/network-text";
+import { buildExtraRows, networkMarkdown } from "../src/review/network-text";
 
 const BOX = { width: 1000, height: 700 };
 
@@ -114,5 +114,39 @@ describe("buildGraphData", () => {
     expect(odd?.nodes).toHaveLength(1);
     expect(odd?.edges).toEqual([{ from: "a", to: "a" }]);
     for (const x of [null, 3, [], {}, { nodes: [], edges: [], width: 1, height: 1 }, { nodes: [{ id: 1 }], edges: [], width: 1, height: 1 }]) expect(normaliseGraph(x)).toBeNull();
+  });
+});
+
+describe("the graph in a review note", () => {
+  const papers = [paper(1, [2], 2019), paper(2, [], 2021)];
+  const net = buildNetwork(papers);
+  const noFlag = { zotero: null, vault: null, listedBefore: [] as string[] };
+  const g = buildGraphData(papers, papers.map(() => noFlag), net, { missing: [], alsoCite: [] }, (id) => `P${id.slice(1)}`, { missingCiters: new Map(), citingCites: new Map() });
+
+  it("writes the graph as a code block and reads it back (positions rounded)", () => {
+    const block = graphBlock(g);
+    expect(block[0]).toBe("```literature-feed-graph");
+    expect(block[2]).toBe("```");
+    const back = parseGraphBlock(block[1]);
+    expect(back?.nodes.map((n) => n.id)).toEqual(g.nodes.map((n) => n.id));
+    expect(back?.edges).toEqual(g.edges);
+    for (const n of back?.nodes ?? []) expect(Number.isInteger(n.x)).toBe(true);
+    expect(parseGraphBlock("not json")).toBeNull();
+    expect(parseGraphBlock("{}")).toBeNull();
+  });
+
+  it("finds the graph in the text of a note, with LF or CRLF line ends", () => {
+    const note = ["---", "kind: literature-review", "---", "", "## Citation network", "", ...graphBlock(g), "", "text"].join("\n");
+    expect(graphFromNote(note)?.nodes).toHaveLength(2);
+    expect(graphFromNote(note.replace(/\n/g, "\r\n"))?.nodes).toHaveLength(2);
+    expect(graphFromNote("no graph here")).toBeNull();
+  });
+
+  it("puts the block under the network heading when one is given, and leaves it out otherwise", () => {
+    const label = (id: string): string => `P${id.slice(1)}`;
+    const withGraph = networkMarkdown(net, { missing: [], alsoCite: [] }, label, (id) => id, graphBlock(g));
+    expect(withGraph[0]).toBe("## Citation network");
+    expect(withGraph.indexOf("```literature-feed-graph")).toBeGreaterThan(1);
+    expect(networkMarkdown(net, { missing: [], alsoCite: [] }, label, (id) => id).join("\n")).not.toContain("literature-feed-graph");
   });
 });

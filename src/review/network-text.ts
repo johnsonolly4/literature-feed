@@ -83,8 +83,9 @@ function cell(text: string): string {
 }
 
 /** The network for the review note: the missing and also-citing works as tables, and a line on the hubs. */
-export function networkMarkdown(network: Network, rows: { missing: ExtraRow[]; alsoCite: ExtraRow[] }, labelOf: (id: string) => string | undefined, titleOf: (id: string) => string): string[] {
+export function networkMarkdown(network: Network, rows: { missing: ExtraRow[]; alsoCite: ExtraRow[] }, labelOf: (id: string) => string | undefined, titleOf: (id: string) => string, graph: readonly string[] = []): string[] {
   const out: string[] = ["## Citation network", "", `${network.edges.length} citations among the papers; ${network.clusters.length} group${network.clusters.length === 1 ? "" : "s"} that cite each other; ${network.isolated.length} papers with no link to another.`, ""];
+  if (graph.length > 0) out.push(...graph, "");
   if (network.hubs.length > 0) {
     out.push("Cited most by the others in the set:", "");
     for (const id of network.hubs.slice(0, 5)) out.push(`- ${labelOf(id) ?? id}: ${escapeMd(titleOf(id))} (cited by ${network.degree.get(id)?.in ?? 0})`);

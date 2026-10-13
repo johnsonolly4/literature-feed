@@ -14,7 +14,7 @@ import { chartBlock, chartSpecs } from "./chart";
 import { drawChart } from "./chart-view";
 import { planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewPlan, type ReviewResult } from "./collect";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
-import { buildGraphData, type GraphData } from "./graph-data";
+import { buildGraphData, graphBlock, type GraphData } from "./graph-data";
 import { buildNetwork, chartData, referenceCoverage, type Network } from "./network";
 import { MAX_GAP_REFERENCES, estimateGapRequests, estimateNetworkRequests, fetchCitationGaps, fetchNetworkExtras, type GapResult, type NetworkClient, type NetworkExtras } from "./network-fetch";
 import { buildExtraRows, networkMarkdown, networkText, type ExtraRow } from "./network-text";
@@ -283,6 +283,7 @@ export class ReviewModal extends Modal {
     const have = this.flags.filter((f) => f.zotero || f.vault).length;
     this.out.createEl("p", { text: `${result.papers.length}${result.total > result.papers.length ? ` of ${result.total}` : ""} papers kept. Spent about ${usd(result.spentUsd)}. ${have} you already have.` });
     if (result.stopped) this.out.createEl("p", { cls: "literature-feed-warning", text: `The search ${result.stopped}.` });
+    this.renderGraphRow();
 
     new Setting(this.out)
       .setName("Already in Zotero?")
@@ -393,9 +394,13 @@ export class ReviewModal extends Modal {
         }
       }
     }
+  }
+
+  /** The graph row, at the top of the results so it is easy to find. */
+  private renderGraphRow(): void {
     new Setting(this.out)
-      .setName("Show the network")
-      .setDesc("The graph opens in a tab (pan, zoom, click a paper). The canvas is a file with a card per paper by year, and the citations between them.")
+      .setName("Citation graph")
+      .setDesc("Opens in a tab (pan, zoom, click a paper). It is also put in the review note. The canvas is a file with a card per paper by year, and the citations between them.")
       .addButton((b) => b.setButtonText("Open graph").setCta().onClick(() => void this.openGraph()))
       .addButton((b) => b.setButtonText("Save canvas").onClick(() => void this.saveCanvas()));
   }
@@ -492,12 +497,18 @@ export class ReviewModal extends Modal {
     return { missingCiters, citingCites };
   }
 
-  private async openGraph(): Promise<void> {
+  /** The graph of what is on screen now (with the missing papers, if they were looked up, and the LLM's levels, if checked). */
+  private currentGraph(): GraphData | null {
     const result = this.result;
     const net = this.network;
-    if (!result || !net) return;
+    if (!result || !net) return null;
     const levels = new Map((this.checked && this.checked.ok ? this.checked.value.priorities : []).map((p) => [p.paper, p.level] as const));
-    await this.host.openGraph(buildGraphData(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, this.citationLinks(), levels));
+    return buildGraphData(result.papers, this.flags, net, this.rows, (id) => this.labelOf(id) ?? id, this.citationLinks(), levels);
+  }
+
+  private async openGraph(): Promise<void> {
+    const graph = this.currentGraph();
+    if (graph) await this.host.openGraph(graph);
   }
 
   private async saveCanvas(): Promise<void> {
@@ -546,7 +557,8 @@ export class ReviewModal extends Modal {
       extra.push("## Charts", "");
       for (const spec of specs) extra.push(...chartBlock(spec), "");
     }
-    if (this.network) extra.push(...networkMarkdown(this.network, this.rows, (id) => this.labelOf(id), (id) => this.titleOf(id)));
+    const graph = this.currentGraph();
+    if (this.network) extra.push(...networkMarkdown(this.network, this.rows, (id) => this.labelOf(id), (id) => this.titleOf(id), graph && graph.nodes.length > 0 ? graphBlock(graph) : []));
     const text = renderReviewNote({
       date: today(), searches, fromDate: this.fromYear, papers: result.papers, flags: this.flags, total: result.total,
       spentUsd: result.spentUsd, stopped: result.stopped, answer, networkMarkdown: extra, extraRows: [...this.rows.missing, ...this.rows.alsoCite],

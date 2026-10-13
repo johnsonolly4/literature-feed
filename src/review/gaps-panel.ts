@@ -114,6 +114,17 @@ export class GapsPanel {
           this.saveSoon();
         });
       });
+    new Setting(el).setName("Go a second level").setDesc("Also reads the works that several of the references cite (up to 300) and lists what many of those cite: the foundations under the foundations. Adds about $0.0007.")
+      .addToggle((t) => t.setValue(this.s.deeper).onChange((v) => { this.s.deeper = v; this.estimate = null; this.saveSoon(); }));
+    new Setting(el).setName("Second level: cited by at least").setDesc("How many of those shared works must cite a work for it to be listed (5 is a good start; lower finds more, with more noise).")
+      .addText((t) => {
+        t.inputEl.type = "number";
+        t.setValue(String(this.s.deeperMin)).onChange((v) => {
+          const n = Math.floor(Number(v));
+          this.s.deeperMin = Number.isFinite(n) ? Math.min(20, Math.max(2, n)) : 5;
+          this.saveSoon();
+        });
+      });
     new Setting(el).addButton((b) => b.setButtonText("Estimate the cost").setCta().onClick(() => this.doEstimate()));
     this.out = el.createDiv();
   }
@@ -190,7 +201,7 @@ export class GapsPanel {
   private doEstimate(): void {
     const input = this.input();
     if (input === null) return;
-    const e = estimateGaps(input);
+    const e = estimateGaps(input, this.s.deeper);
     const limit = this.host.settings.reviewBudgetUsd;
     const over = e.usd > limit + 1e-9;
     const parts = [e.free > 0 ? `${e.free} free record` : "", e.filtered > 0 ? `up to ${e.filtered} lookups` : "", e.searches > 0 ? `${e.searches} search${e.searches === 1 ? "" : "es"}` : ""].filter((p) => p !== "");
@@ -208,7 +219,7 @@ export class GapsPanel {
     const budget = new Budget(this.host.settings.reviewBudgetUsd);
     let run: GapsRun;
     try {
-      run = await runGaps(input, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget }, this.s.minCount);
+      run = await runGaps(input, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget }, this.s.minCount, this.s.deeper ? this.s.deeperMin : null);
     } catch (e) {
       this.out.empty();
       this.out.createEl("p", { cls: "literature-feed-warning", text: `The lookup failed: ${e instanceof Error ? e.message : "unknown error"}` });
@@ -221,9 +232,28 @@ export class GapsPanel {
     this.renderRun(run, input, ranAt);
   }
 
-  private flagsOf(run: GapsRun): Flags[] {
+  private flagsOf(list: GapsRun["gaps"]): Flags[] {
     const sources = this.host.flagSources();
-    return run.gaps.map((g) => flagsFor({ id: g.paper ? shortOpenAlexId(g.paper.openalexId) ?? g.gap.id : g.gap.id, doi: g.paper?.doi ?? null, title: g.paper?.title ?? "" }, sources));
+    return list.map((g) => flagsFor({ id: g.paper ? shortOpenAlexId(g.paper.openalexId) ?? g.gap.id : g.gap.id, doi: g.paper?.doi ?? null, title: g.paper?.title ?? "" }, sources));
+  }
+
+  /** A list of gaps, the first `shown` of them, with how many there are and buttons for more. */
+  private drawList(container: HTMLElement, items: GapsRun["gaps"], flags: Flags[], shown: number, line: (x: GapsRun["gaps"][number]) => string, more: (n: number) => void): void {
+    container.empty();
+    items.slice(0, shown).forEach((x, i) => {
+      const row = container.createDiv({ cls: "literature-feed-suggestion" });
+      row.createDiv({ cls: "literature-feed-title", text: x.paper ? x.paper.title : x.gap.id });
+      const f = flags[i];
+      row.createDiv({ cls: "literature-feed-meta", text: [x.paper?.year ? String(x.paper.year) : "", line(x), x.paper?.citedByCount !== undefined ? `${x.paper.citedByCount} citations` : "", f.zotero ? "in Zotero" : "", f.vault ? "in the vault" : ""].filter((t) => t !== "").join(" · ") });
+    });
+    if (items.length > shown) {
+      container.createEl("p", { cls: "literature-feed-meta", text: `Showing ${Math.min(shown, items.length)} of ${items.length}.` });
+      new Setting(container)
+        .addButton((b) => b.setButtonText("Show 15 more").onClick(() => more(shown + 15)))
+        .addButton((b) => b.setButtonText("Show all").onClick(() => more(items.length)));
+    } else if (items.length > 15) {
+      container.createEl("p", { cls: "literature-feed-meta", text: `All ${items.length} shown.` });
+    }
   }
 
   private renderRun(run: GapsRun, input: GapInput, ranAt: string): void {
@@ -233,28 +263,32 @@ export class GapsPanel {
     out.createEl("p", { text: `Read ${run.referencesRead} references (${run.referencesWithLists} with a reference list of their own). Spent about ${usd(run.spentUsd)}.` });
     if (run.message) out.createEl("p", { cls: "literature-feed-warning", text: run.message });
     if (run.stopped) out.createEl("p", { cls: "literature-feed-warning", text: `The lookup ${run.stopped}.` });
-    const flags = this.flagsOf(run);
+    const flags = this.flagsOf(run.gaps);
     if (run.gaps.length === 0 && !run.message) out.createEl("p", { text: `No work is cited by ${this.s.minCount} or more of these references without also being cited by the paper.` });
-    run.gaps.forEach((x, i) => {
-      const row = out.createDiv({ cls: "literature-feed-suggestion" });
-      row.createDiv({ cls: "literature-feed-title", text: x.paper ? x.paper.title : x.gap.id });
-      const f = flags[i];
-      row.createDiv({ cls: "literature-feed-meta", text: [
-        x.paper?.year ? String(x.paper.year) : "", `cited by ${x.gap.count} of the references (${Math.round(x.gap.share * 100)}%)`, x.paper?.citedByCount !== undefined ? `${x.paper.citedByCount} citations` : "",
-        f.zotero ? "in Zotero" : "", f.vault ? "in the vault" : "",
-      ].filter((t) => t !== "").join(" · ") });
-    });
+    const list = out.createDiv();
+    const draw = (shown: number): void => this.drawList(list, run.gaps, flags, shown, (x) => `cited by ${x.gap.count} of the references (${Math.round(x.gap.share * 100)}%)`, draw);
+    draw(15);
+    const deeper = run.deeper;
+    const deeperFlags = deeper ? this.flagsOf(deeper.gaps) : [];
+    if (deeper) {
+      out.createEl("h4", { text: "Deeper: what the shared works rest on" });
+      out.createEl("p", { cls: "literature-feed-meta", text: `Read ${deeper.hubsRead} works that several of the references cite (${deeper.hubsWithLists} with a reference list). These are cited by at least ${deeper.minCount} of them, and are neither the paper, its references nor those shared works.` });
+      if (deeper.gaps.length === 0) out.createEl("p", { text: "Nothing is cited by that many of them. Try a lower number." });
+      const deepList = out.createDiv();
+      const drawDeep = (shown: number): void => this.drawList(deepList, deeper.gaps, deeperFlags, shown, (x) => `cited by ${x.gap.count} of ${deeper.hubsRead} shared works`, drawDeep);
+      drawDeep(15);
+    }
     if (run.unresolved.length > 0) {
       const details = out.createEl("details");
       details.createEl("summary", { text: `${run.unresolved.length} reference${run.unresolved.length === 1 ? "" : "s"} not found in OpenAlex` });
       const ul = details.createEl("ul");
       for (const u of run.unresolved) ul.createEl("li", { text: u });
     }
-    new Setting(out).addButton((b) => b.setButtonText("Create gaps note").onClick(() => void this.createNote(run, input, ranAt, flags)));
+    new Setting(out).addButton((b) => b.setButtonText("Create gaps note").onClick(() => void this.createNote(run, input, ranAt, flags, deeperFlags)));
   }
 
-  private async createNote(run: GapsRun, input: GapInput, ranAt: string, flags: Flags[]): Promise<void> {
-    const text = renderGapsNote({ date: today(), ranAt, input, minCount: this.s.minCount, run, flags });
+  private async createNote(run: GapsRun, input: GapInput, ranAt: string, flags: Flags[], deeperFlags: Flags[]): Promise<void> {
+    const text = renderGapsNote({ date: today(), ranAt, input, minCount: this.s.minCount, run, flags, deeperFlags });
     const subject = (run.subject?.title ?? "pasted references").replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50);
     const folder = this.host.reviewFolder();
     const path = await this.host.createReviewNote(`${folder === "" ? "" : `${folder}/`}Citation gaps ${today()} ${subject}.md`, text);

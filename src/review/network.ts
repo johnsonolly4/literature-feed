@@ -167,6 +167,23 @@ export function chartData(papers: readonly ReviewPaper[], network: Network, top 
 
 // ---- citation gaps of one paper ---------------------------------------------------------------------------------------
 
+/**
+ * The works that at least `min` of the references cite: the foundations the references share. Most shared first, at most `cap`; `exclude`
+ * (the paper itself) never appears. Used for the second level of the citation gaps.
+ */
+export function sharedHubs(
+  references: readonly { id: string; referencedWorks: readonly string[] }[], exclude: ReadonlySet<string>, min = 2, cap = 300,
+): { id: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const r of references) {
+    for (const w of new Set(r.referencedWorks)) {
+      if (exclude.has(w) || w === r.id) continue;
+      counts.set(w, (counts.get(w) ?? 0) + 1);
+    }
+  }
+  return [...counts].filter(([, n]) => n >= min).map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count || a.id.localeCompare(b.id)).slice(0, cap);
+}
+
 export interface Gap {
   id: string;
   /** How many of the paper's references cite this work. */

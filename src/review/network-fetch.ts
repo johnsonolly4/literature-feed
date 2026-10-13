@@ -25,6 +25,11 @@ export const SEED_BATCH = 50;
 export const CITING_PAGES = 2;
 /** At most this many references of one paper are read for its citation gaps (two requests). */
 export const MAX_GAP_REFERENCES = 100;
+/** The citation-gaps tool keeps this many gaps (the review's per-paper block keeps 15). */
+export const MAX_GAPS = 100;
+/** The second level reads the records of at most this many shared works, and keeps this many deeper gaps. */
+export const MAX_HUBS = 300;
+export const MAX_DEEPER = 50;
 
 export function estimateNetworkRequests(setSize: number, detailIds: number): number {
   const batches = Math.ceil(Math.min(setSize, SEED_BATCH) / SEED_BATCH);
@@ -115,21 +120,24 @@ export interface GapResult {
   referencesRead: number;
   referencesWithLists: number;
   gaps: { gap: Gap; paper: Candidate | null }[];
+  /** The references that were read, with their own reference lists (the second level starts from these). */
+  records: { id: string; referencedWorks: string[] }[];
   stopped: string | null;
 }
 
 /** For one paper: what many of its references cite that it does not (see `citationGaps`). */
-export async function fetchCitationGaps(paper: { id: string; referencedWorks: readonly string[] }, deps: NetworkDeps, minCount = 3): Promise<GapResult> {
+export async function fetchCitationGaps(paper: { id: string; referencedWorks: readonly string[] }, deps: NetworkDeps, minCount = 3, top = 15): Promise<GapResult> {
   const refs = paper.referencedWorks.slice(0, MAX_GAP_REFERENCES);
   const read = await worksById(refs, deps);
   const withIds = read.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [{ id, referencedWorks: p.referencedWorks ?? [] }] : []; });
-  const gaps = citationGaps(paper, withIds, minCount);
+  const gaps = citationGaps(paper, withIds, minCount, top);
   const details = await worksById(gaps.map((g) => g.id), deps);
   const byId = new Map(details.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [[id, p] as const] : []; }));
   return {
     referencesRead: read.papers.length,
     referencesWithLists: withIds.filter((r) => r.referencedWorks.length > 0).length,
     gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })),
+    records: withIds,
     stopped: read.stopped ?? details.stopped,
   };
 }

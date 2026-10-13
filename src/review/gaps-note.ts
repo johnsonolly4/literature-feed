@@ -21,6 +21,8 @@ export interface GapsRecord {
   searches: number;
   stopped: string | null;
   spentUsd: number;
+  /** The second level, when it was run (absent in older notes). */
+  deeper?: { minCount: number; hubsRead: number; gaps: { id: string; count: number; share: number }[] } | null;
 }
 
 export function buildGapsRecord(ranAt: string, input: GapInput, minCount: number, run: GapsRun): GapsRecord {
@@ -28,6 +30,7 @@ export function buildGapsRecord(ranAt: string, input: GapInput, minCount: number
     version: 1, ranAt, input, minCount, subject: run.subject, referencesRead: run.referencesRead, referencesWithLists: run.referencesWithLists,
     gaps: run.gaps.map((g) => ({ id: g.gap.id, count: g.gap.count, share: Math.round(g.gap.share * 1000) / 1000 })), unresolved: run.unresolved,
     searches: run.searches, stopped: run.stopped, spentUsd: run.spentUsd,
+    deeper: run.deeper ? { minCount: run.deeper.minCount, hubsRead: run.deeper.hubsRead, gaps: run.deeper.gaps.map((g) => ({ id: g.gap.id, count: g.gap.count, share: Math.round(g.gap.share * 1000) / 1000 })) } : null,
   };
 }
 
@@ -61,6 +64,8 @@ export interface GapsNoteInput {
   minCount: number;
   run: GapsRun;
   flags: readonly Flags[];
+  /** Flags of the second level's works, in order. */
+  deeperFlags?: readonly Flags[];
   searchNames?: ReadonlyMap<string, string>;
 }
 
@@ -84,6 +89,23 @@ export function renderGapsNote(n: GapsNoteInput): string {
     lines.push("");
   } else if (!run.message) {
     lines.push(`No work is cited by ${n.minCount} or more of these references without also being cited by the paper.`, "");
+  }
+  const deeper = run.deeper;
+  if (deeper) {
+    lines.push("## Deeper: what the shared works rest on", "", `Read ${deeper.hubsRead} works that several of the references cite (${deeper.hubsWithLists} with a reference list). Listed: cited by at least ${deeper.minCount} of them, and not the paper, its references or those shared works.`, "");
+    if (deeper.gaps.length > 0) {
+      lines.push("| Paper | Year | Cited | Cited by these shared works | Already have |", "| --- | --- | --- | --- | --- |");
+      deeper.gaps.forEach((g, i) => {
+        const p = g.paper;
+        const url = doiUrl(p?.doi ?? null);
+        const title = p ? (url ? `[${escapeMd(p.title)}](${url})` : escapeMd(p.title)) : g.gap.id;
+        const f = n.deeperFlags?.[i];
+        lines.push(`| ${cell(title)} | ${p?.year ?? ""} | ${p?.citedByCount ?? ""} | ${g.gap.count} of ${deeper.hubsRead} | ${cell(f ? flagText(f, n.searchNames ?? new Map()) : "")} |`);
+      });
+      lines.push("");
+    } else {
+      lines.push("Nothing is cited by that many of them.", "");
+    }
   }
   lines.push("## How this was made", "", ...describeInput(n.input), `- **Run:** ${n.ranAt}. Minimum: cited by ${n.minCount} of the references.`);
   lines.push(`- **OpenAlex requests:** ${run.searches} title search${run.searches === 1 ? "" : "es"}, the rest lookups by id or DOI; about $${run.spentUsd.toFixed(4)}.`);

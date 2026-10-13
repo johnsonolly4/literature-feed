@@ -6,6 +6,7 @@ import { emptyCache, getTitle, normaliseCache } from "../src/review/cache";
 import { MAX_TITLE_SEARCHES, emptyGapsSession, estimateGaps, normaliseGapsSession, parseReferenceList, parseWorkInput, searchZoteroIndex, titleInReference } from "../src/review/gaps-input";
 import { gapsRecordFromNote, renderGapsNote } from "../src/review/gaps-note";
 import { runGaps, type GapsClient } from "../src/review/gaps-fetch";
+import { sharedHubs } from "../src/review/network";
 import type { ZoteroIndex } from "../src/zotero/library-index";
 
 function cand(n: number, refs: number[] | undefined, overrides: Partial<Candidate> = {}): Candidate {
@@ -82,10 +83,17 @@ describe("searching the Zotero index", () => {
 });
 
 describe("what a run costs", () => {
-  it("one paper by DOI: the record is free, two lists for its references, one for the details", () => {
+  it("one paper by DOI: the record is free, two lists for its references, two for the details of up to 100 gaps", () => {
     const e = estimateGaps({ kind: "work", doi: "10.1000/a", id: null });
-    expect(e).toMatchObject({ free: 1, filtered: 3, searches: 0 });
-    expect(e.usd).toBeCloseTo(0.0003);
+    expect(e).toMatchObject({ free: 1, filtered: 4, searches: 0 });
+    expect(e.usd).toBeCloseTo(0.0004);
+  });
+
+  it("the second level adds six lists for the shared works and one for the details of what they cite", () => {
+    const e = estimateGaps({ kind: "work", doi: "10.1000/a", id: null }, true);
+    expect(e.filtered).toBe(4 + 6 + 1);
+    expect(e.usd).toBeCloseTo(0.0011);
+    expect(estimateGaps({ kind: "references", dois: ["10.1000/a"], lines: [] }, true).filtered).toBe(1 + 2 + 7);
   });
 
   it("a paper found by title costs one search more", () => {
@@ -98,10 +106,10 @@ describe("what a run costs", () => {
     const dois = Array.from({ length: 60 }, (_, i) => `10.1000/${i}`);
     const lines = Array.from({ length: 30 }, (_, i) => `reference line number ${i}`);
     const e = estimateGaps({ kind: "references", dois, lines });
-    expect(e.filtered).toBe(3); // two DOI lists and the details
+    expect(e.filtered).toBe(4); // two DOI lists and two for the details
     expect(e.searches).toBe(MAX_TITLE_SEARCHES);
     expect(e.skippedLines).toBe(5);
-    expect(e.usd).toBeCloseTo(3 * 0.0001 + MAX_TITLE_SEARCHES * 0.001);
+    expect(e.usd).toBeCloseTo(4 * 0.0001 + MAX_TITLE_SEARCHES * 0.001);
     expect(estimateGaps({ kind: "references", dois: [], lines: [] }).usd).toBe(0);
   });
 });
@@ -259,5 +267,68 @@ describe("the gaps note and the saved tool state", () => {
     const s = normaliseGapsSession({ version: 1, mode: "paste", paperText: 5, pasted: "x", minCount: 99, last: { input: { kind: "work" }, run: {}, ranAt: "t" } });
     expect(s).toMatchObject({ mode: "paste", paperText: "", pasted: "x", minCount: 10, last: null });
     expect(normaliseGapsSession({ version: 1 })).toEqual(emptyGapsSession());
+  });
+});
+
+// ---- the second level ---------------------------------------------------------------------------------------------------
+
+describe("sharedHubs", () => {
+  const refs = [{ id: "A", referencedWorks: ["X", "Y", "P"] }, { id: "B", referencedWorks: ["X", "Y", "Z"] }, { id: "C", referencedWorks: ["X", "A"] }];
+  it("lists the works at least two references cite, most shared first, never the excluded one or a work itself", () => {
+    expect(sharedHubs(refs, new Set(["P"]))).toEqual([{ id: "X", count: 3 }, { id: "Y", count: 2 }]);
+    expect(sharedHubs(refs, new Set(), 3)).toEqual([{ id: "X", count: 3 }]);
+    expect(sharedHubs(refs, new Set(), 2, 1)).toEqual([{ id: "X", count: 3 }]);
+    expect(sharedHubs([], new Set())).toEqual([]);
+  });
+});
+
+describe("runGaps with the second level", () => {
+  // W1 cites W2 to W5. They share W10 and W11 (three each; W12 only once). W10 and W11 cite W20 and W21 (twice each), W22 and W23 once.
+  const DEEP = [
+    cand(1, [2, 3, 4, 5]), cand(2, [10, 11]), cand(3, [10, 11]), cand(4, [10]), cand(5, [11, 12]),
+    cand(10, [20, 21, 22], { title: "Shared foundation ten of lipoic chemistry" }), cand(11, [20, 21, 23], { title: "Shared foundation eleven of lipoic chemistry" }), cand(12, []),
+    cand(20, [], { title: "Deeper foundation twenty" }), cand(21, [], { title: "Deeper foundation twenty one" }), cand(22, []), cand(23, []),
+  ];
+
+  it("finds what the shared works cite, leaving out the paper, its references and the shared works", async () => {
+    const { deps: d, calls } = deps(DEEP);
+    const run = await runGaps({ kind: "work", doi: null, id: "W1" }, d, 3, 2);
+    expect(run.gaps.map((g) => [g.gap.id, g.gap.count])).toEqual([["W10", 3], ["W11", 3]]);
+    expect(run.deeper).not.toBeNull();
+    expect(run.deeper?.gaps.map((g) => [g.gap.id, g.gap.count])).toEqual([["W20", 2], ["W21", 2]]);
+    expect(run.deeper?.gaps[0].paper?.title).toBe("Deeper foundation twenty");
+    expect(run.deeper).toMatchObject({ hubsRead: 2, hubsWithLists: 2, minCount: 2 });
+    // the shared works were fetched as details of the first level, so only the deeper details cost a lookup
+    expect(calls).toEqual(["full", "works:4", "works:2", "works:2"]);
+  });
+
+  it("does nothing extra when the second level is off", async () => {
+    const { deps: d, calls } = deps(DEEP);
+    const run = await runGaps({ kind: "work", doi: null, id: "W1" }, d, 3);
+    expect(run.deeper).toBeNull();
+    expect(calls).toEqual(["full", "works:4", "works:2"]);
+  });
+
+  it("keeps the first level and says so when the budget runs out during the second", async () => {
+    const { deps: d } = deps(DEEP, 0.00025);
+    const run = await runGaps({ kind: "work", doi: null, id: "W1" }, d, 3, 2);
+    expect(run.gaps).toHaveLength(2);
+    expect(run.stopped).toContain("stopped");
+    expect(run.deeper?.gaps.map((g) => g.paper)).toEqual([null, null]);
+  });
+
+  it("works for a pasted list too", async () => {
+    const { deps: d } = deps(DEEP);
+    const run = await runGaps({ kind: "references", dois: ["10.1000/p.2", "10.1000/p.3", "10.1000/p.4", "10.1000/p.5"], lines: [] }, d, 3, 2);
+    expect(run.gaps.map((g) => g.gap.id)).toEqual(["W10", "W11"]);
+    expect(run.deeper?.gaps.map((g) => g.gap.id)).toEqual(["W20", "W21"]);
+  });
+
+  it("keeps up to 100 gaps in the first level", async () => {
+    const refs = Array.from({ length: 4 }, (_, i) => cand(100 + i, Array.from({ length: 120 }, (_, k) => 1000 + k)));
+    const works = [cand(1, [100, 101, 102, 103]), ...refs, ...Array.from({ length: 120 }, (_, k) => cand(1000 + k, []))];
+    const { deps: d } = deps(works);
+    const run = await runGaps({ kind: "work", doi: null, id: "W1" }, d, 3);
+    expect(run.gaps).toHaveLength(100);
   });
 });

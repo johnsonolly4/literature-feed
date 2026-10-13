@@ -8,8 +8,8 @@ import { bareDoi } from "../zotero/map";
 import { COST_FILTER, COST_SEARCH } from "./budget";
 import { getTitle, getWork, putTitle, putWorks } from "./cache";
 import { MAX_TITLE_SEARCHES, titleInReference, titleOverlap, type GapInput } from "./gaps-input";
-import { citationGaps, type Gap } from "./network";
-import { fetchCitationGaps, worksById, type NetworkClient, type NetworkDeps } from "./network-fetch";
+import { citationGaps, sharedHubs, type Gap } from "./network";
+import { MAX_DEEPER, MAX_GAPS, MAX_HUBS, fetchCitationGaps, worksById, type NetworkClient, type NetworkDeps } from "./network-fetch";
 
 export interface GapsClient extends NetworkClient {
   getFullWork(ref: { doi?: string | null; id?: string | null }): Promise<Candidate | null>;
@@ -19,6 +19,16 @@ export interface GapsClient extends NetworkClient {
 
 export interface GapsDeps extends NetworkDeps {
   client: GapsClient;
+}
+
+/** The second level: works cited by many of the shared works (the works that several references cite). */
+export interface DeeperRun {
+  gaps: { gap: Gap; paper: Candidate | null }[];
+  /** Shared works whose records were read, and how many had a reference list. */
+  hubsRead: number;
+  hubsWithLists: number;
+  /** A gap here is cited by at least this many shared works. */
+  minCount: number;
 }
 
 export interface GapsRun {
@@ -32,6 +42,8 @@ export interface GapsRun {
   unresolved: string[];
   searches: number;
   stopped: string | null;
+  /** The second level, when it was asked for. */
+  deeper: DeeperRun | null;
   /** Something to tell the user instead of a list (no record, no references). */
   message: string | null;
   spentUsd: number;
@@ -42,7 +54,7 @@ function subjectOf(c: Candidate): NonNullable<GapsRun["subject"]> {
 }
 
 const empty = (spentUsd: number, over: Partial<GapsRun>): GapsRun => ({
-  subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: [], searches: 0, stopped: null, message: null, spentUsd, ...over,
+  subject: null, referencesRead: 0, referencesWithLists: 0, gaps: [], unresolved: [], searches: 0, stopped: null, deeper: null, message: null, spentUsd, ...over,
 });
 
 /** A reference line or title searched in OpenAlex (or remembered from before); "stop" when the budget does not allow another search. */
@@ -74,9 +86,30 @@ async function recordOf(input: Extract<GapInput, { kind: "work" }>, deps: GapsDe
   return got;
 }
 
-/** Runs the tool for one input. Errors from the client propagate (the window shows them); a budget stop is reported in the result. */
-export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3): Promise<GapsRun> {
-  if (input.kind === "references") return runReferenceList(input, deps, minCount);
+/**
+ * The second level. The shared works (cited by at least two of the references) are read, and what at least `minCount` of them cite is
+ * reported, leaving out the paper, its references and the shared works themselves.
+ */
+async function goDeeper(paper: { id: string; referencedWorks: readonly string[] }, records: readonly { id: string; referencedWorks: readonly string[] }[], deps: GapsDeps, minCount: number): Promise<{ deeper: DeeperRun; stopped: string | null }> {
+  const hubs = sharedHubs(records, new Set([paper.id]), 2, MAX_HUBS);
+  const read = await worksById(hubs.map((h) => h.id), deps);
+  const hubRecords = read.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [{ id, referencedWorks: p.referencedWorks ?? [] }] : []; });
+  const exclude = [...paper.referencedWorks, ...hubs.map((h) => h.id)];
+  const gaps = citationGaps({ id: paper.id, referencedWorks: exclude }, hubRecords, minCount, MAX_DEEPER);
+  const details = await worksById(gaps.map((g) => g.id), deps);
+  const byId = new Map(details.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [[id, p] as const] : []; }));
+  return {
+    deeper: { gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })), hubsRead: hubRecords.length, hubsWithLists: hubRecords.filter((r) => r.referencedWorks.length > 0).length, minCount },
+    stopped: read.stopped ?? details.stopped,
+  };
+}
+
+/**
+ * Runs the tool for one input. `deeperMin` (null = off) adds the second level. Errors from the client propagate (the window shows
+ * them); a budget stop is reported in the result.
+ */
+export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3, deeperMin: number | null = null): Promise<GapsRun> {
+  if (input.kind === "references") return runReferenceList(input, deps, minCount, deeperMin);
 
   let record: Candidate | null;
   if (input.kind === "work") {
@@ -92,11 +125,13 @@ export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3): Pr
   const subject = subjectOf(record);
   if (refs.length === 0) return empty(deps.budget.spent, { subject, message: "OpenAlex lists no references for this paper, so its gaps cannot be worked out. Paste its reference list instead." });
   const id = shortOpenAlexId(record.openalexId) ?? "paper";
-  const g = await fetchCitationGaps({ id, referencedWorks: refs }, deps, minCount);
-  return empty(deps.budget.spent, { subject, referencesRead: g.referencesRead, referencesWithLists: g.referencesWithLists, gaps: g.gaps, stopped: g.stopped });
+  const paper = { id, referencedWorks: refs };
+  const g = await fetchCitationGaps(paper, deps, minCount, MAX_GAPS);
+  const deep = deeperMin === null ? null : await goDeeper(paper, g.records, deps, deeperMin);
+  return empty(deps.budget.spent, { subject, referencesRead: g.referencesRead, referencesWithLists: g.referencesWithLists, gaps: g.gaps, stopped: g.stopped ?? deep?.stopped ?? null, deeper: deep?.deeper ?? null });
 }
 
-async function runReferenceList(input: Extract<GapInput, { kind: "references" }>, deps: GapsDeps, minCount: number): Promise<GapsRun> {
+async function runReferenceList(input: Extract<GapInput, { kind: "references" }>, deps: GapsDeps, minCount: number, deeperMin: number | null): Promise<GapsRun> {
   const resolved: Candidate[] = [];
   const unresolved: string[] = [];
   let stopped: string | null = null;
@@ -131,11 +166,13 @@ async function runReferenceList(input: Extract<GapInput, { kind: "references" }>
   const refs = resolved.flatMap((c) => { const id = shortOpenAlexId(c.openalexId); return id ? [{ id, referencedWorks: c.referencedWorks ?? [] }] : []; });
   const unique = [...new Map(refs.map((r) => [r.id, r])).values()];
   if (unique.length === 0) return empty(deps.budget.spent, { unresolved, searches, stopped, message: "None of the references could be found in OpenAlex." });
-  const gaps = citationGaps({ id: "pasted", referencedWorks: unique.map((r) => r.id) }, unique, minCount);
+  const pasted = { id: "pasted", referencedWorks: unique.map((r) => r.id) };
+  const gaps = citationGaps(pasted, unique, minCount, MAX_GAPS);
   const details = await worksById(gaps.map((g) => g.id), deps);
   const byId = new Map(details.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [[id, p] as const] : []; }));
+  const deep = deeperMin === null ? null : await goDeeper(pasted, unique, deps, deeperMin);
   return empty(deps.budget.spent, {
     referencesRead: unique.length, referencesWithLists: unique.filter((r) => r.referencedWorks.length > 0).length,
-    gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })), unresolved, searches, stopped: stopped ?? details.stopped,
+    gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })), unresolved, searches, stopped: stopped ?? details.stopped ?? deep?.stopped ?? null, deeper: deep?.deeper ?? null,
   });
 }

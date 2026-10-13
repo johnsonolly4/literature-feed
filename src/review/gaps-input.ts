@@ -4,7 +4,7 @@ import { titleKey } from "../zotero/client";
 import type { ZoteroIndex } from "../zotero/library-index";
 import { bareDoi } from "../zotero/map";
 import { COST_FILTER, COST_SEARCH } from "./budget";
-import { MAX_GAP_REFERENCES } from "./network-fetch";
+import { MAX_DEEPER, MAX_GAPS, MAX_GAP_REFERENCES, MAX_HUBS } from "./network-fetch";
 
 /** At most this many references without a DOI are searched for (each search costs ten credits). */
 export const MAX_TITLE_SEARCHES = 25;
@@ -114,21 +114,26 @@ function round(usd: number): number {
   return Math.round(usd * 1e6) / 1e6;
 }
 
-/** What a gaps run costs at most. A work's own references are read in lists of 50 (at most 100), then the details of the gaps in one more. */
-export function estimateGaps(input: GapInput): GapEstimate {
+/**
+ * What a gaps run costs at most. A work's own references are read in lists of 50 (at most 100), then the details of the gaps (up to 100) in
+ * lists of 50. The second level adds the shared works (up to 300, six lists) and the details of what they cite (up to 50, one list).
+ */
+export function estimateGaps(input: GapInput, deeper = false): GapEstimate {
   const refLists = Math.ceil(MAX_GAP_REFERENCES / 50);
+  const detailLists = Math.ceil(MAX_GAPS / 50);
+  const deeperLists = deeper ? Math.ceil(MAX_HUBS / 50) + Math.ceil(MAX_DEEPER / 50) : 0;
   let free = 0;
   let filtered = 0;
   let searches = 0;
   let skippedLines = 0;
   if (input.kind === "work") {
     free = 1;
-    filtered = refLists + 1;
+    filtered = refLists + detailLists + deeperLists;
   } else if (input.kind === "title") {
     searches = 1;
-    filtered = refLists + 1;
+    filtered = refLists + detailLists + deeperLists;
   } else {
-    filtered = Math.ceil(input.dois.length / 50) + (input.dois.length + input.lines.length > 0 ? 1 : 0);
+    filtered = Math.ceil(input.dois.length / 50) + (input.dois.length + input.lines.length > 0 ? detailLists + deeperLists : 0);
     searches = Math.min(input.lines.length, MAX_TITLE_SEARCHES);
     skippedLines = Math.max(0, input.lines.length - MAX_TITLE_SEARCHES);
   }
@@ -153,12 +158,16 @@ export interface GapsSession {
   /** Also search, in OpenAlex ($0.001 each), the references no DOI was found for. */
   searchUnfound: boolean;
   minCount: number;
+  /** Go a second level: what the works that several references cite rest on. */
+  deeper: boolean;
+  /** A deeper gap is cited by at least this many of those shared works (2 to 20). */
+  deeperMin: number;
   /** The last run and the input it was made from, with when. */
   last: { input: GapInput; run: import("./gaps-fetch").GapsRun; ranAt: string } | null;
 }
 
 export function emptyGapsSession(): GapsSession {
-  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, last: null };
+  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, deeper: false, deeperMin: 5, last: null };
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -177,6 +186,8 @@ export function normaliseGapsSession(raw: unknown): GapsSession | null {
   if (isObj(raw.refs)) out.refs = raw.refs;
   out.searchUnfound = raw.searchUnfound === true;
   if (typeof raw.minCount === "number" && Number.isFinite(raw.minCount)) out.minCount = Math.min(10, Math.max(2, Math.floor(raw.minCount)));
+  out.deeper = raw.deeper === true;
+  if (typeof raw.deeperMin === "number" && Number.isFinite(raw.deeperMin)) out.deeperMin = Math.min(20, Math.max(2, Math.floor(raw.deeperMin)));
   const last = raw.last;
   if (isObj(last) && typeof last.ranAt === "string" && isObj(last.input) && isObj(last.run) && Array.isArray(last.run.gaps) && typeof last.input.kind === "string") {
     out.last = { input: last.input as unknown as GapInput, run: last.run as unknown as NonNullable<GapsSession["last"]>["run"], ranAt: last.ranAt };

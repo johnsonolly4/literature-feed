@@ -20,7 +20,7 @@ if (outArg === undefined && !existsSync(vault)) {
 const dir = mkdtempSync(join(tmpdir(), "literature-feed-demo-"));
 const outfile = join(dir, "write.mjs");
 await build({ entryPoints: ["src/inbox/write.ts"], bundle: true, format: "esm", platform: "node", outfile, logLevel: "error" });
-const { renderNote, markSynced, setTick, noteName, weekLabel } = await import(pathToFileURL(outfile).href);
+const { renderNote, markSynced, setTick, setDismissed, noteName, weekLabel } = await import(pathToFileURL(outfile).href);
 rmSync(dir, { recursive: true, force: true });
 
 // ---- dates ---------------------------------------------------------------------------------------------------------
@@ -86,11 +86,13 @@ const notes = {
     paper("demo-catalysts", "ticked", "strong", "Demo: Zinc catalysts, kinetics and selectivity", ["catalyst", "kinetics"], [2]),
     paper("demo-catalysts", "resend", "possible", "Demo: Organocatalysis review", ["organocatalyst"], [2]),
     paper("demo-catalysts", "new", "possible", "Demo: Catalyst deactivation in flow reactors", ["catalyst", "flow"], [1, 2]),
+    paper("demo-catalysts", "noaccess", "strong", "Demo: Paywalled kinetics study we cannot get", ["catalyst", "kinetics"], [2]),
   ],
   last: [
     paper("demo-polymers", "zotero", "strong", "Demo: Flow synthesis of poly(disulfide)s", ["flow", "polymer"], [1]),
     paper("demo-polymers", "read", "strong", "Demo: Self-immolative polymers for delivery", ["polymer", "responsive"], [1]),
     paper("demo-polymers", "new", "possible", "Demo: Adhesive coatings with gold nanoparticles", ["adhesive"], [2]),
+    paper("demo-polymers", "zotero-irrelevant", "strong", "Demo: Sent to Zotero, then judged not useful", ["polymer"], [1]),
     paper("demo-polymers", "zotero", "priority", "Demo: Bayesian design of experiments for polymers", ["bayesian", "polymer"], [4]),
     paper("demo-polymers", "ticked", "possible", "Demo: Acrylate monomers from renewable sources", ["acrylate"], [2]),
     paper("demo-catalysts", "zotero", "strong", "Demo: Palladium catalysed coupling", ["catalyst"], [1]),
@@ -130,10 +132,14 @@ function buildNote(week, list) {
   const synced = [];
   for (const p of list) {
     if (p.state === "ticked") text = setTick(text, p.feedId, p.openalexId, true);
-    else if (["zotero", "read", "processed", "resend"].includes(p.state)) synced.push({ feedId: p.feedId, openalexId: p.openalexId, key: p.zoteroKey });
+    else if (["zotero", "read", "processed", "resend", "zotero-irrelevant"].includes(p.state)) synced.push({ feedId: p.feedId, openalexId: p.openalexId, key: p.zoteroKey });
   }
   text = markSynced(text, synced);
-  for (const p of list) if (p.state === "resend") text = setTick(text, p.feedId, p.openalexId, false);
+  for (const p of list) {
+    if (p.state === "resend") text = setTick(text, p.feedId, p.openalexId, false);
+    if (p.state === "zotero-irrelevant") text = setDismissed(text, p.feedId, p.openalexId, "irrelevant");
+    if (p.state === "noaccess") text = setDismissed(text, p.feedId, p.openalexId, "no-access");
+  }
   return text;
 }
 
@@ -204,20 +210,21 @@ Then reload Obsidian and open the newest note in \`Demo/Inbox\`.
 4. **Shared paper.** "Radical ring-opening of dithiolane monomers" is listed under both searches: two rows, one per search.
 5. **Marks.** One paper is marked \`preprint\`, one \`title only\`, and one sits in the "No abstract" list (Unchecked).
 6. **Ticking.** Tick a New paper in the table: the chip turns Ticked and the cards update. (To see the stored line, remove \`literature-feed-table\` from the note's \`cssclasses\`: the line now starts with \`[x]\`.)
-7. **Resend request.** "Organocatalysis review" is in the In Zotero list but unticked: it shows Ticked, which means "will be sent again".
-8. **Colours.** Check light and dark themes and Lab Kit's theme on and off.
+7. **Resend request.** "Organocatalysis review" is in the In Zotero list but unticked: it shows Ticked, which means "will be sent again". An In Zotero row's box is locked (checked, greyed); its Links cell has **Send again** (and **Cancel resend** while one is pending).
+8. **Dismiss.** Every row ends with a ✕. It opens a menu: **Not relevant** or **Can't get it (no access)**. "Sent to Zotero, then judged not useful" (last week) and "Paywalled kinetics study" (this week) are already dismissed: grey chip, faded struck-through row, the reason in the detail line, a ↩ to undo. Dismiss a New paper yourself and check the cards (a "· N dismissed" appears in the counts line and the bar gets a faint segment), the Dismissed filter chip, and the Sync count. A dismissed paper is never sent.
+9. **Colours.** Check light and dark themes and Lab Kit's theme on and off.
 
 ## Checklist: read state and archive
 
-9. Run **Update read state and archive** (command palette). The Notice says what it checked. Two papers from this week and one from last week get a **Read** link (matched by Zotero key, DOI or title to the notes in \`Demo/Literature\`); "Responsive polymer networks…" shows **Processed** (its takeaway is filled), the others Read.
-10. The oldest note (${written[3]}) moves to \`Demo/Archive\`: every paper in it is in Zotero or aged out. The other three stay.
-11. In ${written[2]} the papers still New or In Zotero carry a red outline: they age out within days.
+10. Run **Update read state and archive** (command palette). The Notice says what it checked. Two papers from this week and one from last week get a **Read** link (matched by Zotero key, DOI or title to the notes in \`Demo/Literature\`); "Responsive polymer networks…" shows **Processed** (its takeaway is filled), the others Read.
+11. The oldest note (${written[3]}) moves to \`Demo/Archive\`: every paper in it is in Zotero or aged out. The other three stay.
+12. In ${written[2]} the papers still New or In Zotero carry a red outline: they age out within days.
 
 ## Checklist: search effectiveness
 
-12. Run **Show search effectiveness**. Demo polymers: the term "bayesian" does well (every decided paper with it was wanted) and "adhesive" does badly (none was). Topic table, tier table, month table and rule versions are filled; topic "Returned" and "Dropped" show "–" because the demo has no scans. The note says rates are weak under 20 decided papers.
-13. **Copy as Markdown** puts the report on the clipboard.
-14. When you are done: remove the two demo searches in the settings, run the command again and press **Forget history of 2 removed searches**, so the demo does not stay in your real history. Then put the three folder settings back.
+13. Run **Show search effectiveness**. Demo polymers: the term "bayesian" does well (every decided paper with it was wanted) and "adhesive" does badly (none was). Topic table, tier table, month table and rule versions are filled; the **No access** column shows the paywalled paper (counted as wanted), and the paper sent and then dismissed as not relevant counts as dismissed; topic "Returned" and "Dropped" show "–" because the demo has no scans. The note says rates are weak under 20 decided papers.
+14. **Copy as Markdown** puts the report on the clipboard.
+15. When you are done: remove the two demo searches in the settings, run the command again and press **Forget history of 2 removed searches**, so the demo does not stay in your real history. Then put the three folder settings back.
 
 ## The Home card
 

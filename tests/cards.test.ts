@@ -7,7 +7,7 @@ import type { ParsedPaper } from "../src/inbox/write";
 function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
   return {
     openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false,
-    title: `Paper ${id}`, topics: [], authors: "", venue: "", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: [], ...overrides,
+    title: `Paper ${id}`, topics: [], authors: "", venue: "", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: [], dismissed: null, ...overrides,
   };
 }
 
@@ -30,17 +30,17 @@ describe("counts", () => {
   ], new Set(["a|W6"]));
 
   it("counts to read, ticked, new and read (processed counts as read)", () => {
-    expect(summariseRows(rows)).toEqual({ toRead: 2, ticked: 1, new: 1, read: 2 });
+    expect(summariseRows(rows)).toEqual({ toRead: 2, ticked: 1, new: 1, read: 2, dismissed: 0 });
     expect(countsLine(summariseRows(rows))).toBe("2 to read · 1 new · 1 ticked · 2 read");
   });
 
   it("makes bar widths that are whole percents summing to 100, or all zero when empty", () => {
-    for (const c of [{ toRead: 1, ticked: 1, new: 1, read: 0 }, { toRead: 2, ticked: 1, new: 1, read: 2 }, { toRead: 7, ticked: 0, new: 0, read: 0 }]) {
+    for (const c of [{ toRead: 1, ticked: 1, new: 1, read: 0, dismissed: 0 }, { toRead: 2, ticked: 1, new: 1, read: 2, dismissed: 0 }, { toRead: 7, ticked: 0, new: 0, read: 0, dismissed: 0 }]) {
       const w = barWidths(c);
       expect(w.toRead + w.ticked + w.new + w.read).toBe(100);
     }
-    expect(barWidths({ toRead: 1, ticked: 1, new: 1, read: 0 })).toEqual({ toRead: 34, ticked: 33, new: 33, read: 0 });
-    expect(barWidths({ toRead: 0, ticked: 0, new: 0, read: 0 })).toEqual({ toRead: 0, ticked: 0, new: 0, read: 0 });
+    expect(barWidths({ toRead: 1, ticked: 1, new: 1, read: 0, dismissed: 0 })).toEqual({ toRead: 34, ticked: 33, new: 33, read: 0, dismissed: 0 });
+    expect(barWidths({ toRead: 0, ticked: 0, new: 0, read: 0, dismissed: 0 })).toEqual({ toRead: 0, ticked: 0, new: 0, read: 0, dismissed: 0 });
   });
 });
 
@@ -73,12 +73,12 @@ describe("buildCards", () => {
     const [card] = buildCards([], [feed("a")], null);
     expect(card.funnel).toEqual({ listed: 0, ticked: 0, read: 0 });
     expect(card.badge).toEqual({ text: "nothing to read", waiting: false });
-    expect(card.bar).toEqual({ toRead: 0, ticked: 0, new: 0, read: 0 });
+    expect(card.bar).toEqual({ toRead: 0, ticked: 0, new: 0, read: 0, dismissed: 0 });
   });
 
   it("counts per feed with the funnel: listed, ticked (shown interest) and read", () => {
     const a = buildCards(rows, [feed("a")], last)[0];
-    expect(a.counts).toEqual({ toRead: 4, ticked: 1, new: 1, read: 1 });
+    expect(a.counts).toEqual({ toRead: 4, ticked: 1, new: 1, read: 1, dismissed: 0 });
     expect(a.funnel).toEqual({ listed: 7, ticked: 6, read: 1 });
     expect(a.badge).toEqual({ text: "4 to read", waiting: true });
     expect(a.bar.toRead + a.bar.ticked + a.bar.new + a.bar.read).toBe(100);
@@ -110,7 +110,7 @@ describe("homeSummary", () => {
 
   it("counts everything and lists the first papers to read", () => {
     const s = homeSummary(rows, 2);
-    expect(s.counts).toEqual({ toRead: 4, ticked: 0, new: 1, read: 0 });
+    expect(s.counts).toEqual({ toRead: 4, ticked: 0, new: 1, read: 0, dismissed: 0 });
     expect(s.toRead.map((r) => r.paper.openalexId)).toEqual(["W2", "W1"]);
     expect(s.more).toBe(2);
   });

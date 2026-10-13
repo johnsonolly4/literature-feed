@@ -33,7 +33,7 @@ describe("buildReport", () => {
       "a/W4": rec({ start: NEW }),
     });
     const [f] = buildReport(ledger, [feed()], TODAY, 4).feeds;
-    expect(f.totals).toEqual({ listed: 4, interested: 2, dismissed: 1, undecided: 1, read: 1 });
+    expect(f.totals).toEqual({ listed: 4, interested: 2, dismissed: 1, undecided: 1, read: 1, noAccess: 0 });
     expect(f.rate).toBeCloseTo(2 / 3);
   });
 
@@ -133,7 +133,7 @@ describe("reportMarkdown", () => {
     expect(text).toContain("## Feed a");
     expect(text).toContain("3 listed, 2 decided (50% wanted), 1 undecided.");
     expect(text).toContain("weak evidence");
-    expect(text).toContain("| strong | 3 | 1 | 1 | 1 | 0 | 50% |");
+    expect(text).toContain("| strong | 3 | 1 | 1 | 1 | 0 | 0 | 50% |");
     expect(text).toContain("| 1 | first query |");
   });
 

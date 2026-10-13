@@ -115,7 +115,7 @@ export function noteWeekStart(fileName: string): string | null {
 }
 
 /**
- * Papers that still keep the note open. A paper is done when it is read, or when its note's week ended `dismissAfterWeeks`
+ * Papers that still keep the note open. A paper is done when it is read or dismissed, or when its note's week ended `dismissAfterWeeks`
  * weeks ago or more and it is unticked (dismissed) or in Zotero but unread (done by age). A ticked paper that is not in Zotero
  * yet, and a paper unticked in the "In Zotero" list (a request to send it again), stay open however old the note is.
  */
@@ -123,7 +123,7 @@ export function unfinishedPapers(papers: readonly ParsedPaper[], noteName: strin
   const start = noteWeekStart(noteName);
   const agedFrom = start === null ? null : addDays(start, 7 + dismissAfterWeeks * 7);
   return papers.filter((p) => {
-    if (p.read) return false;
+    if (p.read || p.dismissed) return false;
     if (p.list === "synced" && !p.ticked) return true; // a request to send it again
     const aged = agedFrom !== null && today >= agedFrom;
     if (aged && (p.synced || !p.ticked)) return false;

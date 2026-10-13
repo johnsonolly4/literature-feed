@@ -22,7 +22,7 @@ export function findPending(notes: readonly { path: string; text: string }[]): P
   const out: PendingPaper[] = [];
   for (const note of notes) {
     for (const p of parseInbox(note.text).papers) {
-      const wanted = p.list === "synced" ? !p.ticked : p.ticked && !p.synced;
+      const wanted = !p.dismissed && (p.list === "synced" ? !p.ticked : p.ticked && !p.synced);
       if (wanted) out.push({ path: note.path, feedId: p.feedId, openalexId: p.openalexId, topics: p.topics });
     }
   }

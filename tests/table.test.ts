@@ -5,7 +5,7 @@ import type { ParsedPaper } from "../src/inbox/write";
 function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
   return {
     openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false,
-    title: `Paper ${id}`, topics: [], authors: "", venue: "", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: [], ...overrides,
+    title: `Paper ${id}`, topics: [], authors: "", venue: "", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: [], dismissed: null, ...overrides,
   };
 }
 
@@ -76,8 +76,8 @@ describe("ordering, filtering and counts", () => {
     expect(filterRows(rows, "all")).toHaveLength(7);
     expect(ids(filterRows(rows, "all", "other"))).toEqual([]);
     expect(filterRows(rows, "all", "a")).toHaveLength(7);
-    expect(countsByStatus(rows)).toEqual({ all: 7, new: 2, ticked: 1, "in-zotero": 2, read: 1, processed: 1 });
-    expect(countsByStatus([])).toEqual({ all: 0, new: 0, ticked: 0, "in-zotero": 0, read: 0, processed: 0 });
+    expect(countsByStatus(rows)).toEqual({ all: 7, new: 2, ticked: 1, "in-zotero": 2, read: 1, processed: 1, dismissed: 0 });
+    expect(countsByStatus([])).toEqual({ all: 0, new: 0, ticked: 0, "in-zotero": 0, read: 0, processed: 0, dismissed: 0 });
   });
 });
 

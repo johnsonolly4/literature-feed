@@ -66,7 +66,8 @@ describe("the demo set", () => {
       return makeRows(parseInbox(text).papers, processed);
     });
     const statuses = new Set(rows.map((r) => r.status));
-    expect([...statuses].sort()).toEqual(["in-zotero", "new", "processed", "read", "ticked"]);
+    expect([...statuses].sort()).toEqual(["dismissed", "in-zotero", "new", "processed", "read", "ticked"]);
+    expect(rows.filter((r) => r.status === "dismissed").map((r) => r.paper.dismissed).sort()).toEqual(["irrelevant", "no-access"]);
     expect(rows.filter((r) => r.status === "read")).toHaveLength(2);
     expect(rows.filter((r) => r.status === "processed")).toHaveLength(1);
   });

@@ -5,7 +5,7 @@ import type { ConceptGroup } from "../match/feed";
 import type { FeedConfig } from "../settings/data";
 import { addDays, type TopicStat } from "../inbox/scan";
 import { noteWeekStart } from "../inbox/state";
-import type { ListedTier, ParsedPaper } from "../inbox/write";
+import type { DismissReason, ListedTier, ParsedPaper } from "../inbox/write";
 
 /** Scan records kept (the oldest are dropped beyond this). */
 export const SCAN_CAP = 300;
@@ -25,6 +25,9 @@ export interface LedgerPaper {
   ticked?: string;
   synced?: string;
   read?: string;
+  /** The day a refresh first saw the paper dismissed, and why. Unlike the outcomes above, an undo in the note clears these. */
+  dismissed?: string;
+  dismissReason?: DismissReason;
 }
 
 export interface ScanRecord {
@@ -101,6 +104,8 @@ export function normaliseLedger(raw: unknown): Ledger {
         terms: strings(value.terms),
         def: Number.isInteger(value.def) ? (value.def as number) : 0,
         ticked: day(value.ticked), synced: day(value.synced), read: day(value.read),
+        dismissed: day(value.dismissed),
+        dismissReason: value.dismissReason === "irrelevant" || value.dismissReason === "no-access" ? value.dismissReason : undefined,
       };
     }
   }
@@ -232,8 +237,8 @@ export function recordScan(ledger: Ledger, at: string, stats: readonly { feedId:
 
 /**
  * Makes an entry for every paper in the notes that has none, and stamps `today` on each outcome (ticked, sent, read) the first
- * time it is seen. An outcome is never taken back: unticking later does not change that the paper was once wanted. Returns
- * true if anything changed.
+ * time it is seen. An outcome is never taken back: unticking later does not change that the paper was once wanted. A dismissal
+ * (and its reason) follows the note, so an undo clears it. Returns true if anything changed.
  */
 export function updateFromNotes(ledger: Ledger, notes: readonly { name: string; papers: readonly ParsedPaper[] }[], today: string): boolean {
   let changed = false;
@@ -255,6 +260,17 @@ export function updateFromNotes(ledger: Ledger, notes: readonly { name: string; 
       if (p.ticked && !rec.ticked) { rec.ticked = today; changed = true; }
       if (p.synced && !rec.synced) { rec.synced = today; changed = true; }
       if (p.read && !rec.read) { rec.read = today; changed = true; }
+      if (p.dismissed) {
+        if (rec.dismissReason !== p.dismissed) {
+          rec.dismissed ??= today;
+          rec.dismissReason = p.dismissed;
+          changed = true;
+        }
+      } else if (rec.dismissed !== undefined || rec.dismissReason !== undefined) {
+        delete rec.dismissed;
+        delete rec.dismissReason;
+        changed = true;
+      }
     }
   }
   return changed;
@@ -280,11 +296,14 @@ export function forgetFeeds(ledger: Ledger, keep: ReadonlySet<string>): number {
 export type Verdict = "interested" | "dismissed" | "undecided";
 
 /**
- * Interested: ticked, sent to Zotero or read. Dismissed: none of those, and its note's week ended `dismissAfterWeeks` weeks ago
- * or more. Otherwise undecided (still waiting, or too recent to say).
+ * Dismissed as not relevant: dismissed, whatever was done before (the judgement after reading is the better signal).
+ * Interested: dismissed as no access (the search found a paper the user wanted), or ticked, sent to Zotero or read.
+ * Dismissed: none of those, and its note's week ended `dismissAfterWeeks` weeks ago or more. Otherwise undecided (still
+ * waiting, or too recent to say).
  */
 export function verdictOf(p: LedgerPaper, today: string, dismissAfterWeeks: number): Verdict {
-  if (p.ticked || p.synced || p.read) return "interested";
+  if (p.dismissReason === "irrelevant") return "dismissed";
+  if (p.dismissReason === "no-access" || p.ticked || p.synced || p.read) return "interested";
   if (p.start !== "" && today >= addDays(p.start, 7 + dismissAfterWeeks * 7)) return "dismissed";
   return "undecided";
 }

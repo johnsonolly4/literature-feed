@@ -124,7 +124,7 @@ describe("noteWeekStart", () => {
 });
 
 function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
-  return { openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false, title: "", topics: [], ...overrides };
+  return { openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false, title: "", topics: [], dismissed: null, ...overrides };
 }
 
 describe("isFinished", () => {

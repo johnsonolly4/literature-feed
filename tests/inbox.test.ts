@@ -181,15 +181,15 @@ describe("parseInbox", () => {
     expect(parseInbox(text)).toEqual({
       scanned: "2026-10-12",
       papers: [
-        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: ["lipoic acid"] },
-        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: ["lipoic acid"] },
+        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: ["lipoic acid"], dismissed: null },
+        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: ["lipoic acid"], dismissed: null },
       ],
     });
   });
 
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
-    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [], authors: "", venue: "", year: null, preprint: false, titleOnly: false, readLink: null, matched: [] }]);
+    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [], authors: "", venue: "", year: null, preprint: false, titleOnly: false, readLink: null, matched: [], dismissed: null }]);
   });
 });
 

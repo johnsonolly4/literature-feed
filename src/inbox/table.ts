@@ -5,23 +5,25 @@ import { addDays } from "./scan";
 import { noteWeekStart } from "./state";
 import type { ListedTier, ParsedPaper } from "./write";
 
-export type PaperStatus = "new" | "ticked" | "in-zotero" | "read" | "processed";
+export type PaperStatus = "new" | "ticked" | "in-zotero" | "read" | "processed" | "dismissed";
 
 export const STATUS_LABEL: Record<PaperStatus, string> = {
-  new: "New", ticked: "Ticked", "in-zotero": "In Zotero", read: "Read", processed: "Processed",
+  new: "New", ticked: "Ticked", "in-zotero": "In Zotero", read: "Read", processed: "Processed", dismissed: "Dismissed",
 };
 
-/** To read first, then what is being sent, then new papers, then finished ones. */
-const STATUS_RANK: Record<PaperStatus, number> = { "in-zotero": 0, ticked: 1, new: 2, read: 3, processed: 4 };
+/** To read first, then what is being sent, then new papers, then finished ones, then dismissed ones. */
+const STATUS_RANK: Record<PaperStatus, number> = { "in-zotero": 0, ticked: 1, new: 2, read: 3, processed: 4, dismissed: 5 };
 const TIER_RANK: Record<ListedTier, number> = { priority: 0, strong: 1, possible: 2, unchecked: 3 };
 
 export const TIER_LABEL: Record<ListedTier, string> = { priority: "Priority", strong: "Strong", possible: "Possible", unchecked: "No abstract" };
 
 /**
- * Read (a literature note exists) wins; Processed when that note's takeaway line is filled. Otherwise: in Zotero (sent and
- * ticked), Ticked (ticked and waiting to be sent, or unticked in the "In Zotero" list to be sent again), else New.
+ * Dismissed (the user rejected it, at any stage) wins over everything. Then Read (a literature note exists), Processed when
+ * that note's takeaway line is filled. Otherwise: in Zotero (sent and ticked), Ticked (ticked and waiting to be sent, or
+ * unticked in the "In Zotero" list to be sent again), else New.
  */
 export function paperStatus(p: ParsedPaper, processed: boolean): PaperStatus {
+  if (p.dismissed) return "dismissed";
   if (p.read) return processed ? "processed" : "read";
   if (p.synced && p.ticked) return "in-zotero";
   if (p.synced || p.ticked) return "ticked";
@@ -76,7 +78,7 @@ export function filterRows(rows: readonly TableRow[], filter: FilterKey, feedId:
 }
 
 export function countsByStatus(rows: readonly TableRow[]): Record<FilterKey, number> {
-  const counts: Record<FilterKey, number> = { all: rows.length, new: 0, ticked: 0, "in-zotero": 0, read: 0, processed: 0 };
+  const counts: Record<FilterKey, number> = { all: rows.length, new: 0, ticked: 0, "in-zotero": 0, read: 0, processed: 0, dismissed: 0 };
   for (const r of rows) counts[r.status]++;
   return counts;
 }

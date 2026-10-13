@@ -3,7 +3,7 @@ import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
 import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, type LiteratureNote, type RefreshReport } from "./inbox/state";
-import { NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setTick, tidySynced, type ParsedPaper } from "./inbox/write";
+import { NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setDismissed, setTick, tidySynced, type DismissReason, type ParsedPaper } from "./inbox/write";
 import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordScan, updateFromNotes, type Ledger } from "./ledger/ledger";
 import { buildReport, reportMarkdown } from "./ledger/report";
 import { ReportModal } from "./ledger/report-modal";
@@ -171,6 +171,25 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     const file = this.app.vault.getFileByPath(path);
     if (!file) return;
     await this.app.vault.process(file, (current) => setTick(current, feedId, openalexId, ticked));
+    await this.updateLedgerNow();
+  }
+
+  /** The table's dismiss button: dismisses one paper's line (or takes it back with null), nothing else. */
+  async setDismissed(path: string, feedId: string, openalexId: string, reason: DismissReason | null): Promise<void> {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return;
+    await this.app.vault.process(file, (current) => setDismissed(current, feedId, openalexId, reason));
+    await this.updateLedgerNow();
+  }
+
+  /** Records what the inbox notes now show in the ledger, quietly (a failure is not worth a message here). */
+  private async updateLedgerNow(): Promise<void> {
+    try {
+      const inbox = (await this.readInboxNotes()).map((n) => ({ name: n.file.name, papers: parseInbox(n.text).papers }));
+      await this.recordLedger(inbox);
+    } catch {
+      // The next refresh or report records it.
+    }
   }
 
   /** Marks papers that have a literature note as read and archives finished notes; says so when it changed something. */

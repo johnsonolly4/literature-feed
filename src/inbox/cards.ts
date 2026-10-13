@@ -12,6 +12,7 @@ export interface StatusCounts {
   ticked: number;
   new: number;
   read: number;
+  dismissed: number;
 }
 
 export interface FeedCard {
@@ -32,9 +33,10 @@ export interface FeedCard {
 }
 
 export function summariseRows(rows: readonly TableRow[]): StatusCounts {
-  const counts: StatusCounts = { toRead: 0, ticked: 0, new: 0, read: 0 };
+  const counts: StatusCounts = { toRead: 0, ticked: 0, new: 0, read: 0, dismissed: 0 };
   for (const r of rows) {
-    if (r.status === "in-zotero") counts.toRead++;
+    if (r.status === "dismissed") counts.dismissed++;
+    else if (r.status === "in-zotero") counts.toRead++;
     else if (r.status === "ticked") counts.ticked++;
     else if (r.status === "new") counts.new++;
     else counts.read++;
@@ -42,16 +44,16 @@ export function summariseRows(rows: readonly TableRow[]): StatusCounts {
   return counts;
 }
 
-/** "3 to read · 5 new · 1 ticked · 4 read" */
+/** "3 to read · 5 new · 1 ticked · 4 read", and " · 2 dismissed" when there are any. */
 export function countsLine(c: StatusCounts): string {
-  return `${c.toRead} to read · ${c.new} new · ${c.ticked} ticked · ${c.read} read`;
+  return `${c.toRead} to read · ${c.new} new · ${c.ticked} ticked · ${c.read} read${c.dismissed > 0 ? ` · ${c.dismissed} dismissed` : ""}`;
 }
 
 /** Whole percents that sum to 100 (largest remainder), or all zeros when `counts` is empty. */
 export function barWidths(counts: StatusCounts): StatusCounts {
-  const keys = ["toRead", "ticked", "new", "read"] as const;
+  const keys = ["toRead", "ticked", "new", "read", "dismissed"] as const;
   const total = keys.reduce((n, k) => n + counts[k], 0);
-  const out: StatusCounts = { toRead: 0, ticked: 0, new: 0, read: 0 };
+  const out: StatusCounts = { toRead: 0, ticked: 0, new: 0, read: 0, dismissed: 0 };
   if (total === 0) return out;
   const parts = keys.map((k) => ({ k, raw: (counts[k] / total) * 100 }));
   for (const p of parts) out[p.k] = Math.floor(p.raw);

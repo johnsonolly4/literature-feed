@@ -235,7 +235,8 @@ table.literature-feed-papers td {
 .literature-feed-filter.is-ticked,
 .literature-feed-filter.is-in-zotero,
 .literature-feed-filter.is-read,
-.literature-feed-filter.is-processed {
+.literature-feed-filter.is-processed,
+.literature-feed-filter.is-dismissed {
   --literature-feed-rgb: 100, 116, 139;
 }
 
@@ -292,7 +293,8 @@ table.literature-feed-papers td {
 .literature-feed-filter.is-ticked,
 .literature-feed-filter.is-in-zotero,
 .literature-feed-filter.is-read,
-.literature-feed-filter.is-processed {
+.literature-feed-filter.is-processed,
+.literature-feed-filter.is-dismissed {
   background: rgba(var(--literature-feed-rgb), var(--vt-tint, 0.2));
 }
 
@@ -446,4 +448,42 @@ table.literature-feed-papers .literature-feed-tick-cell {
 table.literature-feed-papers input.literature-feed-tick[type="checkbox"] {
   display: block;
   margin: 0 auto;
+}
+
+/* Dismissed: a faint slate chip, a faded row with a struck-through title; the dismiss button stays clear */
+.literature-feed-chip.is-dismissed,
+.literature-feed-filter.is-dismissed {
+  --literature-feed-rgb: var(--vt-neutral, 100, 116, 139);
+  color: var(--text-faint);
+}
+
+table.literature-feed-papers tr.is-dismissed td:not(.literature-feed-act) {
+  opacity: 0.55;
+}
+
+table.literature-feed-papers tr.is-dismissed .literature-feed-title {
+  text-decoration: line-through;
+}
+
+table.literature-feed-papers .literature-feed-act {
+  width: 1%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+button.literature-feed-icon {
+  height: auto;
+  padding: 2px 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+}
+
+.literature-feed-links a + a {
+  margin-inline-start: var(--size-4-2);
+}
+
+.literature-feed-bar-dismissed {
+  background: var(--text-faint);
+  opacity: 0.5;
 }

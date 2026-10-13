@@ -17,6 +17,8 @@ export interface Counts {
   dismissed: number;
   undecided: number;
   read: number;
+  /** Papers dismissed as "no access": counted as wanted, shown apart so the access problem is visible. */
+  noAccess: number;
 }
 
 export interface TermRow {
@@ -79,13 +81,14 @@ const STOP_WORDS = new Set((
 ).split(" "));
 
 export function emptyCounts(): Counts {
-  return { listed: 0, interested: 0, dismissed: 0, undecided: 0, read: 0 };
+  return { listed: 0, interested: 0, dismissed: 0, undecided: 0, read: 0, noAccess: 0 };
 }
 
 function add(c: Counts, verdict: ReturnType<typeof verdictOf>, p: LedgerPaper): void {
   c.listed++;
   c[verdict]++;
   if (p.read) c.read++;
+  if (p.dismissReason === "no-access") c.noAccess++;
 }
 
 /** Interested share of decided papers, or null when none is decided. */
@@ -207,10 +210,10 @@ function table(head: string[], rows: string[][]): string[] {
   return [`| ${head.join(" | ")} |`, `| ${head.map(() => "---").join(" | ")} |`, ...rows.map((r) => `| ${r.map(cell).join(" | ")} |`), ""];
 }
 
-const COUNT_HEAD = ["Listed", "Wanted", "Dismissed", "Undecided", "Read", "Wanted rate"];
+const COUNT_HEAD = ["Listed", "Wanted", "Dismissed", "Undecided", "Read", "No access", "Wanted rate"];
 
 function countCells(c: Counts): string[] {
-  return [String(c.listed), String(c.interested), String(c.dismissed), String(c.undecided), String(c.read), pct(rateOf(c))];
+  return [String(c.listed), String(c.interested), String(c.dismissed), String(c.undecided), String(c.read), String(c.noAccess), pct(rateOf(c))];
 }
 
 function short(text: string, max = 70): string {
@@ -229,8 +232,8 @@ function termTable(label: string, rows: readonly TermRow[], average: number | nu
 export function reportMarkdown(report: Report): string {
   const out: string[] = ["# Search effectiveness", ""];
   out.push(
-    `As of ${report.today}. **Wanted** = ticked, sent to Zotero or read. **Dismissed** = not wanted and its week ended ${report.dismissAfterWeeks} weeks ago or more. `
-    + "**Undecided** = still waiting or too recent; undecided papers are left out of the rates.", "",
+    `As of ${report.today}. **Wanted** = ticked, sent to Zotero or read, or dismissed as no access. **Dismissed** = marked not relevant (even after reading), or not wanted and its week ended ${report.dismissAfterWeeks} weeks ago or more. `
+    + "**Undecided** = still waiting or too recent; undecided papers are left out of the rates. **No access** = wanted but not obtainable (counted as wanted).", "",
   );
   if (report.feeds.length === 0) {
     out.push("Nothing recorded yet. The ledger fills when a scan or **Update read state and archive** has run.", "");

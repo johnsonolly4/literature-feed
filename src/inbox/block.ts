@@ -2,7 +2,7 @@
 // chips, order, filter); with `show: home` it is a small card for another note. Built with createEl only. It redraws when
 // the note it reads, or a literature note, is modified, so ticking a box updates it. The checkbox lines in the note are
 // the stored data: the table reads them, and ticking in the table edits the matching line.
-import { MarkdownRenderChild, TFile, type App, type MarkdownPostProcessorContext, type Plugin } from "obsidian";
+import { MarkdownRenderChild, Menu, TFile, type App, type MarkdownPostProcessorContext, type Plugin } from "obsidian";
 import type { Settings } from "../settings/data";
 import { DEFAULT_LIMIT, buildCards, countsLine, homeSummary, parseLimit, type FeedCard } from "./cards";
 import { describeCounts, describeFeedRow, localDay } from "./scan";
@@ -10,7 +10,7 @@ import {
   DEFAULT_SORT, STATUS_LABEL, TIER_LABEL, agesOutSoon, countsByStatus, filterRows, makeRows, orderRows, takeawayFilled,
   type FilterKey, type SortKey, type SortSetting, type TableRow,
 } from "./table";
-import { NOTE_NAME_PATTERN, doiUrl, parseInbox, waitingByFeed, waitingByTier, type ListedTier, type ParsedPaper } from "./write";
+import { NOTE_NAME_PATTERN, doiUrl, parseInbox, waitingByFeed, waitingByTier, type DismissReason, type ListedTier, type ParsedPaper } from "./write";
 
 export interface BlockHost {
   app: App;
@@ -19,12 +19,14 @@ export interface BlockHost {
   syncNow(): Promise<void>;
   /** Sets the tick of one paper's line in the note (the table's checkbox). */
   toggleTick(path: string, feedId: string, openalexId: string, ticked: boolean): Promise<void>;
+  /** Dismisses one paper's line (and why), or takes the dismissal back with null. */
+  setDismissed(path: string, feedId: string, openalexId: string, reason: DismissReason | null): Promise<void>;
   /** Called after every scan, so open blocks redraw even when the note itself did not change. */
   scanListeners: Set<() => void>;
 }
 
 const VIEW_KEY = "literature-feed-view";
-const FILTERS: FilterKey[] = ["all", "in-zotero", "ticked", "new", "read", "processed"];
+const FILTERS: FilterKey[] = ["all", "in-zotero", "ticked", "new", "read", "processed", "dismissed"];
 const SORTABLE: { key: SortKey; label: string }[] = [
   { key: "status", label: "Status" }, { key: "paper", label: "Paper" }, { key: "tier", label: "Tier" }, { key: "year", label: "Year" },
 ];
@@ -195,7 +197,7 @@ class StatusBlock extends MarkdownRenderChild {
     box.createDiv({ cls: "literature-feed-meta", text: countsLine(card.counts) });
     box.createDiv({ cls: "literature-feed-funnel", text: `listed ${card.funnel.listed} → ticked ${card.funnel.ticked} → read ${card.funnel.read}` });
     const bar = box.createDiv({ cls: "literature-feed-bar" });
-    for (const [key, label] of [["toRead", "to read"], ["ticked", "ticked"], ["new", "new"], ["read", "read"]] as const) {
+    for (const [key, label] of [["toRead", "to read"], ["ticked", "ticked"], ["new", "new"], ["read", "read"], ["dismissed", "dismissed"]] as const) {
       if (card.bar[key] === 0) continue;
       const segment = bar.createDiv({ cls: `literature-feed-bar-${key}`, attr: { title: `${card.counts[key]} ${label}` } });
       segment.setCssProps({ "--literature-feed-width": `${card.bar[key]}%` });
@@ -245,7 +247,7 @@ class StatusBlock extends MarkdownRenderChild {
       });
     }
     // The Sync button next to the table, with how many papers it would send (what findPending counts).
-    const pending = rows.filter((r) => (r.paper.list === "synced" ? !r.paper.ticked : r.paper.ticked && !r.paper.synced)).length;
+    const pending = rows.filter((r) => !r.paper.dismissed && (r.paper.list === "synced" ? !r.paper.ticked : r.paper.ticked && !r.paper.synced)).length;
     const sendNow = chips.createEl("button", {
       cls: "literature-feed-sync", text: `Sync ${pending} to Zotero`, attr: { title: "Send the ticked papers to Zotero" },
     });
@@ -269,14 +271,17 @@ class StatusBlock extends MarkdownRenderChild {
       });
     }
     head.createEl("th", { text: "Links" });
+    head.createEl("th", { cls: "literature-feed-act" });
 
     const body = table.createEl("tbody");
     const shown = orderRows(filterRows(rows, this.filter, this.feedFilter), this.sort);
-    if (shown.length === 0) body.createEl("tr").createEl("td", { attr: { colspan: "6" }, cls: "literature-feed-empty", text: "No papers in this view." });
+    if (shown.length === 0) body.createEl("tr").createEl("td", { attr: { colspan: "7" }, cls: "literature-feed-empty", text: "No papers in this view." });
     for (const { paper, status } of shown) {
-      const tr = body.createEl("tr", { cls: paper.ticked ? `is-checked is-${status}` : "" });
+      const tr = body.createEl("tr", { cls: status === "dismissed" ? "is-dismissed" : paper.ticked ? `is-checked is-${status}` : "" });
       const tick = tr.createEl("td", { cls: "literature-feed-tick-cell" }).createEl("input", { type: "checkbox", cls: "literature-feed-tick" });
       tick.checked = paper.ticked;
+      // Once sent the box stays checked and cannot be changed (Send again is in the links); a dismissed paper's box is locked too.
+      tick.disabled = status === "dismissed" || (paper.synced && paper.ticked);
       tick.addEventListener("change", () => { void this.host.toggleTick(note.path, paper.feedId, paper.openalexId, tick.checked); });
 
       const chip = tr.createEl("td").createSpan({ cls: `literature-feed-chip is-${status}`, text: STATUS_LABEL[status] });
@@ -287,7 +292,10 @@ class StatusBlock extends MarkdownRenderChild {
 
       const cell = tr.createEl("td");
       cell.createDiv({ cls: "literature-feed-title", text: paper.title });
-      const meta = [paper.authors, paper.venue, paper.year === null ? "" : String(paper.year), paper.preprint ? "preprint" : "", paper.titleOnly ? "title only" : ""].filter((m) => m !== "");
+      const meta = [
+        paper.authors, paper.venue, paper.year === null ? "" : String(paper.year), paper.preprint ? "preprint" : "", paper.titleOnly ? "title only" : "",
+        paper.dismissed === "irrelevant" ? "not relevant" : paper.dismissed === "no-access" ? "no access" : "",
+      ].filter((m) => m !== "");
       if (meta.length > 0) cell.createDiv({ cls: "literature-feed-meta", text: meta.join(" · ") });
 
       tr.createEl("td", { text: TIER_LABEL[paper.tier] });
@@ -305,8 +313,30 @@ class StatusBlock extends MarkdownRenderChild {
           void this.host.app.workspace.openLinkText(target, note.path, false);
         });
       }
+      // A sent paper is sent again by unticking it in the note's In Zotero list; this link does that, and cancels it.
+      if (status !== "dismissed" && paper.synced && (paper.ticked || paper.list === "synced")) {
+        const again = links.createEl("a", { text: paper.ticked ? "Send again" : "Cancel resend", href: "#" });
+        again.addEventListener("click", (e) => {
+          e.preventDefault();
+          void this.host.toggleTick(note.path, paper.feedId, paper.openalexId, !paper.ticked);
+        });
+      }
       const found = [names.get(paper.feedId) ?? paper.feedId, paper.topics.length > 0 ? `topic${paper.topics.length === 1 ? "" : "s"} ${paper.topics.join(", ")}` : ""].filter((m) => m !== "");
       links.createDiv({ cls: "literature-feed-meta", text: found.join(" · ") });
+
+      const act = tr.createEl("td", { cls: "literature-feed-act" });
+      if (paper.dismissed) {
+        const undo = act.createEl("button", { text: "↩", cls: "literature-feed-icon", attr: { title: "Undo dismiss", "aria-label": "Undo dismiss" } });
+        undo.addEventListener("click", () => { void this.host.setDismissed(note.path, paper.feedId, paper.openalexId, null); });
+      } else {
+        const dismiss = act.createEl("button", { text: "✕", cls: "literature-feed-icon", attr: { title: "Dismiss this paper", "aria-label": "Dismiss this paper" } });
+        dismiss.addEventListener("click", (e) => {
+          const menu = new Menu();
+          menu.addItem((item) => item.setTitle("Not relevant").onClick(() => { void this.host.setDismissed(note.path, paper.feedId, paper.openalexId, "irrelevant"); }));
+          menu.addItem((item) => item.setTitle("Can't get it (no access)").onClick(() => { void this.host.setDismissed(note.path, paper.feedId, paper.openalexId, "no-access"); }));
+          menu.showAtMouseEvent(e);
+        });
+      }
     }
   }
 

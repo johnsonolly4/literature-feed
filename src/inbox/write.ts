@@ -231,6 +231,8 @@ export interface ParsedPaper {
   ticked: boolean;
   /** The line carries the "in Zotero" link: the paper has been sent. */
   synced: boolean;
+  /** The line is dismissed (checkbox `[-]`, marker `%%dx:n%%` or `%%dx:a%%`), and why; null when it is not. */
+  dismissed: DismissReason | null;
   /** The callout the line is in: the feed's ranked list, its list of papers without an abstract, or its "In Zotero" list. */
   list: NoteList;
   /** The Zotero item key from the link, or null. */
@@ -260,6 +262,9 @@ export interface ParsedPaper {
 
 export type NoteList = "ranked" | "unchecked" | "synced";
 
+/** Why a paper was dismissed: it turned out not relevant to the search, or the user cannot get it. */
+export type DismissReason = "irrelevant" | "no-access";
+
 export interface ParsedNote {
   scanned: string;
   papers: ParsedPaper[];
@@ -273,9 +278,10 @@ const DOI_LINK = /\]\(https:\/\/doi\.org\/(10\.[^)\s]+)\)/;
 const TOPICS = /%%tp:(\d+(?:,\d+)*)%%/;
 const READ_LINK = /\[\[[^\]|]+\|Read\]\]/;
 const READ_PATH = /\[\[([^\]|]+)\|Read\]\]/;
-const TITLE_BLOCK = /^>\s*-\s\[[ xX]\]\s(?:⭐\s)?\*\*(?:\\.|[^*])+\*\*/;
-const LINE_TITLE = /^>\s*-\s\[[ xX]\]\s(?:⭐\s)?\*\*((?:\\.|[^*])+)\*\*/;
-const PAPER = /^>\s*-\s\[( |x|X)\]\s.*%%oa:(W\d+):([psou])%%\s*$/;
+const TITLE_BLOCK = /^>\s*-\s\[[ xX-]\]\s(?:⭐\s)?\*\*(?:\\.|[^*])+\*\*/;
+const LINE_TITLE = /^>\s*-\s\[[ xX-]\]\s(?:⭐\s)?\*\*((?:\\.|[^*])+)\*\*/;
+const PAPER = /^>\s*-\s\[( |x|X|-)\]\s.*%%oa:(W\d+):([psou])%%\s*$/;
+const DISMISS_MARK = /\s*%%dx:([na])%%/;
 const CODE_TO_TIER = Object.fromEntries(Object.entries(TIER_CODE).map(([tier, code]) => [code, tier])) as Record<string, ListedTier>;
 
 /** The DOI in a line's DOI link, decoded, bare and lower case; null when there is none. */
@@ -298,7 +304,7 @@ function detailsOfLine(line: string): Pick<ParsedPaper, "authors" | "venue" | "y
   const empty = { authors: "", venue: "", year: null, preprint: false, titleOnly: false, matched: [] };
   const head = TITLE_BLOCK.exec(line);
   if (!head) return empty;
-  let rest = line.slice(head[0].length).replace(/\s*%%tp:[\d,]+%%/, "").replace(/\s*%%oa:[^%]+%%\s*$/, "");
+  let rest = line.slice(head[0].length).replace(/\s*%%tp:[\d,]+%%/, "").replace(DISMISS_MARK, "").replace(/\s*%%oa:[^%]+%%\s*$/, "");
   let authors = "";
   if (rest.startsWith(" — ")) {
     const cut = rest.indexOf(" · ");
@@ -346,8 +352,9 @@ export function parseInbox(text: string): ParsedNote {
     const paper = PAPER.exec(line);
     if (paper) {
       papers.push({
-        openalexId: paper[2], feedId, tier: CODE_TO_TIER[paper[3]], ticked: paper[1] !== " ",
-        synced: line.includes(ZOTERO_LINK), list, key: ZOTERO_KEY.exec(line)?.[1] ?? null,
+        openalexId: paper[2], feedId, tier: CODE_TO_TIER[paper[3]], ticked: paper[1] === "x" || paper[1] === "X",
+        synced: line.includes(ZOTERO_LINK),
+        dismissed: paper[1] === "-" ? (DISMISS_MARK.exec(line)?.[1] === "a" ? "no-access" : "irrelevant") : null, list, key: ZOTERO_KEY.exec(line)?.[1] ?? null,
         doi: doiOfLine(line), read: READ_LINK.test(line),
         title: (LINE_TITLE.exec(line)?.[1] ?? "").replace(/\\(.)/g, "$1"),
         topics: (TOPICS.exec(line)?.[1] ?? "").split(",").filter((n) => n !== "").map(Number),
@@ -366,7 +373,7 @@ export function parseInbox(text: string): ParsedNote {
 export function waitingByTier(papers: readonly ParsedPaper[]): Record<ListedTier, number> {
   const best = new Map<string, ListedTier>();
   for (const p of papers) {
-    if (p.ticked) continue;
+    if (p.ticked || p.dismissed) continue;
     const current = best.get(p.openalexId);
     if (current === undefined || RANK.indexOf(p.tier) < RANK.indexOf(current)) best.set(p.openalexId, p.tier);
   }
@@ -379,7 +386,7 @@ export function waitingByTier(papers: readonly ParsedPaper[]): Record<ListedTier
 export function waitingByFeed(papers: readonly ParsedPaper[]): Record<string, Record<ListedTier, number>> {
   const out: Record<string, Record<ListedTier, number>> = {};
   for (const p of papers) {
-    if (p.ticked) continue;
+    if (p.ticked || p.dismissed) continue;
     const row = (out[p.feedId] ??= { priority: 0, strong: 0, possible: 0, unchecked: 0 });
     row[p.tier]++;
   }
@@ -588,8 +595,32 @@ export function setTick(text: string, feedId: string, openalexId: string, ticked
       return line;
     }
     const paper = PAPER.exec(line);
-    if (!paper || current !== feedId || paper[2] !== openalexId) return line;
+    if (!paper || current !== feedId || paper[2] !== openalexId || paper[1] === "-") return line; // a dismissed line is left alone
     return line.replace(/^(>\s*-\s)\[[ xX]\]/, `$1[${ticked ? "x" : " "}]`);
+  }).join("\n");
+}
+
+/**
+ * Dismisses one paper's line (checkbox `-` and a hidden marker saying why), or, with `reason` null, takes the dismissal back:
+ * `[x]` when the line has its "in Zotero" link, otherwise `[ ]`. Changes nothing else: the Read and Zotero links stay.
+ */
+export function setDismissed(text: string, feedId: string, openalexId: string, reason: DismissReason | null): string {
+  let current = "";
+  return text.split("\n").map((line) => {
+    const header = HEADER.exec(line);
+    if (header) {
+      current = header[1];
+      return line;
+    }
+    const paper = PAPER.exec(line);
+    if (!paper || current !== feedId || paper[2] !== openalexId) return line;
+    const bare = line.replace(DISMISS_MARK, "");
+    if (reason === null) {
+      if (paper[1] !== "-") return line;
+      return bare.replace(/^(>\s*-\s)\[-\]/, `$1[${line.includes(ZOTERO_LINK) ? "x" : " "}]`);
+    }
+    const marked = bare.replace(/^(>\s*-\s)\[[ xX-]\]/, "$1[-]");
+    return marked.replace(/ (%%oa:W\d+:[psou]%%)(\s*)$/, ` %%dx:${reason === "no-access" ? "a" : "n"}%% $1$2`);
   }).join("\n");
 }
 

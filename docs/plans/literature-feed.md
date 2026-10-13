@@ -40,6 +40,8 @@ flowchart LR
 | Possible | every **required** group only |
 | Dropped | a required group missing, or a **drop** term matched |
 
+A paper with **no abstract** is matched on its title alone and can rank at most Possible (decided 2026-10-12; `docs/decisions.md`). The cap applies before lower terms. If the title does not show the required terms it is **Unchecked** and listed apart ("no abstract returned, matched by OpenAlex"), not Dropped; a drop term in the title still drops it, and lower terms do not apply to it. A feed with no required group never gives Unchecked.
+
 A **lower** term (per feed) moves a paper down one tier (Priority → Strong → Possible → Dropped). Use **drop** for clearly off-topic meanings, **lower** for on-topic-but-less-wanted work.
 
 ## Phases
@@ -51,19 +53,23 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 - Repo: Claude Code creates the public GitHub repo `literature-feed` with `gh` and pushes the first commit, each only after asking me.
 
 ### Phase 1 — Matching engine (pure)
-- Files: `src/match/feed.ts` (types), `src/match/score.ts` (normalise text, both spellings, phrase match, groups → tier, drop and lower terms), `src/match/dedupe.ts` (DOI, then normalised title; preprint + journal version → one, journal preferred), `tests/score.test.ts`, `tests/fixtures/` (hand-written title + abstract cases).
+- Files: `src/match/feed.ts` (types), `src/match/score.ts` (normalise text, both spellings, phrase match, groups → tier, drop and lower terms), `src/match/dedupe.ts` (DOI, then normalised title; preprint + journal version → one, journal preferred), `tests/score.test.ts`, `tests/dedupe.test.ts`, `tests/fixtures/` (hand-written title + abstract cases).
 - Done when: tests cover each tier, each drop term and each lower term for the lipoic acid feed below; no Obsidian imports in `src/match/`.
+- **Done 2026-10-12** (`feat/matching-engine`, PR #1). Open points: BACKLOG → Decisions needed.
 
 ### Phase 2 — OpenAlex client
 - Depends on: Phase 1
-- Files: `src/openalex/client.ts` (`requestUrl`, `title_and_abstract.search`, `per_page=100`, `select=` fields, date window since the last scan, 429 back-off, `meta.cost_usd` summed per run), `tests/openalex.test.ts` (recorded responses).
+- Files: `src/openalex/client.ts` (injected `requestUrl`, `search.title_and_abstract`, `per_page=100`, `select=` fields, date window since the last scan via `from_publication_date`, 429 back-off, `meta.cost_usd` summed per run), `tests/openalex.test.ts` (responses hand-written to the documented shape until the real run), `scripts/openalex-run.mjs` (the real run).
 - Done when: tests pass; **one real run with my key** reports the count and cost per topic (settles whether AND / OR / quoted phrases work as assumed).
+- Changed after reading the OpenAlex docs (2026-10-12): the scoped parameter `search.title_and_abstract` replaces the filter form (deprecated per the docs; both are in `buildSearchUrl` until the real run); `from_publication_date` replaces created / updated dates (paid plan); key as Bearer header.
+- **Code and tests done 2026-10-12** (`feat/openalex-client`). The real run is waiting on the key.
 
 ### Phase 3 — Settings tab
 - Depends on: Phase 2
 - Files: `src/settings/data.ts`, `src/settings/tab.ts`, `src/settings/feed-modal.ts`.
 - Contents: global (OpenAlex key, Zotero key + user ID, inbox folder, archive folder, scan day); feed list (add, duplicate, delete, on / off, export / import as `.json`); per feed (topics, concept groups with role required / boost / priority, drop terms, lower terms, years from, Zotero collection, project); **Test** button = matches + estimated cost, nothing written.
 - Done when: settings survive a reload and an external `data.json` change; sentence case, no inline styles (Lab Kit's plugin rules).
+- Built 2026-10-12 (not yet seen in Obsidian): also `src/settings/test-feed.ts` and `src/openalex/request.ts`; the tab uses the declarative settings API; **Test** is a real one-year scan after a confirmation; export goes to the inbox folder; a feed with no required group gets a warning. See `docs/decisions.md`.
 
 ### Phase 4 — Weekly dashboard note
 - Depends on: Phase 3
@@ -71,24 +77,29 @@ A **lower** term (per feed) moves a paper down one tier (Priority → Strong →
 - Note: `<inbox>/<YYYY-[W]WW> Reading inbox.md`, starts with an empty line (vault rule), `kind: reading-inbox`, `cssclasses: [vt]`; one collapsible callout per feed; each paper = checkbox, title, authors, venue, year, DOI link, tier badge, matched terms; quiet feeds collapsed. Built with `createEl` only (titles from OpenAlex are untrusted text).
 - Same block with `show: home` = a small card for `00 Home` (papers waiting, last scan, Sync).
 - Done when: tests on the note text; seen in `test-vault` in light and dark, with and without Lab Kit's CSS snippets.
+- Built 2026-10-12 (not yet seen in Obsidian): also `src/inbox/scan.ts` and a **Scan now** command (so the note can be filled before Phase 7); own `.literature-feed-*` classes instead of Lab Kit's `vt` classes; the **Sync** button is shown disabled until Phase 5; Unchecked papers have their own callout per feed. See `docs/decisions.md`.
 
 ### Phase 5 — Zotero sync
 - Depends on: Phase 4
 - Files: `src/zotero/client.ts` (Web API v3: look up by DOI, create items, collections, tags), `src/inbox/sync.ts` (read ticks with `vault.process`, write back `zotero://select/…` link + "in Zotero" badge), tests with recorded responses.
 - Each ticked paper: created once (DOI check against the library), added to `Inbox/<feed>` and, if the feed has a project, `Projects/<project>`; tag `feed/<slug>`.
 - Done when: tests pass; **one real sync** of one paper into my library, seen in Zotero desktop after its sync.
+- Built 2026-10-12 (not yet run against a real library): `src/zotero/client.ts`, `map.ts`, `request.ts`, `src/inbox/sync.ts`, the command **Sync ticked papers** and the block's **Sync** button; collections are created only if a setting allows it (inbox and project separately, off by default, last name only); an existing DOI gets the collections and tag added; test responses are hand-written until the real sync. See `docs/decisions.md`.
 
 ### Phase 6 — Read state and archive
 - Depends on: Phase 5
 - Files: `src/inbox/state.ts`, tests.
 - A paper shows **Read** (link to its literature note) once a ZotLit note with the same DOI / Zotero key exists in the vault. A weekly note moves to the archive folder when every paper in it is synced, dismissed or read (unticked papers count as dismissed after N weeks, setting).
 - Done when: tests; seen in `test-vault` with a hand-made literature note.
+- Built 2026-10-13 (not yet seen in Obsidian): `src/inbox/state.ts`, `markRead` and `doi` / `read` in `src/inbox/write.ts`, `refreshInbox` and the command **Update read state and archive** in `src/main.ts`; settings for the literature folder, the archive switch and the dismiss weeks. The match ignores property names (key, DOI, then title). The archive rule is: every paper read or aged out. See `docs/decisions.md`.
+- Added 2026-10-13 (owner request, not in the original plan): the inbox note shows a coloured, ordered table (`src/inbox/table.ts`, `src/inbox/block.ts`) with status chips; the checkbox lines are hidden in reading view but remain the stored data.
 
 ### Phase 7 — Schedule, commands, ribbon
 - Depends on: Phase 6
 - Files: `src/main.ts`, `src/schedule.ts`.
 - Scan on start-up when the scan day has passed since the last scan; sync on start-up once a day; commands **Scan now**, **Sync ticked papers**, **Open reading inbox**; ribbon icon; a Notice with the result ("12 new, 3 priority, cost $0.01").
 - Done when: tests on the "is it due" rules; seen on Windows and Mac; phone checked (status bar not used).
+- Built 2026-10-13 (not yet seen in Obsidian): `src/schedule.ts` (due rules, tested), `checkSchedule` in `src/main.ts` (15 s after layout ready, then hourly, once a day per kind), settings **Scan on start-up when due** (on) and **Send ticked papers to Zotero once a day** (off), the command **Open reading inbox** and a ribbon icon. See `docs/decisions.md`.
 
 ### Phase 8 — Lab Kit side (in the Lab Kit repo, its own session, its own plan)
 - Files: `src/kit/setup-check.ts` (`literature-feed` as an optional plugin), `kits/planning/07 How-tos/Obsidian/Vault spec.md` (kind `reading-inbox`, the `Suggested` folder), optional guide note with `needs: "plugin:literature-feed"`.

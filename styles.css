@@ -1,1 +1,513 @@
-/* Literature Feed: styles come with the reading inbox (Phase 4). Class names start with .literature-feed- */
+/* Literature Feed. Class names start with .literature-feed-; colours come from Obsidian's variables. */
+
+/* Feed editor and import window */
+.literature-feed-modal {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* A setting whose control is a wide text box: label on top, box below at full width */
+.literature-feed-stacked.setting-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--size-4-2);
+}
+
+.literature-feed-stacked .setting-item-control {
+  width: 100%;
+}
+
+.literature-feed-stacked textarea {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-group {
+  margin-bottom: var(--size-4-3);
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+
+.literature-feed-import {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-warning {
+  margin: var(--size-4-1) 0;
+  color: var(--text-warning);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-result {
+  margin: var(--size-4-2) 0;
+  font-size: var(--font-ui-small);
+}
+
+/* Reading inbox note (cssclasses: literature-feed) */
+.literature-feed .callout[data-callout="literature-feed"] {
+  --callout-color: var(--color-accent-rgb);
+  --callout-icon: lucide-book-open;
+}
+
+.literature-feed .callout[data-callout="literature-feed-unchecked"] {
+  --callout-color: var(--text-muted-rgb, 128, 128, 128);
+  --callout-icon: lucide-file-question;
+}
+
+.literature-feed .callout[data-callout^="literature-feed"] .callout-content ul {
+  padding-inline-start: var(--size-4-1);
+}
+
+.literature-feed .callout[data-callout^="literature-feed"] .task-list-item {
+  margin-bottom: var(--size-4-2);
+}
+
+/* Status line and Home card made by the literature-feed code block.
+   Fill, border and corners use Lab Kit's theme variables when that theme is on, and Obsidian's own otherwise. */
+.literature-feed-status,
+.literature-feed-card {
+  margin: var(--size-4-2) 0;
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+  background-color: var(--vt-card-bg, var(--background-secondary));
+}
+
+/* Inside a callout (for example a column of the Home note) the callout is already the card: no second box,
+   and no second title, because the callout title names it. */
+.callout-content .literature-feed-card {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.callout-content .literature-feed-card-title {
+  display: none;
+}
+
+.literature-feed-card-title {
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--size-4-1);
+}
+
+.literature-feed-status-line {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-feed-rows {
+  margin: var(--size-4-2) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-feed-rows li {
+  margin: 0;
+  padding: var(--size-4-1) 0;
+  border-top: 1px solid var(--vt-divider, var(--background-modifier-border));
+}
+
+.literature-feed-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+}
+
+/* Outlined pills like Lab Kit's card buttons (.vt-card-actions button); its variables when present, Obsidian's otherwise */
+.literature-feed-buttons button {
+  height: auto;
+  padding: 6px 14px;
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.literature-feed-buttons button:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+}
+
+.literature-feed-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The "In Zotero" list of a feed in the reading inbox note: sent to Zotero and waiting to be read, so amber (Lab Kit: amber = waiting) */
+.literature-feed .callout[data-callout="literature-feed-synced"] {
+  --callout-color: var(--vt-waiting, 245, 158, 11);
+  --callout-icon: lucide-library;
+}
+
+.literature-feed-collections {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+/* The table of papers in the reading inbox note. Colours are Lab Kit's palette by meaning, through its theme variables with the
+   same values as fallback: slate = not started, blue = doing now, amber = waiting, green = finished, red = overdue only. */
+.literature-feed-table .callout[data-callout^="literature-feed"] {
+  display: none; /* the checkbox lines stay in the file; the table shows and edits them */
+}
+
+.literature-feed-list {
+  margin: var(--size-4-3) 0;
+}
+
+.literature-feed-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-bottom: var(--size-4-3);
+}
+
+.literature-feed-filter {
+  height: auto;
+  padding: 2px 12px;
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-filter.is-active {
+  border-color: var(--text-muted);
+  font-weight: var(--font-semibold);
+}
+
+table.literature-feed-papers {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+}
+
+table.literature-feed-papers th,
+table.literature-feed-papers td {
+  padding: var(--size-4-2) var(--size-4-1);
+  border-bottom: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  text-align: start;
+  vertical-align: middle;
+}
+
+.literature-feed-sort {
+  height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+
+.literature-feed-sort:hover {
+  color: var(--text-normal);
+}
+
+.literature-feed-title {
+  font-weight: var(--font-semibold);
+}
+
+.literature-feed-meta {
+  color: var(--text-muted);
+}
+
+.literature-feed-links a {
+  margin-right: var(--size-4-2);
+}
+
+.literature-feed-empty {
+  color: var(--text-muted);
+}
+
+.literature-feed-chip,
+.literature-feed-filter.is-new,
+.literature-feed-filter.is-ticked,
+.literature-feed-filter.is-in-zotero,
+.literature-feed-filter.is-read,
+.literature-feed-filter.is-processed,
+.literature-feed-filter.is-dismissed {
+  --literature-feed-rgb: 100, 116, 139;
+}
+
+.literature-feed-chip {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  line-height: 1.6;
+  background: rgba(var(--literature-feed-rgb), var(--vt-tint, 0.2));
+}
+
+.literature-feed-chip.is-new,
+.literature-feed-filter.is-new {
+  --literature-feed-rgb: var(--vt-neutral, 100, 116, 139);
+  color: rgb(var(--vt-neutral-text));
+}
+
+.literature-feed-chip.is-ticked,
+.literature-feed-filter.is-ticked {
+  --literature-feed-rgb: var(--vt-doing, 59, 130, 246);
+  color: rgb(var(--vt-doing-text));
+}
+
+.literature-feed-chip.is-in-zotero,
+.literature-feed-filter.is-in-zotero {
+  --literature-feed-rgb: var(--vt-waiting, 245, 158, 11);
+  color: rgb(var(--vt-waiting-text));
+}
+
+.literature-feed-chip.is-read,
+.literature-feed-filter.is-read {
+  --literature-feed-rgb: var(--vt-done, 16, 185, 129);
+  color: rgb(var(--vt-done-text));
+}
+
+.literature-feed-chip.is-processed,
+.literature-feed-filter.is-processed {
+  --literature-feed-rgb: var(--vt-done, 16, 185, 129);
+  color: rgb(var(--vt-done-text));
+  box-shadow: inset 0 0 0 1px rgba(var(--vt-done, 16, 185, 129), 0.7);
+}
+
+.literature-feed-chip.is-processed::before {
+  content: "✓ ";
+}
+
+/* About to age out (Lab Kit: red means overdue only) */
+.literature-feed-chip.is-soon {
+  box-shadow: inset 0 0 0 1px rgb(var(--vt-overdue, 239, 68, 68));
+}
+
+.literature-feed-filter.is-new,
+.literature-feed-filter.is-ticked,
+.literature-feed-filter.is-in-zotero,
+.literature-feed-filter.is-read,
+.literature-feed-filter.is-processed,
+.literature-feed-filter.is-dismissed {
+  background: rgba(var(--literature-feed-rgb), var(--vt-tint, 0.2));
+}
+
+/* One card per search before the table (Lab Kit's project-card look), two to a row where there is room */
+.literature-feed-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--size-4-3);
+  margin: var(--size-4-2) 0;
+}
+
+.literature-feed-feedcard {
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+  background-color: var(--vt-card-bg, var(--background-secondary));
+  /* the grid makes the cards of a row equally tall; the button row sits at the bottom of each */
+  display: flex;
+  flex-direction: column;
+}
+
+.literature-feed-feedcard .literature-feed-buttons {
+  margin-top: auto;
+  padding-top: var(--size-4-2);
+}
+
+.literature-feed-feedcard.is-selected {
+  box-shadow: inset 0 0 0 1px rgb(var(--vt-doing, 59, 130, 246));
+}
+
+.literature-feed-feedcard-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--size-4-2);
+  font-weight: var(--font-semibold);
+}
+
+/* Slate when nothing waits, amber when papers wait to be read (Lab Kit: waiting) */
+.literature-feed-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+  white-space: nowrap;
+  color: rgb(var(--vt-neutral-text));
+  background: rgba(var(--vt-neutral, 100, 116, 139), var(--vt-tint, 0.2));
+}
+
+.literature-feed-badge.is-waiting {
+  color: rgb(var(--vt-waiting-text));
+  background: rgba(var(--vt-waiting, 245, 158, 11), var(--vt-tint, 0.2));
+}
+
+.literature-feed-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-toread {
+  margin: var(--size-4-2) 0;
+}
+
+.literature-feed-toread-row {
+  padding: var(--size-4-1) 0;
+  border-top: 1px solid var(--vt-divider, var(--background-modifier-border));
+}
+
+.literature-feed-funnel {
+  margin-top: var(--size-4-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* Status bar: the feed's papers by status, widths set from the code (percent, summing to 100) */
+.literature-feed-bar {
+  display: flex;
+  height: 6px;
+  margin-top: var(--size-4-1);
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(var(--vt-neutral, 100, 116, 139), 0.15);
+}
+
+.literature-feed-bar > div {
+  width: var(--literature-feed-width, 0);
+}
+
+.literature-feed-bar-toRead {
+  background: rgb(var(--vt-waiting, 245, 158, 11));
+}
+
+.literature-feed-bar-ticked {
+  background: rgb(var(--vt-doing, 59, 130, 246));
+}
+
+.literature-feed-bar-new {
+  background: rgb(var(--vt-neutral, 100, 116, 139));
+}
+
+.literature-feed-bar-read {
+  background: rgb(var(--vt-done, 16, 185, 129));
+}
+
+/* The search-effectiveness window: the report is rendered Markdown, so only its size is set here */
+.literature-feed-report {
+  max-height: 60vh;
+  margin-top: var(--size-4-3);
+  overflow: auto;
+}
+
+/* Tick boxes: Obsidian's own checkbox, sized and coloured for the table (blue = Lab Kit's "doing") */
+input.literature-feed-tick[type="checkbox"] {
+  --checkbox-size: 18px;
+  --checkbox-radius: 5px;
+  --checkbox-color: rgb(var(--vt-doing, 59, 130, 246));
+  --checkbox-color-hover: rgb(var(--vt-doing, 59, 130, 246));
+  --checkbox-border-color: var(--text-faint);
+  --checkbox-border-color-hover: var(--text-muted);
+  margin: 0;
+  cursor: pointer;
+}
+
+/* A ticked row is tinted across, in the colour of its status (as the chips are) */
+table.literature-feed-papers tr.is-checked td {
+  background-color: rgba(var(--literature-feed-rgb, 59, 130, 246), 0.12);
+}
+
+table.literature-feed-papers tr.is-checked.is-ticked { --literature-feed-rgb: var(--vt-doing, 59, 130, 246); }
+table.literature-feed-papers tr.is-checked.is-in-zotero { --literature-feed-rgb: var(--vt-waiting, 245, 158, 11); }
+table.literature-feed-papers tr.is-checked.is-read,
+table.literature-feed-papers tr.is-checked.is-processed { --literature-feed-rgb: var(--vt-done, 16, 185, 129); }
+
+/* Sync sits at the right end of the filter chips, right above the table */
+.literature-feed-filters .literature-feed-sync {
+  margin-inline-start: auto;
+  height: auto;
+  padding: 2px 14px;
+  border-radius: 999px;
+  font-size: var(--font-ui-small);
+}
+
+/* The tick box is centred in its cell, across and down */
+table.literature-feed-papers .literature-feed-tick-cell {
+  width: 1%;
+  padding-inline: var(--size-4-3);
+  text-align: center;
+  vertical-align: middle;
+}
+
+table.literature-feed-papers input.literature-feed-tick[type="checkbox"] {
+  display: block;
+  margin: 0 auto;
+}
+
+/* Dismissed: a faint slate chip, a faded row with a struck-through title; the dismiss button stays clear */
+.literature-feed-chip.is-dismissed,
+.literature-feed-filter.is-dismissed {
+  --literature-feed-rgb: var(--vt-neutral, 100, 116, 139);
+  color: var(--text-faint);
+}
+
+table.literature-feed-papers tr.is-dismissed td:not(.literature-feed-act) {
+  opacity: 0.55;
+}
+
+table.literature-feed-papers tr.is-dismissed .literature-feed-title {
+  text-decoration: line-through;
+}
+
+table.literature-feed-papers .literature-feed-act {
+  width: 1%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* An icon in a box, big enough to hit easily */
+button.literature-feed-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+button.literature-feed-icon:hover {
+  background: var(--background-modifier-hover);
+}
+
+.literature-feed-links a + a {
+  margin-inline-start: var(--size-4-2);
+}
+
+.literature-feed-bar-dismissed {
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+
+/* The dismiss cross is red (the owner's choice; Lab Kit otherwise keeps red for overdue only) */
+button.literature-feed-icon.is-dismiss {
+  color: rgb(var(--vt-overdue, 239, 68, 68));
+  border-color: rgba(var(--vt-overdue, 239, 68, 68), 0.6);
+}
+
+button.literature-feed-icon.is-dismiss:hover {
+  background: rgba(var(--vt-overdue, 239, 68, 68), 0.15);
+}

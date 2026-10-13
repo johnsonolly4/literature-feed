@@ -1,0 +1,19 @@
+{
+  "name": "Demo polymers",
+  "topics": [
+    "demo AND polymer AND flow",
+    "demo AND polymer AND acrylate",
+    "demo AND dithiolane AND ring-opening",
+    "demo AND polymer AND bayesian"
+  ],
+  "groups": [
+    { "name": "Polymers", "role": "required", "terms": ["polymer", "copolymer"] },
+    { "name": "Comonomer class", "role": "boost", "terms": ["acrylate", "responsive", "degradable"] },
+    { "name": "Flow or optimisation", "role": "priority", "terms": ["flow", "bayesian", "high-throughput"] }
+  ],
+  "drop": ["clinical trial"],
+  "lower": ["adhesive"],
+  "yearsFrom": null,
+  "zoteroCollection": "",
+  "project": ""
+}

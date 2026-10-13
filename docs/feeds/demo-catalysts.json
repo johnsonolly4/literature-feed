@@ -1,0 +1,16 @@
+{
+  "name": "Demo catalysts",
+  "topics": [
+    "demo AND catalyst AND ring-opening",
+    "demo AND catalyst AND kinetics"
+  ],
+  "groups": [
+    { "name": "Catalysis", "role": "required", "terms": ["catalyst", "catalysis", "organocatalyst"] },
+    { "name": "Mechanism", "role": "boost", "terms": ["kinetics", "selectivity", "ring-opening"] }
+  ],
+  "drop": [],
+  "lower": ["ligand"],
+  "yearsFrom": null,
+  "zoteroCollection": "",
+  "project": ""
+}

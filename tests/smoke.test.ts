@@ -5,10 +5,11 @@ import pkg from "../package.json";
 import versions from "../versions.json";
 
 describe("smoke", () => {
-  it("the plugin loads and unloads", () => {
+  it("the plugin loads and unloads", async () => {
     const plugin = new LiteratureFeedPlugin();
-    expect(() => plugin.onload()).not.toThrow();
-    expect(() => plugin.onunload()).not.toThrow();
+    await expect(plugin.onload()).resolves.toBeUndefined();
+    expect(() => plugin.unload()).not.toThrow();
+    expect(plugin.settings.feeds).toEqual([]);
   });
 
   it("manifest, package and versions.json agree", () => {

@@ -1,0 +1,174 @@
+import { describe, expect, it } from "vitest";
+import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, noteWeekStart, unfinishedPapers } from "../src/inbox/state";
+import type { ParsedPaper } from "../src/inbox/write";
+
+describe("buildLiteratureIndex", () => {
+  it("finds a DOI in any property, in any case and with or without the address", () => {
+    const index = buildLiteratureIndex([
+      { path: "Lit/a.md", frontmatter: { DOI: "10.1021/JACS.6C02848" } },
+      { path: "Lit/b.md", frontmatter: { doi: "https://doi.org/10.1000/Abc.1", title: "Something" } },
+      { path: "Lit/c.md", frontmatter: { url: "see https://dx.doi.org/10.5555/xyz.9." } },
+    ]);
+    expect(index.byDoi.get("10.1021/jacs.6c02848")).toBe("Lit/a.md");
+    expect(index.byDoi.get("10.1000/abc.1")).toBe("Lit/b.md");
+    expect(index.byDoi.get("10.5555/xyz.9")).toBe("Lit/c.md");
+  });
+
+  it("finds a Zotero key in a zotero:// link, or alone in a property that mentions a key or Zotero", () => {
+    const index = buildLiteratureIndex([
+      { path: "Lit/a.md", frontmatter: { link: "zotero://select/library/items/ABCD2345" } },
+      { path: "Lit/b.md", frontmatter: { "zotero-key": "EFGH6789" } },
+      { path: "Lit/c.md", frontmatter: { citekey: "SMIT2024" } },
+      { path: "Lit/d.md", frontmatter: { shout: "ABCDEFGH" } }, // eight capitals, but not a key property
+      { path: "Lit/e.md", frontmatter: { open: "zotero://open-pdf/library/items/JKLM1234?page=3" } },
+    ]);
+    expect([...index.byKey.keys()].sort()).toEqual(["ABCD2345", "EFGH6789", "JKLM1234", "SMIT2024"]);
+    expect(index.byKey.get("ABCD2345")).toBe("Lit/a.md");
+  });
+
+  it("looks inside lists and nested values, and skips notes without frontmatter", () => {
+    const index = buildLiteratureIndex([
+      { path: "Lit/a.md", frontmatter: { ids: ["x", { doi: "10.1000/nested.1" }] } },
+      { path: "Lit/b.md", frontmatter: null },
+      { path: "Lit/c.md", frontmatter: undefined },
+    ]);
+    expect([...index.byDoi.keys()]).toEqual(["10.1000/nested.1"]);
+  });
+
+  it("gives the first path in alphabetical order when two notes hold the same DOI", () => {
+    const index = buildLiteratureIndex([
+      { path: "Lit/z.md", frontmatter: { doi: "10.1000/same" } },
+      { path: "Lit/a.md", frontmatter: { doi: "10.1000/same" } },
+    ]);
+    expect(index.byDoi.get("10.1000/same")).toBe("Lit/a.md");
+  });
+});
+
+describe("findLiteratureNote", () => {
+  const index = buildLiteratureIndex([
+    { path: "Lit/key.md", frontmatter: { "zotero-key": "ABCD2345" } },
+    { path: "Lit/doi.md", frontmatter: { doi: "10.1000/x.1" } },
+  ]);
+
+  it("matches by key first, then by DOI, and finds nothing for neither", () => {
+    expect(findLiteratureNote(index, "10.1000/x.1", "ABCD2345")).toBe("Lit/key.md");
+    expect(findLiteratureNote(index, "10.1000/X.1", null)).toBe("Lit/doi.md");
+    expect(findLiteratureNote(index, "10.1000/x.1", "ZZZZ9999")).toBe("Lit/doi.md");
+    expect(findLiteratureNote(index, "10.1000/other", null)).toBeNull();
+    expect(findLiteratureNote(index, null, null)).toBeNull();
+  });
+});
+
+describe("matching by title", () => {
+  // Like the owner's ZotLit notes: a title, a citekey and a Zotero key, but no DOI.
+  const index = buildLiteratureIndex([
+    { path: "Lit/qiu.md", frontmatter: { title: "Materializing RAFT\u2010Made Self-Immolative Poly(Disulfide)s: A Study", citekey: "qiu2026", "zotero-key": "OLDKEY12" } },
+    { path: "Lit/other.md", frontmatter: { Title: "A different paper", "zotero-key": "ZZZZ9999" } },
+    { path: "Lit/untitled.md", frontmatter: { citekey: "x" } },
+  ]);
+
+  it("finds the note when the key is stale and there is no DOI, whatever the case, punctuation or hyphen type", () => {
+    expect(findLiteratureNote(index, null, "NEWKEY34", "Materializing RAFT-Made Self\u2010Immolative Poly(Disulfide)s: a study")).toBe("Lit/qiu.md");
+    expect(findLiteratureNote(index, "10.1002/smll.75910", "NEWKEY34", "A DIFFERENT paper!")).toBe("Lit/other.md");
+  });
+
+  it("prefers the key, then the DOI, over the title", () => {
+    const both = buildLiteratureIndex([
+      { path: "Lit/a.md", frontmatter: { title: "Same title", "zotero-key": "KEYAAAAA" } },
+      { path: "Lit/b.md", frontmatter: { title: "Other", doi: "10.1000/b" } },
+    ]);
+    expect(findLiteratureNote(both, null, "KEYAAAAA", "Other")).toBe("Lit/a.md");
+    expect(findLiteratureNote(both, "10.1000/b", null, "Same title")).toBe("Lit/b.md");
+    expect(findLiteratureNote(both, null, null, "Same title")).toBe("Lit/a.md");
+  });
+
+  it("finds nothing for an unknown or empty title, and a title that is only punctuation", () => {
+    expect(findLiteratureNote(index, null, null, "Not in the folder")).toBeNull();
+    expect(findLiteratureNote(index, null, null, "")).toBeNull();
+    expect(findLiteratureNote(index, null, null, "?!")).toBeNull();
+    expect(findLiteratureNote(index, null, null)).toBeNull();
+  });
+});
+
+describe("describeRefresh", () => {
+  const base = { inboxFolder: "00 Inbox", inboxNotes: 1, literatureFolder: "04 Literature", literatureNotes: 2, papers: 3, read: 1, archived: 0 };
+
+  it("says plainly when there are no inbox notes in the folder, naming the folder", () => {
+    expect(describeRefresh({ ...base, inboxNotes: 0, papers: 0 })).toBe('No inbox notes in "00 Inbox". If your reading inbox note is somewhere else, move it there (or change the inbox folder in the settings).');
+    expect(describeRefresh({ ...base, inboxNotes: 0, inboxFolder: "" })).toContain("No inbox notes in the vault root.");
+  });
+
+  it("reports what was checked and what changed", () => {
+    expect(describeRefresh(base)).toBe('Checked 1 inbox note in "00 Inbox" (3 papers) against 2 literature notes in "04 Literature": 1 paper newly marked read, 0 notes archived.');
+    expect(describeRefresh({ ...base, inboxNotes: 2, papers: 1, literatureNotes: 1, read: 2, archived: 1 })).toContain("2 inbox notes");
+  });
+
+  it("says when no literature folder is set", () => {
+    expect(describeRefresh({ ...base, literatureFolder: "", literatureNotes: 0, read: 0 })).toContain("no literature folder is set, so no Read links");
+  });
+});
+
+describe("noteWeekStart", () => {
+  it("gives the Monday of the ISO week in the file name", () => {
+    expect(noteWeekStart("2026-W42 Reading inbox.md")).toBe("2026-10-12");
+    expect(noteWeekStart("2026-W01 Reading inbox.md")).toBe("2025-12-29");
+    expect(noteWeekStart("2021-W01 Reading inbox.md")).toBe("2021-01-04");
+    expect(noteWeekStart("2020-W53 Reading inbox.md")).toBe("2020-12-28");
+  });
+
+  it("gives null for a name without a week", () => {
+    expect(noteWeekStart("Reading inbox.md")).toBeNull();
+    expect(noteWeekStart("2026-W00 Reading inbox.md")).toBeNull();
+    expect(noteWeekStart("2026-W54 Reading inbox.md")).toBeNull();
+  });
+});
+
+function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
+  return { openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false, title: "", topics: [], dismissed: null, ...overrides };
+}
+
+describe("isFinished", () => {
+  const name = "2026-W42 Reading inbox.md"; // the week ends on Monday 2026-10-19; with N = 4 a paper ages out on 2026-11-16
+  const today = "2026-10-20";
+  const syncedPaper = (id: string) => paper(id, { ticked: true, synced: true, list: "synced" });
+
+  it("is finished when every paper is read, whatever its other state", () => {
+    expect(isFinished([paper("W1", { read: true }), paper("W2", { read: true, ticked: true, synced: true, list: "synced" })], name, today, 4)).toBe(true);
+    expect(isFinished([paper("W1", { read: true, ticked: true })], name, today, 4)).toBe(true);
+  });
+
+  it("is open while a paper is in Zotero but not read, and the note is young: the inbox is the reading queue", () => {
+    expect(isFinished([syncedPaper("W1"), paper("W2", { read: true })], name, today, 4)).toBe(false);
+    expect(isFinished([syncedPaper("W1")], name, "2026-11-15", 4)).toBe(false);
+  });
+
+  it("counts a synced but unread paper as done once its note's week ended N weeks ago", () => {
+    expect(isFinished([syncedPaper("W1")], name, "2026-11-16", 4)).toBe(true);
+    expect(isFinished([syncedPaper("W1")], name, "2026-10-26", 1)).toBe(true);
+    expect(isFinished([syncedPaper("W1")], name, "2026-10-25", 1)).toBe(false);
+  });
+
+  it("is open while a ticked paper is not in Zotero yet, however old the note is", () => {
+    expect(isFinished([paper("W1", { ticked: true })], name, "2030-01-01", 4)).toBe(false);
+  });
+
+  it("is open while an unticked paper is from a young week, and counts it dismissed after N weeks", () => {
+    const papers = [paper("W1", { read: true }), paper("W2")];
+    expect(isFinished(papers, name, today, 4)).toBe(false);
+    expect(isFinished(papers, name, "2026-11-15", 4)).toBe(false);
+    expect(isFinished(papers, name, "2026-11-16", 4)).toBe(true);
+  });
+
+  it("is open when an unticked paper in the In Zotero list is waiting to be sent again, even when old", () => {
+    const papers = [paper("W1", { ticked: false, synced: true, list: "synced" })];
+    expect(isFinished(papers, name, "2030-01-01", 4)).toBe(false);
+    expect(unfinishedPapers(papers, name, "2030-01-01", 4)).toHaveLength(1);
+    expect(isFinished([{ ...papers[0], read: true }], name, today, 4)).toBe(true);
+  });
+
+  it("a note with no papers is finished, and a name without a week never ages papers out", () => {
+    expect(isFinished([], name, today, 4)).toBe(true);
+    expect(isFinished([paper("W1")], "Notes.md", "2030-01-01", 4)).toBe(false);
+    expect(isFinished([syncedPaper("W1")], "Notes.md", "2030-01-01", 4)).toBe(false);
+  });
+});

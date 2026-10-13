@@ -5,5 +5,5 @@
   "minAppVersion": "1.14.0",
   "description": "Weekly paper feeds from OpenAlex in an Obsidian reading inbox, synced to Zotero.",
   "author": "johnsonolly4",
-  "isDesktopOnly": false
+  "isDesktopOnly": true
 }

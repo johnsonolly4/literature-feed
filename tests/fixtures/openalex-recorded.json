@@ -1,0 +1,649 @@
+{
+  "meta": {
+    "count": 1,
+    "page": 1,
+    "per_page": 100
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W7160516760",
+      "doi": "https://doi.org/10.1021/jacs.6c02848",
+      "title": "Biodegradability of Acrylate-Lipoic Acid Copolymers",
+      "publication_year": 2026,
+      "publication_date": "2026-05-08",
+      "type": "article",
+      "abstract_inverted_index": {
+        "15": [
+          65
+        ],
+        "Lipoic": [
+          0
+        ],
+        "acid": [
+          1,
+          27,
+          59,
+          147,
+          224
+        ],
+        "has": [
+          2
+        ],
+        "attracted": [
+          3
+        ],
+        "a": [
+          4,
+          80,
+          144,
+          226
+        ],
+        "great": [
+          5
+        ],
+        "deal": [
+          6
+        ],
+        "of": [
+          7,
+          25,
+          37,
+          155,
+          167,
+          178,
+          211,
+          222
+        ],
+        "attention": [
+          8
+        ],
+        "for": [
+          9,
+          113
+        ],
+        "its": [
+          10
+        ],
+        "ability": [
+          11
+        ],
+        "to": [
+          12,
+          29
+        ],
+        "impart": [
+          13
+        ],
+        "chemical": [
+          14
+        ],
+        "degradability": [
+          15
+        ],
+        "into": [
+          16
+        ],
+        "vinyl": [
+          17
+        ],
+        "polymer": [
+          18,
+          83,
+          172
+        ],
+        "chains.": [
+          19
+        ],
+        "This": [
+          20
+        ],
+        "work": [
+          21,
+          217
+        ],
+        "investigates": [
+          22
+        ],
+        "the": [
+          23,
+          35,
+          156,
+          165,
+          171,
+          176,
+          208,
+          212,
+          220
+        ],
+        "biodegradability": [
+          24
+        ],
+        "acrylate-lipoic": [
+          26
+        ],
+        "copolymers": [
+          28,
+          39,
+          137
+        ],
+        "understand": [
+          30
+        ],
+        "how": [
+          31
+        ],
+        "sulfide": [
+          32
+        ],
+        "bonds": [
+          33
+        ],
+        "along": [
+          34
+        ],
+        "backbone": [
+          36,
+          173
+        ],
+        "these": [
+          38
+        ],
+        "impact": [
+          40
+        ],
+        "biodegradation.": [
+          41
+        ],
+        "To": [
+          42
+        ],
+        "achieve": [
+          43
+        ],
+        "this": [
+          44,
+          216
+        ],
+        "objective,": [
+          45
+        ],
+        "several": [
+          46
+        ],
+        "acrylate": [
+          47,
+          118,
+          157,
+          187,
+          192,
+          213
+        ],
+        "monomers": [
+          48
+        ],
+        "(methyl,": [
+          49
+        ],
+        "ethyl,": [
+          50
+        ],
+        "and": [
+          51,
+          64,
+          75,
+          93,
+          100,
+          131,
+          200
+        ],
+        "n-": [
+          52
+        ],
+        "butyl": [
+          53
+        ],
+        "acrylates)": [
+          54
+        ],
+        "were": [
+          55,
+          103
+        ],
+        "polymerized": [
+          56
+        ],
+        "with": [
+          57,
+          109,
+          152,
+          185
+        ],
+        "lipoic": [
+          58,
+          146,
+          182,
+          223
+        ],
+        "(1,": [
+          60
+        ],
+        "3,": [
+          61
+        ],
+        "5,": [
+          62
+        ],
+        "10,": [
+          63
+        ],
+        "mol": [
+          66
+        ],
+        "%)": [
+          67
+        ],
+        "via": [
+          68,
+          79
+        ],
+        "reversible": [
+          69
+        ],
+        "addition–fragmentation": [
+          70
+        ],
+        "chain": [
+          71
+        ],
+        "transfer": [
+          72
+        ],
+        "(RAFT)": [
+          73
+        ],
+        "polymerization,": [
+          74
+        ],
+        "biodegradation": [
+          76,
+          84,
+          139
+        ],
+        "was": [
+          77
+        ],
+        "assessed": [
+          78
+        ],
+        "high-throughput": [
+          81
+        ],
+        "clear-zone": [
+          82
+        ],
+        "method": [
+          85
+        ],
+        "using": [
+          86
+        ],
+        "Paucimonas": [
+          87
+        ],
+        "lemoignei": [
+          88,
+          91,
+          142,
+          199
+        ],
+        "(": [
+          89
+        ],
+        "P.": [
+          90,
+          141,
+          198
+        ],
+        ")": [
+          92
+        ],
+        "three": [
+          94
+        ],
+        "other": [
+          95
+        ],
+        "bacterial": [
+          96
+        ],
+        "species.": [
+          97
+        ],
+        "Mass": [
+          98
+        ],
+        "loss": [
+          99
+        ],
+        "hydrolysis": [
+          101
+        ],
+        "tests": [
+          102
+        ],
+        "also": [
+          104,
+          195
+        ],
+        "conducted": [
+          105
+        ],
+        "in": [
+          106,
+          170
+        ],
+        "liquid": [
+          107,
+          110
+        ],
+        "culture": [
+          108
+        ],
+        "chromatography-mass": [
+          111
+        ],
+        "spectrometry": [
+          112
+        ],
+        "degradation": [
+          114,
+          160
+        ],
+        "product": [
+          115
+        ],
+        "analysis.": [
+          116
+        ],
+        "The": [
+          117
+        ],
+        "homopolymers": [
+          119
+        ],
+        "did": [
+          120
+        ],
+        "not": [
+          121
+        ],
+        "show": [
+          122,
+          189
+        ],
+        "any": [
+          123
+        ],
+        "biodegradation,": [
+          124
+        ],
+        "whereas": [
+          125
+        ],
+        "poly(methyl": [
+          126
+        ],
+        "acrylate-": [
+          127,
+          133
+        ],
+        "co": [
+          128,
+          134
+        ],
+        "-lipoic": [
+          129,
+          135
+        ],
+        "acid)": [
+          130,
+          136
+        ],
+        "poly(ethyl": [
+          132
+        ],
+        "showed": [
+          138
+        ],
+        "by": [
+          140,
+          164,
+          197
+        ],
+        "above": [
+          143
+        ],
+        "critical": [
+          145
+        ],
+        "mole": [
+          148
+        ],
+        "fraction": [
+          149
+        ],
+        "that": [
+          150,
+          190,
+          201,
+          219
+        ],
+        "increased": [
+          151
+        ],
+        "increasing": [
+          153
+        ],
+        "hydrophobicity": [
+          154
+        ],
+        "monomer.": [
+          158
+        ],
+        "While": [
+          159
+        ],
+        "is": [
+          161
+        ],
+        "clearly": [
+          162
+        ],
+        "accelerated": [
+          163
+        ],
+        "formation": [
+          166
+        ],
+        "labile": [
+          168
+        ],
+        "linkages": [
+          169
+        ],
+        "resulting": [
+          174
+        ],
+        "from": [
+          175,
+          181
+        ],
+        "incorporation": [
+          177,
+          221
+        ],
+        "sulfur": [
+          179
+        ],
+        "atoms": [
+          180
+        ],
+        "acid,": [
+          183
+        ],
+        "experiments": [
+          184
+        ],
+        "methyl": [
+          186
+        ],
+        "oligomers": [
+          188
+        ],
+        "small": [
+          191,
+          202
+        ],
+        "fragments": [
+          193
+        ],
+        "are": [
+          194,
+          205
+        ],
+        "degraded": [
+          196
+        ],
+        "molecule": [
+          203
+        ],
+        "products": [
+          204
+        ],
+        "produced": [
+          206
+        ],
+        "below": [
+          207
+        ],
+        "molar": [
+          209
+        ],
+        "mass": [
+          210
+        ],
+        "fragments.": [
+          214
+        ],
+        "Therefore,": [
+          215
+        ],
+        "illustrates": [
+          218
+        ],
+        "provides": [
+          225
+        ],
+        "route": [
+          227
+        ],
+        "toward": [
+          228
+        ],
+        "fully": [
+          229
+        ],
+        "biodegradable": [
+          230
+        ],
+        "polyacrylates.": [
+          231
+        ]
+      },
+      "primary_location": {
+        "id": "doi:10.1021/jacs.6c02848",
+        "doi": "https://doi.org/10.1021/jacs.6c02848",
+        "is_oa": false,
+        "landing_page_url": "https://doi.org/10.1021/jacs.6c02848",
+        "pdf_url": null,
+        "source": {
+          "id": "https://openalex.org/S111155417",
+          "display_name": "Journal of the American Chemical Society",
+          "issn_l": "0002-7863",
+          "issn": [
+            "0002-7863",
+            "1520-5126",
+            "1943-2984"
+          ],
+          "is_oa": false,
+          "is_in_doaj": false,
+          "is_core": true,
+          "listed_in": [
+            "cwts-core",
+            "dongbi-a",
+            "jufo-3",
+            "ki-jl-3",
+            "medline",
+            "norway-2",
+            "poland-200",
+            "russia-white-list-1",
+            "vabb-shw"
+          ],
+          "host_organization": "https://openalex.org/P4310320006",
+          "host_organization_name": "American Chemical Society",
+          "host_organization_lineage": [
+            "https://openalex.org/P4310320006"
+          ],
+          "host_organization_lineage_names": [
+            "American Chemical Society"
+          ],
+          "type": "journal"
+        },
+        "license": null,
+        "license_id": null,
+        "version": "publishedVersion",
+        "is_accepted": true,
+        "is_published": true,
+        "raw_source_name": "Journal of the American Chemical Society",
+        "raw_type": "journal-article"
+      },
+      "authorships": [
+        {
+          "author": {
+            "display_name": "Author 1"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Author 2"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Author 3"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Author 4"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Author 5"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Author 6"
+          }
+        },
+        {
+          "author": {
+            "display_name": "Author 7"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -68,7 +68,7 @@ export class SetupModal extends Modal {
     parent.createEl("h3", { text: "Add parts of this plugin to your kit notes" });
     parent.createEl("p", {
       cls: "setting-item-description",
-      text: "Each part is added only when you press its button, after you have seen exactly what will be written; leave a part alone to skip it. Each addition sits between two comment lines, so it can be taken out again. A kit update treats an edited note as changed by you and keeps your edit when the edits do not overlap.",
+      text: "Each part is added only when you press its button, after you have seen exactly what will be written; leave a part alone to skip it. Each addition can be taken out again later. A kit update treats an edited note as changed by you and keeps your edit when the edits do not overlap.",
     });
     for (const info of INTEGRATIONS) {
       const target = await this.host.readTarget(info);
@@ -92,12 +92,14 @@ export class SetupModal extends Modal {
           void this.change(target?.path ?? "", (t) => planIntegration(info.id, t, ctx).next ?? t);
         });
       } else {
-        text.createDiv({ cls: "literature-feed-meta", text: `Already added to "${info.noteName}".` });
-        const remove = el.createEl("button", { text: "Remove" });
-        remove.addEventListener("click", () => {
-          remove.disabled = true;
-          void this.change(target?.path ?? "", (t) => removeIntegration(info.id, t));
-        });
+        text.createDiv({ cls: "literature-feed-meta", text: plan.removable ? `Already added to "${info.noteName}".` : `"${info.noteName}" already has a reading inbox card that was not added here; it is left as it is.` });
+        if (plan.removable) {
+          const remove = el.createEl("button", { text: "Remove" });
+          remove.addEventListener("click", () => {
+            remove.disabled = true;
+            void this.change(target?.path ?? "", (t) => removeIntegration(info.id, t));
+          });
+        }
       }
     }
     parent.createEl("p", { cls: "setting-item-description", text: "Not offered, because they would mean editing the kit's queries or structure; do them by hand if you want them:" });

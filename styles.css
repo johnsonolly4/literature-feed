@@ -72,6 +72,18 @@
   --callout-icon: lucide-book-open;
 }
 
+/* The title link of the reading-inbox tile looks like Lab Kit's callout title links: plain text, underlined on hover, no external icon */
+.callout[data-callout="reading-inbox"] > .callout-title a.external-link {
+  color: var(--text-normal);
+  text-decoration: none;
+  background-image: none;
+  padding-inline-end: 0;
+}
+
+.callout[data-callout="reading-inbox"] > .callout-title a.external-link:hover {
+  text-decoration: underline;
+}
+
 /* Status line and Home card made by the literature-feed code block.
    Fill, border and corners use Lab Kit's theme variables when that theme is on, and Obsidian's own otherwise. */
 .literature-feed-status,

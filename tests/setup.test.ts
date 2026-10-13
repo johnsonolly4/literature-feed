@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INTEGRATIONS, endMarker, planIntegration, removeIntegration, startMarker, type IntegrationId } from "../src/setup/integrate";
+import { INTEGRATIONS, SPEC_HEADING, planIntegration, removeIntegration, type IntegrationId } from "../src/setup/integrate";
 import { LAB_KIT_LITERATURE_FOLDER, checkSetup, type SetupSnapshot } from "../src/setup/checks";
 import { defaultSettings, type FeedConfig, type Settings } from "../src/settings/data";
 
@@ -80,28 +80,31 @@ const HOME = "---\nobsidianUIMode: preview\ncssclasses:\n  - home\n---\n\n# Home
 const HUB = "---\nkind: hub\n---\n\n> [!note]- How I read\n> 1. Read in Zotero.\n\n> [!columns]\n> > [!focus] To process\n";
 const SPEC = "---\nkind: guide\n---\n\n## Folders\n\n| Folder | What |\n";
 const ctx = { inboxFolder: "Reading" };
+const LINK = (id: string): string => `[Reading inbox](obsidian://literature-feed-inbox?tile=${id})`;
 
 describe("planIntegration and removeIntegration", () => {
-  it("adds the Home card at the end of the note, once, with the markers", () => {
+  it("adds the Home tile at the end of the note as a reading-inbox callout with a title link, once, and no marker comments", () => {
     const plan = planIntegration("home-tile", HOME, ctx);
     expect(plan.state).toBe("addable");
-    expect(plan.next).toBe(`${HOME.trimEnd()}\n\n${startMarker("home-tile")}\n> [!reading-inbox] [Reading inbox](obsidian://literature-feed-inbox)\n> \`\`\`literature-feed\n> show: home\n> limit: 3\n> \`\`\`\n${endMarker("home-tile")}\n`);
+    expect(plan.next).toBe(`${HOME.trimEnd()}\n\n> [!reading-inbox] ${LINK("home-tile")}\n> \`\`\`literature-feed\n> show: home\n> limit: 3\n> \`\`\`\n`);
+    expect(plan.next).not.toContain("%%");
     expect(plan.anchor).toBe("after: > > [!planning] This week");
     expect(planIntegration("home-tile", plan.next ?? "", ctx).state).toBe("already-added");
   });
 
-  it("puts the Literature card in a callout before the first columns callout", () => {
+  it("puts the Literature tile, the same callout, before the first columns callout", () => {
     const plan = planIntegration("literature-tile", HUB, ctx);
     expect(plan.state).toBe("addable");
     const next = plan.next ?? "";
-    expect(next.indexOf(startMarker("literature-tile"))).toBeLessThan(next.indexOf("> [!columns]"));
-    expect(next).toContain("> [!reading-inbox] [Reading inbox](obsidian://literature-feed-inbox)\n> ```literature-feed\n> show: home\n> limit: 5\n> ```\n");
-    expect(next.indexOf("How I read")).toBeLessThan(next.indexOf(startMarker("literature-tile")));
+    expect(next.indexOf("> [!reading-inbox]")).toBeLessThan(next.indexOf("> [!columns]"));
+    expect(next).toContain(`> [!reading-inbox] ${LINK("literature-tile")}\n> \`\`\`literature-feed\n> show: home\n> limit: 5\n> \`\`\`\n`);
+    expect(next.indexOf("How I read")).toBeLessThan(next.indexOf("> [!reading-inbox]"));
     expect(plan.anchor).toBe("before: > [!columns]");
   });
 
   it("writes the Vault spec section with the folder it was given, or the vault root", () => {
     const plan = planIntegration("vault-spec", SPEC, ctx);
+    expect(plan.next).toContain(SPEC_HEADING);
     expect(plan.next).toContain("into `Reading/`.");
     expect(plan.next).toContain("kind: reading-inbox");
     expect(planIntegration("vault-spec", SPEC, { inboxFolder: "" }).next).toContain("into the vault root.");
@@ -117,6 +120,17 @@ describe("planIntegration and removeIntegration", () => {
     expect(removeIntegration("home-tile", HOME)).toBe(HOME);
   });
 
+  it("removes a tile the user edited inside, and a spec section with text the user added under its heading, but not what follows the next heading", () => {
+    const home = planIntegration("home-tile", HOME, ctx).next ?? "";
+    expect(removeIntegration("home-tile", home.replace("limit: 3", "limit: 9"))).toBe(HOME);
+    const spec = planIntegration("vault-spec", SPEC, ctx).next ?? "";
+    const withNext = `${spec}\n## Another section\n\nKeep this.\n`;
+    const removed = removeIntegration("vault-spec", withNext);
+    expect(removed).not.toContain(SPEC_HEADING);
+    expect(removed).toContain("## Another section\n\nKeep this.");
+    expect(removed.startsWith(SPEC)).toBe(true);
+  });
+
   it("reports a missing note or a missing place, and keeps every other line and the line endings", () => {
     expect(planIntegration("home-tile", null, ctx).state).toBe("target-missing");
     expect(planIntegration("literature-tile", "no columns here\n", ctx).state).toBe("target-missing");
@@ -125,6 +139,14 @@ describe("planIntegration and removeIntegration", () => {
     expect(next.replace(/\r\n/g, "")).not.toContain("\n");
     expect(next.startsWith(crlf.trimEnd())).toBe(true);
     expect(removeIntegration("home-tile", next)).toBe(crlf);
+  });
+
+  it("does not offer a second tile where the user already made a reading inbox card, and does not remove it", () => {
+    const handMade = HOME + "> > [!summary] Reading inbox\n> > ```literature-feed\n> > show: home\n> > ```\n";
+    expect(planIntegration("home-tile", handMade, ctx)).toMatchObject({ state: "already-added", removable: false });
+    expect(removeIntegration("home-tile", handMade)).toBe(handMade);
+    expect(planIntegration("home-tile", planIntegration("home-tile", HOME, ctx).next ?? "", ctx).removable).toBe(true);
+    expect(planIntegration("vault-spec", handMade, ctx).state).toBe("addable");
   });
 
   it("lists the three integrations with the notes they go into", () => {

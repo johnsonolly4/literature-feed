@@ -16,7 +16,7 @@ Phase 5 (Zotero sync) **code done; real sync worked 2026-10-12 on the second att
 2. Phase 2 late-indexing run, on or after 2026-10-19: `node scripts/openalex-run.mjs --from 2025-10-12 --out run3.json`, compare with `run.json` (needs the owner's key)
 3. Phase 7: schedule, ribbon, start-up scan and start-up sync (the **Scan now** and **Sync ticked papers** commands already exist)
 4. Phase 8: Lab Kit side (in the Lab Kit repo, its own session and plan)
-5. Phase 9: release (owner's call)
+5. Phase 9: release (owner's call). Shortest path to a store submission (owner asked 2026-10-13): merge the stacked branches to main (PR #1 is open for the first; the rest are unpushed), Phase 7 optional, Phase 8 is not needed for the plugin, then `/release` (tag, GitHub release with `main.js`, `manifest.json`, `styles.css`) and a pull request to obsidian-releases; the owner's checks in Obsidian come first
 
 ## Running: none
 

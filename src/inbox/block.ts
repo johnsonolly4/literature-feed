@@ -4,10 +4,11 @@
 // the stored data: the table reads them, and ticking in the table edits the matching line.
 import { MarkdownRenderChild, TFile, type App, type MarkdownPostProcessorContext, type Plugin } from "obsidian";
 import type { Settings } from "../settings/data";
+import { DEFAULT_LIMIT, buildCards, countsLine, homeSummary, parseLimit, type FeedCard } from "./cards";
 import { describeCounts, describeFeedRow, localDay } from "./scan";
 import {
   DEFAULT_SORT, STATUS_LABEL, TIER_LABEL, agesOutSoon, countsByStatus, filterRows, makeRows, orderRows, takeawayFilled,
-  type FilterKey, type SortKey, type SortSetting,
+  type FilterKey, type SortKey, type SortSetting, type TableRow,
 } from "./table";
 import { NOTE_NAME_PATTERN, doiUrl, parseInbox, waitingByFeed, waitingByTier, type ListedTier, type ParsedPaper } from "./write";
 
@@ -31,8 +32,13 @@ const SORTABLE: { key: SortKey; label: string }[] = [
 class StatusBlock extends MarkdownRenderChild {
   private filter: FilterKey = "all";
   private sort: SortSetting = DEFAULT_SORT;
+  /** The feed whose papers the table shows (chosen with a card), or null for all. */
+  private feedFilter: string | null = null;
 
-  constructor(el: HTMLElement, private readonly host: BlockHost, private readonly sourcePath: string, private readonly home: boolean) {
+  constructor(
+    el: HTMLElement, private readonly host: BlockHost, private readonly sourcePath: string, private readonly home: boolean,
+    private readonly limit: number = DEFAULT_LIMIT,
+  ) {
     super(el);
     this.loadView();
   }
@@ -54,7 +60,8 @@ class StatusBlock extends MarkdownRenderChild {
     try {
       const saved: unknown = this.host.app.loadLocalStorage(VIEW_KEY);
       if (typeof saved !== "object" || saved === null) return;
-      const { filter, sort } = saved as { filter?: unknown; sort?: { by?: unknown; desc?: unknown } };
+      const { filter, sort, feed } = saved as { filter?: unknown; sort?: { by?: unknown; desc?: unknown }; feed?: unknown };
+      if (typeof feed === "string" && feed !== "") this.feedFilter = feed;
       if (typeof filter === "string" && (FILTERS as string[]).includes(filter)) this.filter = filter as FilterKey;
       if (sort && typeof sort.by === "string" && SORTABLE.some((s) => s.key === sort.by)) this.sort = { by: sort.by as SortKey, desc: sort.desc === true };
     } catch {
@@ -64,7 +71,7 @@ class StatusBlock extends MarkdownRenderChild {
 
   private saveView(): void {
     try {
-      this.host.app.saveLocalStorage(VIEW_KEY, { filter: this.filter, sort: this.sort });
+      this.host.app.saveLocalStorage(VIEW_KEY, { filter: this.filter, sort: this.sort, feed: this.feedFilter });
     } catch {
       // The view just is not remembered.
     }
@@ -83,7 +90,8 @@ class StatusBlock extends MarkdownRenderChild {
   private async render(): Promise<void> {
     const note = this.findNote();
     const parsed = note ? parseInbox(await this.host.app.vault.cachedRead(note)) : null;
-    const processed = !this.home && note && parsed ? await this.processedPapers(parsed.papers, note.path) : new Set<string>();
+    const processed = note && parsed ? await this.processedPapers(parsed.papers, note.path) : new Set<string>();
+    const rows = parsed ? makeRows(parsed.papers, processed) : [];
     const waiting = waitingByTier(parsed?.papers ?? []);
     const total = waiting.priority + waiting.strong + waiting.possible + waiting.unchecked;
 
@@ -102,9 +110,12 @@ class StatusBlock extends MarkdownRenderChild {
     const result = this.host.settings.lastScanResult;
     if (result) box.createDiv({ cls: "literature-feed-status-line", text: describeCounts(result) });
 
-    // With more than one feed, a row per feed. Feeds that are switched on, plus any feed the note still lists.
+    // The home card: the counts and the first papers to read. (In the note itself the cards below say this per search.)
+    if (this.home && parsed) this.renderHomeList(box, rows);
+
+    // On the home card, with more than one feed, a row per feed. Feeds that are switched on, plus any feed the note still lists.
     const enabled = this.host.settings.feeds.filter((f) => f.enabled);
-    if (parsed && enabled.length > 1) {
+    if (this.home && parsed && enabled.length > 1) {
       const perFeed = waitingByFeed(parsed.papers);
       const names = new Map(this.host.settings.feeds.map((f) => [f.id, f.name]));
       const ids = [...new Set([...enabled.map((f) => f.id), ...Object.keys(perFeed)])];
@@ -132,7 +143,70 @@ class StatusBlock extends MarkdownRenderChild {
       open.addEventListener("click", () => { void this.host.app.workspace.openLinkText(note.path, "", false); });
     }
 
-    if (!this.home && note && parsed && parsed.papers.length > 0) this.renderTable(el, parsed.papers, processed, note);
+    if (!this.home && note && parsed) {
+      this.renderCards(el, rows);
+      if (parsed.papers.length > 0) this.renderTable(el, rows, note);
+    }
+  }
+
+  /** Counts line and a short list of papers to read, for the home card. */
+  private renderHomeList(box: HTMLElement, rows: readonly TableRow[]): void {
+    const summary = homeSummary(rows, this.limit);
+    box.createDiv({ cls: "literature-feed-status-line", text: countsLine(summary.counts) });
+    if (summary.toRead.length === 0) return;
+    const list = box.createDiv({ cls: "literature-feed-toread" });
+    for (const { paper } of summary.toRead) this.toReadRow(list, paper);
+    if (summary.more > 0) list.createDiv({ cls: "literature-feed-meta", text: `+ ${summary.more} more in the inbox` });
+  }
+
+  private toReadRow(parent: HTMLElement, paper: ParsedPaper): void {
+    const row = parent.createDiv({ cls: "literature-feed-toread-row" });
+    const doi = doiUrl(paper.doi);
+    if (doi) this.externalLink(row, paper.title, doi);
+    else row.createSpan({ text: paper.title });
+    const meta = [TIER_LABEL[paper.tier], paper.year === null ? "" : String(paper.year)].filter((m) => m !== "");
+    row.createSpan({ cls: "literature-feed-meta", text: ` · ${meta.join(" · ")}` });
+  }
+
+  /** One card per search before the table (Lab Kit's project-card look): badge, counts, papers to read, funnel and bar. */
+  private renderCards(el: HTMLElement, rows: readonly TableRow[]): void {
+    const cards = buildCards(rows, this.host.settings.feeds, this.host.settings.lastScanResult, this.limit);
+    if (cards.length === 0) return;
+    const grid = el.createDiv({ cls: "literature-feed-cards" });
+    for (const card of cards) this.renderCard(grid, card);
+  }
+
+  private renderCard(grid: HTMLElement, card: FeedCard): void {
+    const selected = this.feedFilter === card.feedId;
+    const box = grid.createDiv({ cls: `literature-feed-feedcard${selected ? " is-selected" : ""}` });
+    const head = box.createDiv({ cls: "literature-feed-feedcard-head" });
+    head.createSpan({ text: card.name });
+    head.createSpan({ cls: `literature-feed-badge${card.badge.waiting ? " is-waiting" : ""}`, text: card.badge.text });
+    if (card.description !== "") box.createDiv({ cls: "literature-feed-meta", text: card.description });
+    if (card.funnel.listed === 0) {
+      box.createDiv({ cls: "literature-feed-meta", text: "No papers in this note." });
+      return;
+    }
+    const list = box.createDiv({ cls: "literature-feed-toread" });
+    for (const { paper } of card.toRead) this.toReadRow(list, paper);
+    if (card.toRead.length === 0) list.createDiv({ cls: "literature-feed-meta", text: "Nothing waiting to be read." });
+    if (card.moreToRead > 0) list.createDiv({ cls: "literature-feed-meta", text: `+ ${card.moreToRead} more in the table` });
+
+    box.createDiv({ cls: "literature-feed-meta", text: countsLine(card.counts) });
+    box.createDiv({ cls: "literature-feed-funnel", text: `listed ${card.funnel.listed} → ticked ${card.funnel.ticked} → read ${card.funnel.read}` });
+    const bar = box.createDiv({ cls: "literature-feed-bar" });
+    for (const [key, label] of [["toRead", "to read"], ["ticked", "ticked"], ["new", "new"], ["read", "read"]] as const) {
+      if (card.bar[key] === 0) continue;
+      const segment = bar.createDiv({ cls: `literature-feed-bar-${key}`, attr: { title: `${card.counts[key]} ${label}` } });
+      segment.setCssProps({ "--literature-feed-width": `${card.bar[key]}%` });
+    }
+    const buttons = box.createDiv({ cls: "literature-feed-buttons" });
+    const show = buttons.createEl("button", { text: selected ? "Show all" : "Show in table" });
+    show.addEventListener("click", () => {
+      this.feedFilter = selected ? null : card.feedId;
+      this.saveView();
+      void this.render();
+    });
   }
 
   /** Papers whose literature note has its takeaway filled in ("feedId|openalexId"). */
@@ -146,14 +220,21 @@ class StatusBlock extends MarkdownRenderChild {
     return out;
   }
 
-  private renderTable(el: HTMLElement, papers: readonly ParsedPaper[], processed: ReadonlySet<string>, note: TFile): void {
-    const rows = makeRows(papers, processed);
-    const counts = countsByStatus(rows);
+  private renderTable(el: HTMLElement, rows: readonly TableRow[], note: TFile): void {
+    const counts = countsByStatus(this.feedFilter === null ? rows : rows.filter((r) => r.paper.feedId === this.feedFilter));
     const names = new Map(this.host.settings.feeds.map((f) => [f.id, f.name]));
     const today = localDay(new Date());
     const wrap = el.createDiv({ cls: "literature-feed-list" });
 
     const chips = wrap.createDiv({ cls: "literature-feed-filters" });
+    if (this.feedFilter !== null) {
+      const feedChip = chips.createEl("button", { cls: "literature-feed-filter is-active", text: `Feed: ${names.get(this.feedFilter) ?? this.feedFilter} ✕` });
+      feedChip.addEventListener("click", () => {
+        this.feedFilter = null;
+        this.saveView();
+        void this.render();
+      });
+    }
     for (const key of FILTERS) {
       const label = key === "all" ? "All" : key === "in-zotero" ? "To read" : STATUS_LABEL[key];
       const chip = chips.createEl("button", { cls: `literature-feed-filter${key === "all" ? "" : ` is-${key}`}${this.filter === key ? " is-active" : ""}`, text: `${label} ${counts[key]}` });
@@ -180,7 +261,7 @@ class StatusBlock extends MarkdownRenderChild {
     head.createEl("th", { text: "Links" });
 
     const body = table.createEl("tbody");
-    const shown = orderRows(filterRows(rows, this.filter), this.sort);
+    const shown = orderRows(filterRows(rows, this.filter, this.feedFilter), this.sort);
     if (shown.length === 0) body.createEl("tr").createEl("td", { attr: { colspan: "6" }, cls: "literature-feed-empty", text: "No papers in this view." });
     for (const { paper, status } of shown) {
       const tr = body.createEl("tr");
@@ -230,6 +311,6 @@ class StatusBlock extends MarkdownRenderChild {
 export function registerInboxBlock(plugin: Plugin & BlockHost): void {
   plugin.registerMarkdownCodeBlockProcessor("literature-feed", (source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
     const home = /^\s*show:\s*home\s*$/m.test(source);
-    ctx.addChild(new StatusBlock(el, plugin, ctx.sourcePath, home));
+    ctx.addChild(new StatusBlock(el, plugin, ctx.sourcePath, home, parseLimit(source)));
   });
 }

@@ -295,3 +295,96 @@ table.literature-feed-papers td {
 .literature-feed-filter.is-processed {
   background: rgba(var(--literature-feed-rgb), var(--vt-tint, 0.2));
 }
+
+/* One card per search before the table (Lab Kit's project-card look), two to a row where there is room */
+.literature-feed-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--size-4-3);
+  margin: var(--size-4-2) 0;
+}
+
+.literature-feed-feedcard {
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+  background-color: var(--vt-card-bg, var(--background-secondary));
+}
+
+.literature-feed-feedcard.is-selected {
+  box-shadow: inset 0 0 0 1px rgb(var(--vt-doing, 59, 130, 246));
+}
+
+.literature-feed-feedcard-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--size-4-2);
+  font-weight: var(--font-semibold);
+}
+
+/* Slate when nothing waits, amber when papers wait to be read (Lab Kit: waiting) */
+.literature-feed-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+  white-space: nowrap;
+  color: rgb(var(--vt-neutral-text));
+  background: rgba(var(--vt-neutral, 100, 116, 139), var(--vt-tint, 0.2));
+}
+
+.literature-feed-badge.is-waiting {
+  color: rgb(var(--vt-waiting-text));
+  background: rgba(var(--vt-waiting, 245, 158, 11), var(--vt-tint, 0.2));
+}
+
+.literature-feed-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-toread {
+  margin: var(--size-4-2) 0;
+}
+
+.literature-feed-toread-row {
+  padding: var(--size-4-1) 0;
+  border-top: 1px solid var(--vt-divider, var(--background-modifier-border));
+}
+
+.literature-feed-funnel {
+  margin-top: var(--size-4-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* Status bar: the feed's papers by status, widths set from the code (percent, summing to 100) */
+.literature-feed-bar {
+  display: flex;
+  height: 6px;
+  margin-top: var(--size-4-1);
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(var(--vt-neutral, 100, 116, 139), 0.15);
+}
+
+.literature-feed-bar > div {
+  width: var(--literature-feed-width, 0);
+}
+
+.literature-feed-bar-toRead {
+  background: rgb(var(--vt-waiting, 245, 158, 11));
+}
+
+.literature-feed-bar-ticked {
+  background: rgb(var(--vt-doing, 59, 130, 246));
+}
+
+.literature-feed-bar-new {
+  background: rgb(var(--vt-neutral, 100, 116, 139));
+}
+
+.literature-feed-bar-read {
+  background: rgb(var(--vt-done, 16, 185, 129));
+}

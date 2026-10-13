@@ -70,8 +70,9 @@ export function orderRows(rows: readonly TableRow[], sort: SortSetting = DEFAULT
   return [...rows].sort((a, b) => sign * primary(a, b) || byDefault(a, b));
 }
 
-export function filterRows(rows: readonly TableRow[], filter: FilterKey): TableRow[] {
-  return filter === "all" ? [...rows] : rows.filter((r) => r.status === filter);
+/** Rows with the chosen status (or all), and only those of one feed when `feedId` is given. */
+export function filterRows(rows: readonly TableRow[], filter: FilterKey, feedId: string | null = null): TableRow[] {
+  return rows.filter((r) => (filter === "all" || r.status === filter) && (feedId === null || r.paper.feedId === feedId));
 }
 
 export function countsByStatus(rows: readonly TableRow[]): Record<FilterKey, number> {

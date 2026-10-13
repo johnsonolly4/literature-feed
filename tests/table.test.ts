@@ -74,6 +74,8 @@ describe("ordering, filtering and counts", () => {
     expect(ids(filterRows(rows, "in-zotero"))).toEqual(["W3", "W6"]);
     expect(ids(filterRows(rows, "processed"))).toEqual(["W7"]);
     expect(filterRows(rows, "all")).toHaveLength(7);
+    expect(ids(filterRows(rows, "all", "other"))).toEqual([]);
+    expect(filterRows(rows, "all", "a")).toHaveLength(7);
     expect(countsByStatus(rows)).toEqual({ all: 7, new: 2, ticked: 1, "in-zotero": 2, read: 1, processed: 1 });
     expect(countsByStatus([])).toEqual({ all: 0, new: 0, ticked: 0, "in-zotero": 0, read: 0, processed: 0 });
   });

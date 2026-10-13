@@ -51,7 +51,7 @@ function extraTitle(r: ExtraRow): string {
   return url ? `[${title}](${url})` : title;
 }
 
-function flagText(f: Flags, searchNames: ReadonlyMap<string, string>): string {
+export function flagText(f: Flags, searchNames: ReadonlyMap<string, string>): string {
   const parts: string[] = [];
   if (f.zotero) parts.push(`[in Zotero](zotero://select/library/items/${f.zotero})`);
   if (f.vault) parts.push(`[[${f.vault.replace(/\.md$/i, "")}|note]]`);
@@ -59,7 +59,7 @@ function flagText(f: Flags, searchNames: ReadonlyMap<string, string>): string {
   return parts.join(", ");
 }
 
-function cell(text: string): string {
+export function cell(text: string): string {
   return text.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
 }
 

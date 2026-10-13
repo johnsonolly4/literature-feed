@@ -21,6 +21,8 @@ export interface ReviewCache {
   topics: Record<string, TopicEntry>;
   /** Short work id to the paper, with when it was fetched. */
   works: Record<string, { at: number; paper: Candidate }>;
+  /** A reference title (letters and digits only) to the work it was found to be (null: none), so a repeat does not search again. */
+  titles?: Record<string, { at: number; id: string | null }>;
 }
 
 export function emptyCache(): ReviewCache {
@@ -41,6 +43,18 @@ export function putTopic(cache: ReviewCache, key: string, entry: TopicEntry): vo
   cache.topics[key] = entry;
   const keys = Object.keys(cache.topics).sort((a, b) => cache.topics[a].at - cache.topics[b].at);
   for (const old of keys.slice(0, Math.max(0, keys.length - MAX_TOPIC_ENTRIES))) delete cache.topics[old];
+}
+
+export function getTitle(cache: ReviewCache, key: string, now: number): { id: string | null } | null {
+  const entry = cache.titles?.[key];
+  return entry && now - entry.at < CACHE_TTL_MS && now >= entry.at ? { id: entry.id } : null;
+}
+
+export function putTitle(cache: ReviewCache, key: string, id: string | null, now: number): void {
+  cache.titles ??= {};
+  cache.titles[key] = { at: now, id };
+  const keys = Object.keys(cache.titles).sort((a, b) => (cache.titles as NonNullable<ReviewCache["titles"]>)[a].at - (cache.titles as NonNullable<ReviewCache["titles"]>)[b].at);
+  for (const old of keys.slice(0, Math.max(0, keys.length - MAX_WORK_ENTRIES))) delete cache.titles[old];
 }
 
 export function getWork(cache: ReviewCache, id: string, now: number): Candidate | null {
@@ -79,6 +93,13 @@ export function normaliseCache(raw: unknown): ReviewCache {
     for (const [id, entry] of Object.entries(raw.works)) {
       if (/^W\d+$/.test(id) && isRecord(entry) && typeof entry.at === "number" && isCandidate(entry.paper)) out.works[id] = { at: entry.at, paper: entry.paper };
     }
+  }
+  if (isRecord(raw.titles)) {
+    const titles: NonNullable<ReviewCache["titles"]> = {};
+    for (const [key, entry] of Object.entries(raw.titles)) {
+      if (isRecord(entry) && typeof entry.at === "number" && (entry.id === null || (typeof entry.id === "string" && /^W\d+$/.test(entry.id)))) titles[key] = { at: entry.at, id: entry.id };
+    }
+    if (Object.keys(titles).length > 0) out.titles = titles;
   }
   return out;
 }

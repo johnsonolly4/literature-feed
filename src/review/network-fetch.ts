@@ -36,7 +36,7 @@ export function estimateGapRequests(referenceCount: number): number {
 }
 
 /** Works by id, from the cache where possible; the rest in batches of 50, each only if the budget allows. */
-async function worksById(ids: readonly string[], deps: NetworkDeps): Promise<{ papers: Candidate[]; stopped: string | null }> {
+export async function worksById(ids: readonly string[], deps: NetworkDeps): Promise<{ papers: Candidate[]; stopped: string | null }> {
   const have: Candidate[] = [];
   const need: string[] = [];
   for (const id of new Set(ids)) {
@@ -119,7 +119,7 @@ export interface GapResult {
 }
 
 /** For one paper: what many of its references cite that it does not (see `citationGaps`). */
-export async function fetchCitationGaps(paper: ReviewPaper, deps: NetworkDeps, minCount = 3): Promise<GapResult> {
+export async function fetchCitationGaps(paper: { id: string; referencedWorks: readonly string[] }, deps: NetworkDeps, minCount = 3): Promise<GapResult> {
   const refs = paper.referencedWorks.slice(0, MAX_GAP_REFERENCES);
   const read = await worksById(refs, deps);
   const withIds = read.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [{ id, referencedWorks: p.referencedWorks ?? [] }] : []; });

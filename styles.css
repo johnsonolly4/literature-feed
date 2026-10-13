@@ -767,6 +767,9 @@ table.literature-feed-papers th.is-sorted button.literature-feed-sort {
 .mode-level.l-skip .literature-feed-dotnode { fill: var(--text-faint); opacity: 0.5; }
 .mode-level.l-none .literature-feed-dotnode { fill: transparent; stroke: var(--text-faint); }
 
+.literature-feed-gaps-picks .literature-feed-suggestion { cursor: pointer; }
+.literature-feed-gaps-picks .literature-feed-suggestion.is-picked { outline: 2px solid var(--interactive-accent); }
+
 .literature-feed-graph-panel {
   min-height: 3em;
 }

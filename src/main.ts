@@ -14,6 +14,8 @@ import type { FlagSources } from "./review/flags";
 import { chartBlockProcessor } from "./review/chart-view";
 import { GRAPH_BLOCK, graphFromNote, normaliseGraph, type GraphData } from "./review/graph-data";
 import { GRAPH_VIEW, GraphView, graphBlockProcessor, type GraphHost } from "./review/graph-view";
+import { GAPS_VIEW, GapsView } from "./review/gaps-view";
+import { normaliseGapsSession, type GapsSession } from "./review/gaps-input";
 import { recordFromNote, type ReviewRecord } from "./review/record";
 import { REVIEW_VIEW, ReviewView } from "./review/review-view";
 import { describeSession, normaliseSession, type ReviewSession } from "./review/session";
@@ -59,6 +61,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   reviewCache: ReviewCache = emptyCache();
   /** The literature review in progress (`review-session.json`), so closing the tab does not lose it. */
   session: ReviewSession | null = null;
+  /** The citation-gaps tool's last input and run (`gaps-session.json`). */
+  gapsSession: GapsSession | null = null;
   /** How the review tab starts the next time it is created. */
   private nextReviewMode: StartMode = "ask";
   /** The graph of the last literature review (`review-graph.json`). */
@@ -79,6 +83,9 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.zoteroIndex = normaliseIndex(await this.readPluginJson("zotero-index.json"));
     this.graph = normaliseGraph(await this.readPluginJson("review-graph.json"));
     this.session = normaliseSession(await this.readPluginJson("review-session.json"));
+    this.gapsSession = normaliseGapsSession(await this.readPluginJson("gaps-session.json"));
+    this.registerView(GAPS_VIEW, (leaf) => new GapsView(leaf, this));
+    this.addCommand({ id: "citation-gaps", name: "Citation gaps of one paper", callback: () => void this.openGaps() });
     this.registerView(REVIEW_VIEW, (leaf) => {
       const view = new ReviewView(leaf, this);
       view.mode = this.nextReviewMode;
@@ -474,6 +481,20 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  /** Opens the citation-gaps tool in a tab (the one that is open, if any). */
+  async openGaps(): Promise<void> {
+    await this.updateLedgerNow();
+    const existing = this.app.workspace.getLeavesOfType(GAPS_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: GAPS_VIEW, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  saveGapsSession(session: GapsSession): void {
+    this.gapsSession = session;
+    void this.writePluginJson("gaps-session.json", session);
+  }
+
   /** The ribbon icon's menu: start a review, pick up the last one, open the last graph. */
   private reviewMenu(evt: MouseEvent): void {
     const menu = new Menu();
@@ -483,6 +504,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       const names = new Map(this.settings.feeds.map((f) => [f.id, f.name]));
       menu.addItem((item) => item.setTitle(`Resume: ${describeSession(saved, names)}`).setIcon("history").onClick(() => void this.openReview("resume")));
     }
+    menu.addItem((item) => item.setTitle("Citation gaps of one paper").setIcon("search-check").onClick(() => void this.openGaps()));
     if (this.graph) menu.addItem((item) => item.setTitle("Open review graph").setIcon("network").onClick(() => void this.openGraph(this.graph)));
     menu.showAtMouseEvent(evt);
   }

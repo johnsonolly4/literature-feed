@@ -124,38 +124,51 @@ describe("noteWeekStart", () => {
 });
 
 function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
-  return { openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false, title: "", ...overrides };
+  return { openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false, title: "", topics: [], ...overrides };
 }
 
 describe("isFinished", () => {
-  const name = "2026-W42 Reading inbox.md"; // the week ends on Monday 2026-10-19
+  const name = "2026-W42 Reading inbox.md"; // the week ends on Monday 2026-10-19; with N = 4 a paper ages out on 2026-11-16
   const today = "2026-10-20";
+  const syncedPaper = (id: string) => paper(id, { ticked: true, synced: true, list: "synced" });
 
-  it("is finished when every paper is synced or read", () => {
-    expect(isFinished([paper("W1", { ticked: true, synced: true, list: "synced" }), paper("W2", { read: true })], name, today, 4)).toBe(true);
+  it("is finished when every paper is read, whatever its other state", () => {
+    expect(isFinished([paper("W1", { read: true }), paper("W2", { read: true, ticked: true, synced: true, list: "synced" })], name, today, 4)).toBe(true);
+    expect(isFinished([paper("W1", { read: true, ticked: true })], name, today, 4)).toBe(true);
   });
 
-  it("is open while a ticked paper is not synced yet", () => {
+  it("is open while a paper is in Zotero but not read, and the note is young: the inbox is the reading queue", () => {
+    expect(isFinished([syncedPaper("W1"), paper("W2", { read: true })], name, today, 4)).toBe(false);
+    expect(isFinished([syncedPaper("W1")], name, "2026-11-15", 4)).toBe(false);
+  });
+
+  it("counts a synced but unread paper as done once its note's week ended N weeks ago", () => {
+    expect(isFinished([syncedPaper("W1")], name, "2026-11-16", 4)).toBe(true);
+    expect(isFinished([syncedPaper("W1")], name, "2026-10-26", 1)).toBe(true);
+    expect(isFinished([syncedPaper("W1")], name, "2026-10-25", 1)).toBe(false);
+  });
+
+  it("is open while a ticked paper is not in Zotero yet, however old the note is", () => {
     expect(isFinished([paper("W1", { ticked: true })], name, "2030-01-01", 4)).toBe(false);
   });
 
-  it("is open while an unticked paper is from a young week, and finished once N weeks have passed", () => {
-    const papers = [paper("W1", { ticked: true, synced: true, list: "synced" }), paper("W2")];
+  it("is open while an unticked paper is from a young week, and counts it dismissed after N weeks", () => {
+    const papers = [paper("W1", { read: true }), paper("W2")];
     expect(isFinished(papers, name, today, 4)).toBe(false);
     expect(isFinished(papers, name, "2026-11-15", 4)).toBe(false);
-    expect(isFinished(papers, name, "2026-11-16", 4)).toBe(true); // 2026-10-19 plus 4 weeks
-    expect(isFinished(papers, name, "2026-10-26", 1)).toBe(true); // N = 1: the week after
-    expect(isFinished(papers, name, "2026-10-25", 1)).toBe(false);
+    expect(isFinished(papers, name, "2026-11-16", 4)).toBe(true);
   });
 
-  it("is open when an unticked paper in the In Zotero list is waiting to be sent again", () => {
+  it("is open when an unticked paper in the In Zotero list is waiting to be sent again, even when old", () => {
     const papers = [paper("W1", { ticked: false, synced: true, list: "synced" })];
     expect(isFinished(papers, name, "2030-01-01", 4)).toBe(false);
     expect(unfinishedPapers(papers, name, "2030-01-01", 4)).toHaveLength(1);
+    expect(isFinished([{ ...papers[0], read: true }], name, today, 4)).toBe(true);
   });
 
-  it("a note with no papers is finished, and a name without a week never dismisses", () => {
+  it("a note with no papers is finished, and a name without a week never ages papers out", () => {
     expect(isFinished([], name, today, 4)).toBe(true);
     expect(isFinished([paper("W1")], "Notes.md", "2030-01-01", 4)).toBe(false);
+    expect(isFinished([syncedPaper("W1")], "Notes.md", "2030-01-01", 4)).toBe(false);
   });
 });

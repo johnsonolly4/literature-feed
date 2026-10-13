@@ -10,6 +10,8 @@ export interface PendingPaper {
   path: string;
   feedId: string;
   openalexId: string;
+  /** The search topics (1-based) that found the paper, read from its line; empty when unknown. */
+  topics: number[];
 }
 
 /**
@@ -21,7 +23,7 @@ export function findPending(notes: readonly { path: string; text: string }[]): P
   for (const note of notes) {
     for (const p of parseInbox(note.text).papers) {
       const wanted = p.list === "synced" ? !p.ticked : p.ticked && !p.synced;
-      if (wanted) out.push({ path: note.path, feedId: p.feedId, openalexId: p.openalexId });
+      if (wanted) out.push({ path: note.path, feedId: p.feedId, openalexId: p.openalexId, topics: p.topics });
     }
   }
   return out;
@@ -83,7 +85,7 @@ export async function runSync(feeds: readonly FeedConfig[], pending: readonly Pe
   const todo: PendingPaper[] = [];
   for (const p of pending) {
     if (byId.has(p.feedId)) todo.push(p);
-    else result.skipped.push({ ...p, reason: "its feed no longer exists" });
+    else result.skipped.push({ path: p.path, feedId: p.feedId, openalexId: p.openalexId, reason: "its feed no longer exists" });
   }
   if (todo.length === 0) return result;
 
@@ -138,7 +140,7 @@ export async function runSync(feeds: readonly FeedConfig[], pending: readonly Pe
         item = (await deps.zotero.addToCollectionsAndTag(found, keys, [feedTag(feed.id)])).item;
         outcome = "existing";
       } else {
-        item = await deps.zotero.createItem(toZoteroItem(work, feed.id, keys));
+        item = await deps.zotero.createItem(toZoteroItem(work, feed.id, keys, { feedName: feed.name, topics: p.topics }));
         outcome = "added";
       }
       // Read it back: a link in the note means the item is really in the library, in the collections it was meant for.

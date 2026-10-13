@@ -1,7 +1,9 @@
 // One scan: every enabled feed, scored, turned into what goes into this week's note. No Obsidian here: the client is
 // passed in, and the result says what to write and what to remember. The caller does the writing.
-import type { OpenAlexClient } from "../openalex/client";
+import type { Candidate, OpenAlexClient, TopicResult } from "../openalex/client";
 import { SEEN_CAP, type FeedCounts, type ScanCounts, type Settings } from "../settings/data";
+import { titleKey } from "../zotero/client";
+import { bareDoi } from "../zotero/map";
 import { buildPapers, noteName, shortOpenAlexId, weekLabel, type FeedSection, type ListedTier, type NoteInput } from "./write";
 
 /** The window starts this many days before the last scan, so papers OpenAlex indexed late are still caught. */
@@ -52,6 +54,19 @@ export function windowStart(yearsFrom: number | null, lastScan: string, today: s
   return floor > base ? floor : base;
 }
 
+/**
+ * Which of the feed's topics (1-based, in order) returned a paper. The client merges papers found by several topics, and a
+ * preprint and its journal version into one, so a paper counts for a topic when that topic returned a paper with the same
+ * OpenAlex id, the same DOI or the same title.
+ */
+export function topicsFor(c: Candidate, perTopic: readonly Pick<TopicResult, "papers">[]): number[] {
+  const doi = bareDoi(c.doi);
+  const title = titleKey(c.title);
+  const same = (p: Candidate): boolean =>
+    p.openalexId === c.openalexId || (doi !== "" && bareDoi(p.doi) === doi) || (title !== "" && titleKey(p.title) === title);
+  return perTopic.flatMap((t, i) => (t.papers.some(same) ? [i + 1] : []));
+}
+
 export function inboxPath(inboxFolder: string, now: Date): string {
   return `${inboxFolder === "" ? "" : `${inboxFolder}/`}${noteName(now)}.md`;
 }
@@ -83,7 +98,7 @@ export async function runScan(settings: Settings, deps: ScanDeps): Promise<ScanO
         const id = shortOpenAlexId(c.openalexId);
         return id === null || !seen.has(seenKey(feed.id, id));
       });
-      const built = buildPapers(feed, unseen);
+      const built = buildPapers(feed, unseen, (c) => topicsFor(c, scan.perTopic));
       dropped += built.dropped;
       row.dropped = built.dropped;
       if (built.papers.length === 0) continue;

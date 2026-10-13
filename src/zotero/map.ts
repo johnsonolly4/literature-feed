@@ -44,7 +44,22 @@ export function feedTag(feedId: string): string {
   return `feed/${feedId}`;
 }
 
-export function toZoteroItem(work: OpenAlexWork, feedId: string, collectionKeys: readonly string[]): ZoteroItem {
+/** Where a new item came from: the feed (by name) and which of its search topics found the paper (1-based; empty if unknown). */
+export interface Provenance {
+  feedName: string;
+  topics: readonly number[];
+}
+
+/** The tag every item that a feed's OpenAlex search found first gets (next to `feed/<id>`). */
+export const FOUND_BY_TAG = "found-by/openalex";
+
+export function foundByLine(p: Provenance): string {
+  const name = p.feedName.replace(/\s+/g, " ").trim();
+  const topics = p.topics.length === 0 ? "" : `, topic${p.topics.length === 1 ? "" : "s"} ${p.topics.length === 1 ? p.topics[0] : `${p.topics.slice(0, -1).join(", ")} and ${p.topics[p.topics.length - 1]}`}`;
+  return `Found by: OpenAlex search, feed "${name}"${topics}`;
+}
+
+export function toZoteroItem(work: OpenAlexWork, feedId: string, collectionKeys: readonly string[], found?: Provenance): ZoteroItem {
   const type = itemTypeOf(work);
   const doi = bareDoi(work.doi);
   const item: ZoteroItem = { itemType: type, title: (work.title ?? "").replace(/\s+/g, " ").trim() };
@@ -65,8 +80,9 @@ export function toZoteroItem(work: OpenAlexWork, feedId: string, collectionKeys:
     if (type === "thesis") extra.push(`DOI: ${doi}`);
     else item.DOI = doi;
   }
+  if (found) extra.push(foundByLine(found));
   if (extra.length > 0) item.extra = extra.join("\n");
-  item.tags = [{ tag: feedTag(feedId) }];
+  item.tags = found ? [{ tag: feedTag(feedId) }, { tag: FOUND_BY_TAG }] : [{ tag: feedTag(feedId) }];
   item.collections = [...collectionKeys];
   return item;
 }

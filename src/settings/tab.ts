@@ -62,12 +62,12 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
           },
           {
             name: "Archive finished inbox notes",
-            desc: "Move a weekly note to the archive folder once every paper in it is in Zotero, read, or dismissed. Needs the archive folder above.",
+            desc: "Move a weekly note to the archive folder once every paper in it is read, or has aged out (see the setting below). Needs the archive folder above.",
             control: { type: "toggle", key: "archiveFinished" },
           },
           {
-            name: "Dismiss unticked papers after (weeks)",
-            desc: "An unticked paper counts as dismissed once its note's week ended this many weeks ago.",
+            name: "Mark papers done after (weeks)",
+            desc: "A paper that is unticked, or in Zotero but not read, counts as done once its note's week ended this many weeks ago.",
             control: { type: "number", key: "dismissAfterWeeks", min: 1, max: 52, step: 1 },
           },
         ],

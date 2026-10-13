@@ -10,7 +10,7 @@ const feedA: FeedConfig = { ...lipoicFeed, id: "a", name: "Feed A", enabled: tru
 const feedB: FeedConfig = { ...feedA, id: "b", name: "Feed B", zoteroCollection: "Inbox/Feed B", project: "" };
 
 function paper(n: number, tier: InboxPaper["tier"] = "strong"): InboxPaper {
-  return { openalexId: `W${n}`, title: `Paper ${n}`, authors: ["A. Author"], venue: "J", year: 2026, publicationDate: "2026-09-10", doi: `10.1000/p.${n}`, isPreprint: false, noAbstract: false, tier, matched: [] };
+  return { openalexId: `W${n}`, title: `Paper ${n}`, authors: ["A. Author"], venue: "J", year: 2026, publicationDate: "2026-09-10", doi: `10.1000/p.${n}`, isPreprint: false, noAbstract: false, tier, matched: [], topics: [] };
 }
 
 function note(sections: { feedId: string; papers: InboxPaper[] }[]): string {
@@ -24,8 +24,8 @@ describe("findPending", () => {
     const first = markSynced(tick(tick(note([{ feedId: "a", papers: [paper(1), paper(2), paper(3)] }]), 1), 2), [{ feedId: "a", openalexId: "W2", key: "ABCD2345" }]);
     const second = tick(note([{ feedId: "b", papers: [paper(1)] }]), 1);
     expect(findPending([{ path: "n1.md", text: first }, { path: "n2.md", text: second }])).toEqual([
-      { path: "n1.md", feedId: "a", openalexId: "W1" },
-      { path: "n2.md", feedId: "b", openalexId: "W1" },
+      { path: "n1.md", feedId: "a", openalexId: "W1", topics: [] },
+      { path: "n2.md", feedId: "b", openalexId: "W1", topics: [] },
     ]);
   });
 
@@ -35,7 +35,7 @@ describe("findPending", () => {
     ]);
     expect(findPending([{ path: "n.md", text: synced }])).toEqual([]);
     const resync = synced.replace("> - [x] **Paper 2**", "> - [ ] **Paper 2**");
-    expect(findPending([{ path: "n.md", text: resync }])).toEqual([{ path: "n.md", feedId: "a", openalexId: "W2" }]);
+    expect(findPending([{ path: "n.md", text: resync }])).toEqual([{ path: "n.md", feedId: "a", openalexId: "W2", topics: [] }]);
   });
 
   it("finds nothing when nothing is ticked", () => {
@@ -97,7 +97,7 @@ function fakes(opts: {
   return { deps, log, collections, items };
 }
 
-const pending = (...specs: [string, string][]) => specs.map(([feedId, openalexId]) => ({ path: "n.md", feedId, openalexId }));
+const pending = (...specs: [string, string][]) => specs.map(([feedId, openalexId]) => ({ path: "n.md", feedId, openalexId, topics: [] as number[] }));
 
 const NONE = { createInboxCollections: false, createProjectCollections: false };
 const ALL = { createInboxCollections: true, createProjectCollections: true };
@@ -235,6 +235,26 @@ describe("runSync: checking the result in Zotero", () => {
       expect(result.synced, text).toEqual([]);
       expect(result.failed[0].message).toContain(text);
     }
+  });
+});
+
+describe("runSync: where an item was found", () => {
+  it("a new item gets the found-by tag and the Extra line with the topics that found it; the feed tag stays", async () => {
+    const { deps, log } = fakes({ collections: EXISTING });
+    const created: Record<string, unknown>[] = [];
+    const original = deps.zotero.createItem;
+    deps.zotero.createItem = async (item) => { created.push(item); return original(item); };
+    await runSync([feedB], [{ path: "n.md", feedId: "b", openalexId: "W1", topics: [1, 3] }], deps, NONE);
+    expect(log.some((l) => l.startsWith("create"))).toBe(true);
+    expect(created[0].tags).toEqual([{ tag: "feed/b" }, { tag: "found-by/openalex" }]);
+    expect(String(created[0].extra)).toContain('Found by: OpenAlex search, feed "Feed B", topics 1 and 3');
+  });
+
+  it("an item already in the library gets no found-by tag and no change to its Extra", async () => {
+    const { deps, log } = fakes({ collections: EXISTING, existing: { "10.1000/p.1": { key: "OLDITEM1", version: 3, collections: [], tags: [] } } });
+    await runSync([feedB], [{ path: "n.md", feedId: "b", openalexId: "W1", topics: [2] }], deps, NONE);
+    expect(log).toContain("add:OLDITEM1:FEEDB001:feed/b");
+    expect(log.some((l) => l.includes("found-by"))).toBe(false);
   });
 });
 

@@ -28,6 +28,8 @@ export interface InboxPaper {
   tier: ListedTier;
   /** The terms of the feed that matched, for the line. */
   matched: string[];
+  /** Which of the feed's search topics (1-based, in the feed's order) returned the paper; empty when unknown. */
+  topics: number[];
 }
 
 export interface FeedSection {
@@ -113,7 +115,7 @@ export interface BuiltPapers {
 }
 
 /** Scores candidates with the feed's rules; Dropped papers are not listed. Best first, then newest. */
-export function buildPapers(feed: FeedConfig, candidates: readonly Candidate[]): BuiltPapers {
+export function buildPapers(feed: FeedConfig, candidates: readonly Candidate[], topicsOf: (c: Candidate) => number[] = () => []): BuiltPapers {
   const papers: InboxPaper[] = [];
   let dropped = 0;
   for (const c of candidates) {
@@ -135,6 +137,7 @@ export function buildPapers(feed: FeedConfig, candidates: readonly Candidate[]):
       noAbstract: !c.abstract?.trim(),
       tier: score.tier,
       matched: [...new Set(score.groups.flatMap((g) => g.terms))],
+      topics: topicsOf(c),
     });
   }
   papers.sort((a, b) =>
@@ -161,7 +164,8 @@ function paperLine(p: InboxPaper): string {
   if (terms) bits.push(terms + (p.matched.length > 6 ? ", …" : ""));
   const star = p.tier === "priority" ? "⭐ " : "";
   const title = escapeMd(p.title) || "(no title)";
-  return `> - [ ] ${star}**${title}**${authors ? ` — ${authors}` : ""} · ${bits.join(" · ")} %%oa:${p.openalexId}:${TIER_CODE[p.tier]}%%`;
+  const found = p.topics.length > 0 ? `%%tp:${p.topics.join(",")}%% ` : "";
+  return `> - [ ] ${star}**${title}**${authors ? ` — ${authors}` : ""} · ${bits.join(" · ")} ${found}%%oa:${p.openalexId}:${TIER_CODE[p.tier]}%%`;
 }
 
 function plural(n: number, word: string): string {
@@ -227,6 +231,8 @@ export interface ParsedPaper {
   doi: string | null;
   /** The line carries a "Read" link to a literature note. */
   read: boolean;
+  /** The search topics (1-based) that found the paper, from the line's hidden marker; empty for lines made before it existed. */
+  topics: number[];
   /** The paper's title as the line shows it (the bold text, backslash escapes removed); "" if it cannot be read. */
   title: string;
 }
@@ -243,6 +249,7 @@ const ZOTERO_LINK = "](zotero://select/library/items/";
 const HEADER = /^>\s*\[!literature-feed(?:-unchecked|-synced)?\][+-]?\s.*%%feed:([a-z0-9-]+)(?::(unchecked|synced))?%%\s*$/;
 const ZOTERO_KEY = /zotero:\/\/select\/library\/items\/([A-Z0-9]{8})/;
 const DOI_LINK = /\]\(https:\/\/doi\.org\/(10\.[^)\s]+)\)/;
+const TOPICS = /%%tp:(\d+(?:,\d+)*)%%/;
 const READ_LINK = /\[\[[^\]|]+\|Read\]\]/;
 const LINE_TITLE = /^>\s*-\s\[[ xX]\]\s(?:⭐\s)?\*\*((?:\\.|[^*])+)\*\*/;
 const PAPER = /^>\s*-\s\[( |x|X)\]\s.*%%oa:(W\d+):([psou])%%\s*$/;
@@ -287,6 +294,7 @@ export function parseInbox(text: string): ParsedNote {
         synced: line.includes(ZOTERO_LINK), list, key: ZOTERO_KEY.exec(line)?.[1] ?? null,
         doi: doiOfLine(line), read: READ_LINK.test(line),
         title: (LINE_TITLE.exec(line)?.[1] ?? "").replace(/\\(.)/g, "$1"),
+        topics: (TOPICS.exec(line)?.[1] ?? "").split(",").filter((n) => n !== "").map(Number),
       });
     }
   });

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { OpenAlexWork } from "../src/openalex/client";
-import { bareDoi, feedTag, itemTypeOf, toCreator, toZoteroItem } from "../src/zotero/map";
+import { FOUND_BY_TAG, bareDoi, feedTag, foundByLine, itemTypeOf, toCreator, toZoteroItem } from "../src/zotero/map";
 
 // One real work (authors replaced by "Author n"): tests/fixtures/openalex-recorded.json.
 const recorded = (JSON.parse(readFileSync(new URL("./fixtures/openalex-recorded.json", import.meta.url), "utf8")) as { results: OpenAlexWork[] }).results[0];
@@ -82,5 +82,34 @@ describe("toZoteroItem", () => {
 
   it("tags with feed/<id>", () => {
     expect(feedTag("lipoic-acid-copolymers")).toBe("feed/lipoic-acid-copolymers");
+  });
+});
+
+describe("where the item was found", () => {
+  const nl = String.fromCharCode(10);
+
+  it("words the Extra line with one, two or three topics, or none", () => {
+    expect(foundByLine({ feedName: "Lipoic acid copolymers", topics: [] })).toBe('Found by: OpenAlex search, feed "Lipoic acid copolymers"');
+    expect(foundByLine({ feedName: "F", topics: [2] })).toBe('Found by: OpenAlex search, feed "F", topic 2');
+    expect(foundByLine({ feedName: "F", topics: [1, 3] })).toBe('Found by: OpenAlex search, feed "F", topics 1 and 3');
+    expect(foundByLine({ feedName: "F", topics: [1, 2, 4] })).toBe('Found by: OpenAlex search, feed "F", topics 1, 2 and 4');
+    expect(foundByLine({ feedName: "  A   B ", topics: [] })).toContain('feed "A B"');
+  });
+
+  it("adds the found-by tag and the Extra line after the OpenAlex id, next to the feed tag", () => {
+    const item = toZoteroItem(work(), "f", ["C1"], { feedName: "Feed", topics: [1] });
+    expect(item.tags).toEqual([{ tag: feedTag("f") }, { tag: FOUND_BY_TAG }]);
+    expect(item.extra).toBe(["OpenAlex: W42", 'Found by: OpenAlex search, feed "Feed", topic 1'].join(nl));
+  });
+
+  it("keeps a thesis's DOI line in Extra between the id and the found-by line", () => {
+    const item = toZoteroItem(work({ type: "dissertation" }), "f", [], { feedName: "Feed", topics: [] });
+    expect(item.extra).toBe(["OpenAlex: W42", "DOI: 10.1000/abc", 'Found by: OpenAlex search, feed "Feed"'].join(nl));
+  });
+
+  it("adds neither without provenance (as for an item that was already in the library)", () => {
+    const item = toZoteroItem(work(), "f", []);
+    expect(item.tags).toEqual([{ tag: "feed/f" }]);
+    expect(String(item.extra)).not.toContain("Found by");
   });
 });

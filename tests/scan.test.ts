@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, describeCounts, describeFeedRow, inboxPath, localDay, runScan, scanCounts, seenKey, updatedSeen, windowStart, type ScanDeps } from "../src/inbox/scan";
+import { addDays, describeCounts, describeFeedRow, inboxPath, localDay, runScan, scanCounts, seenKey, topicsFor, updatedSeen, windowStart, type ScanDeps } from "../src/inbox/scan";
 import type { Candidate, ScanResult } from "../src/openalex/client";
 import { SEEN_CAP, defaultSettings, type FeedConfig, type Settings } from "../src/settings/data";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
@@ -133,6 +133,41 @@ describe("runScan", () => {
     expect(first.note?.input.sections[0].papers).toHaveLength(2);
     const again = await runScan(settings({ seen: updatedSeen([], first.seenAdd), lastScan: first.lastScan }), { client, now: new Date(2026, 9, 14) });
     expect(again.note).toBeNull();
+  });
+});
+
+describe("topicsFor and the topics of listed papers", () => {
+  const a = cand(priorityFlow, 1);
+  const b = cand(possible, 2);
+  const topicResult = (papers: Candidate[]) => ({ papers });
+
+  it("lists, in order and 1-based, the topics that returned the paper", () => {
+    expect(topicsFor(a, [topicResult([a]), topicResult([b]), topicResult([a, b])])).toEqual([1, 3]);
+    expect(topicsFor(b, [topicResult([a]), topicResult([b])])).toEqual([2]);
+    expect(topicsFor(a, [])).toEqual([]);
+  });
+
+  it("counts a topic that returned the same paper under another OpenAlex id (a preprint and its journal version)", () => {
+    const journal = { ...a, openalexId: "https://openalex.org/W900", title: a.title, doi: "https://doi.org/10.1000/other" };
+    const preprint = { ...a, openalexId: "https://openalex.org/W901", doi: null };
+    expect(topicsFor(journal, [topicResult([preprint]), topicResult([journal])])).toEqual([1, 2]); // same title
+    const sameDoi = { ...b, openalexId: "https://openalex.org/W902", title: "Completely different title", doi: b.doi };
+    expect(topicsFor(b, [topicResult([sameDoi])])).toEqual([1]); // same DOI
+  });
+
+  it("puts the topics on the papers a scan lists", async () => {
+    const client = {
+      scan: async (): Promise<ScanResult> => ({
+        perTopic: [
+          { topic: "t1", count: 1, papers: [a], costUsd: 0, truncated: false },
+          { topic: "t2", count: 2, papers: [a, b], costUsd: 0, truncated: false },
+        ],
+        papers: [a, b], costUsd: 0.002,
+      }),
+    } as ScanDeps["client"];
+    const out = await runScan(settings(), { client, now: NOW });
+    const papers = out.note?.input.sections[0].papers ?? [];
+    expect(papers.map((p) => [p.openalexId, p.topics])).toEqual([["W1", [1, 2]], ["W2", [2]]]);
   });
 });
 

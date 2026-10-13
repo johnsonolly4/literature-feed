@@ -22,7 +22,7 @@ function candidate(c: { title: string; abstract: string | null }, n: number, ext
 function paper(n: number, tier: InboxPaper["tier"], title = `Paper ${n}`): InboxPaper {
   return {
     openalexId: `W${n}`, title, authors: ["A. Author"], venue: "Journal", year: 2026, publicationDate: `2026-09-${10 + n}`,
-    doi: `10.1000/p.${n}`, isPreprint: false, noAbstract: false, tier, matched: ["lipoic acid"],
+    doi: `10.1000/p.${n}`, isPreprint: false, noAbstract: false, tier, matched: ["lipoic acid"], topics: [],
   };
 }
 
@@ -181,15 +181,15 @@ describe("parseInbox", () => {
     expect(parseInbox(text)).toEqual({
       scanned: "2026-10-12",
       papers: [
-        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1" },
-        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2" },
+        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [] },
+        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [] },
       ],
     });
   });
 
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
-    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t" }]);
+    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [] }]);
   });
 });
 
@@ -289,6 +289,28 @@ describe("markSynced", () => {
     const note = renderNote(input([{ feedId: "a", feedName: "Lipoic [acid] · copolymers", papers: [paper(1, "strong"), paper(2, "possible")] }]));
     const out = markSynced(note, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
     expect(out).toContain("> [!literature-feed]- Lipoic \\[acid\\] · copolymers · 1 paper %%feed:a%%");
+  });
+});
+
+describe("which topics found a paper", () => {
+  it("is written as a hidden marker before the paper's id, and read back", () => {
+    const withTopics = { ...paper(1, "strong"), topics: [1, 3] };
+    const text = renderNote(input([{ feedId: "a", feedName: "A", papers: [withTopics, paper(2, "possible")] }]));
+    const lines = text.split(String.fromCharCode(10)).filter((l) => l.startsWith("> - ["));
+    expect(lines[0]).toContain(" %%tp:1,3%% %%oa:W1:s%%");
+    expect(lines[1]).not.toContain("%%tp:");
+    expect(parseInbox(text).papers.map((p) => p.topics)).toEqual([[1, 3], []]);
+  });
+
+  it("does not disturb the other markers: linking to Zotero and Read still work and the topics survive", () => {
+    const text = renderNote(input([{ feedId: "a", feedName: "A", papers: [{ ...paper(1, "strong"), topics: [2] }] }]));
+    const out = markRead(markSynced(text, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]), [{ feedId: "a", openalexId: "W1", link: "Lit/x" }]);
+    expect(parseInbox(out).papers[0]).toMatchObject({ topics: [2], synced: true, read: true, key: "ABCD2345", list: "synced" });
+  });
+
+  it("cannot be forged from a title: %% in text is neutralised", () => {
+    const text = renderNote(input([{ feedId: "a", feedName: "A", papers: [paper(1, "strong", "x %%tp:9%% y")] }]));
+    expect(parseInbox(text).papers[0].topics).toEqual([]);
   });
 });
 

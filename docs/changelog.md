@@ -1,6 +1,8 @@
 # Literature Feed: changelog
 
 ## 0.0.1 (not released)
+- Archive rule: a weekly note moves to the archive when every paper is read or has aged out (unticked, or in Zotero but unread, N weeks after the note's week); papers in Zotero that are not read keep it in the inbox as a reading queue. Setting renamed "Mark papers done after (weeks)".
+- Where papers came from: new Zotero items get the tag `found-by/openalex` and an Extra line "Found by: OpenAlex search, feed ..., topic N"; inbox lines carry a hidden marker with the topics that found the paper. Items already in the library are not tagged.
 - Read state: a paper also matches a literature note by its title (a `title` property) when the key and DOI do not match; the command **Update read state and archive**, run by hand, says what it checked and changed, and says so when the inbox folder holds no inbox notes.
 - Read state and archive: a paper with a literature note (found by DOI or Zotero key in any frontmatter property of the notes in the literature folder) gets a `Read` link; a finished weekly note (every paper in Zotero, read or dismissed after N weeks) moves to the archive folder; new settings for the literature folder, the archive switch and the dismiss weeks; command **Update read state and archive**. Not seen in Obsidian yet.
 - README: a section "Needed for PDFs" (Zotero desktop, the Zotero Connector, and the Zotero add-on Better Find Full Text); Sync adds metadata only.

@@ -114,22 +114,26 @@ export function noteWeekStart(fileName: string): string | null {
   return addDays(monday1, (week - 1) * 7);
 }
 
-/** Papers that still keep the note open (see `isFinished`). */
+/**
+ * Papers that still keep the note open. A paper is done when it is read, or when its note's week ended `dismissAfterWeeks`
+ * weeks ago or more and it is unticked (dismissed) or in Zotero but unread (done by age). A ticked paper that is not in Zotero
+ * yet, and a paper unticked in the "In Zotero" list (a request to send it again), stay open however old the note is.
+ */
 export function unfinishedPapers(papers: readonly ParsedPaper[], noteName: string, today: string, dismissAfterWeeks: number): ParsedPaper[] {
   const start = noteWeekStart(noteName);
-  const dismissFrom = start === null ? null : addDays(start, 7 + dismissAfterWeeks * 7);
+  const agedFrom = start === null ? null : addDays(start, 7 + dismissAfterWeeks * 7);
   return papers.filter((p) => {
-    if (p.list === "synced" && !p.ticked) return true; // unticked in the In Zotero list: a request to send it again
-    if (p.synced || p.read) return false;
-    if (!p.ticked && dismissFrom !== null && today >= dismissFrom) return false; // dismissed
+    if (p.read) return false;
+    if (p.list === "synced" && !p.ticked) return true; // a request to send it again
+    const aged = agedFrom !== null && today >= agedFrom;
+    if (aged && (p.synced || !p.ticked)) return false;
     return true;
   });
 }
 
 /**
- * A weekly note is finished when every paper in it is synced (linked to Zotero), read (linked to a literature note) or
- * dismissed (unticked, and the note's week ended `dismissAfterWeeks` weeks ago or more). A ticked paper that is not synced
- * yet, an unticked one from a younger week, and one unticked in the "In Zotero" list (to be sent again) keep it open. A note with no papers is finished.
+ * A weekly note is finished when every paper in it is read, or has aged out (see `unfinishedPapers`). Papers that are in
+ * Zotero but not read yet keep the note in the inbox as the reading queue. A note with no papers is finished.
  */
 export function isFinished(papers: readonly ParsedPaper[], noteName: string, today: string, dismissAfterWeeks: number): boolean {
   return unfinishedPapers(papers, noteName, today, dismissAfterWeeks).length === 0;

@@ -511,3 +511,23 @@ button.literature-feed-icon.is-dismiss {
 button.literature-feed-icon.is-dismiss:hover {
   background: rgba(var(--vt-overdue, 239, 68, 68), 0.15);
 }
+
+/* The LLM prompt windows: a wide preview of the prompt, a paste box, and one row per suggestion */
+textarea.literature-feed-prompt,
+textarea.literature-feed-wide {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.literature-feed-suggestion {
+  margin: var(--size-4-2) 0;
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+  border-radius: var(--vt-card-radius, var(--radius-m));
+}
+
+.literature-feed-suggestion input[type="text"] {
+  flex: 1;
+  min-width: 12em;
+}

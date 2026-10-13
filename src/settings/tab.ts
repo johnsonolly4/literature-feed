@@ -112,6 +112,15 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
           { name: "Import feed", desc: "Add a feed from a .json file or pasted text. It is added switched off.", action: () => new ImportModal(this.host, () => this.update()).open() },
         ],
       },
+      {
+        type: "group",
+        heading: "LLM prompts",
+        items: [
+          { name: "Review a search", desc: "Copies a prompt for an LLM chat with a search, how it has done and what you decided before; paste the JSON answer back to accept or reject each change. The plugin sends nothing.", action: () => void this.host.openPrompt("review") },
+          { name: "Tweak search terms", desc: "Copies a prompt that asks an LLM to review and tweak one search's topics.", action: () => void this.host.openPrompt("topics") },
+          { name: "New search from a description", desc: "Copies a prompt that asks an LLM to write a new search from your description and the example papers you attach to the chat.", action: () => void this.host.openPrompt("new") },
+        ],
+      },
     ];
   }
 

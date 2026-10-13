@@ -1,5 +1,8 @@
 # Literature Feed: changelog
 
+## Next version (not released)
+- LLM prompts by copy and paste: **Review a search with an LLM**, **Tweak search terms with an LLM** and **New search from a description with an LLM** (commands and Settings → LLM prompts). Each copies a prompt that states the JSON format the answer must have, and takes the pasted answer back; suggestions are accepted or rejected one by one, and decisions are remembered in `decisions.json` for the next review. The plugin sends nothing and has no LLM key.
+
 ## 0.1.0 (2026-10-13)
 First release. Desktop only (Windows, macOS, Linux); tried so far on Windows, and not every feature has been checked yet. Weekly OpenAlex feeds into a reading-inbox note with a table and per-search cards, Zotero sync, read state and archive, dismissing papers, a search-effectiveness report, and an automatic weekly scan. You need an OpenAlex key and, for sync, a Zotero key; see the README.
 

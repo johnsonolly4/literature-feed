@@ -27,7 +27,7 @@ Phase 5 (Zotero sync) **code done; real sync worked 2026-10-12 on the second att
 - [ ] Check the lipoic feed terms in `docs/feeds/lipoic-acid-copolymers.json` (my reading of the plan) and the choices in BACKLOG → Decisions needed
 - [ ] Review PR #1 (johnsonolly4/literature-feed); merge when happy
 - [ ] Push `feat/openalex-client`, `feat/settings-tab`, `feat/inbox-note` and `feat/zotero-sync` and open PRs when you want them (not pushed; each sits on the one before)
-- [ ] Phase 7 on a Mac and on a phone (the plan's done-when), after the test-vault check in BACKLOG; decide `isDesktopOnly` from the phone result
+- [ ] Phase 7 on a Mac and on a phone (the plan's done-when) can only be tried from a release (owner, 2026-10-13): first release is 0.1.0 and desktop-only (manifest done); test the phone via BRAT, then flip `isDesktopOnly` in a later release
 - [ ] Keys go into Obsidian's secret storage via the plugin's settings in `test-vault` only, never into chat. Secrets are per device: choose them again on another machine
 
 ## Known issues

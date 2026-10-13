@@ -20,9 +20,10 @@ None of these has run in Obsidian (code and unit tests only). `test-vault`'s plu
 
 ## Next (top item is the next session; plan: `C:\Users\CEP25OJJ\.claude\plans\vectorized-wandering-sunrise.md`)
 1. Owner tests the review in `test-vault` (BACKLOG → Not yet tested: graph in the note, tab and resume, record and repeat, phases A to C) and reports; fix what they find.
-2. **Part C, optional Semantic Scholar** (approved plan, not started; the owner is applying for a key, unauthenticated calls work, TLDRs are patchy): switch off by default, optional key; similar papers (Recommendations API), reference-list cross-check, TLDRs to shorten the prompt; new host `api.semanticscholar.org` in the README and store disclosure. First step: one live call from a script (needs a key if the owner has one), else mark "not tested live".
-3. Rebase `feat/lit-review` onto main, push, PR, merge, `/release` 0.3.0 (only when the owner says).
-4. Phase 2 late-indexing run on or after 2026-10-19 (`node scripts/openalex-run.mjs --from 2025-10-12 --out run3.json`, compare with `run.json`; needs the owner's key). Phase 8: Lab Kit side (its own repo and session). Store submission after 0.3.0.
+2. Small open options from the owner: second level looking only at the uncited hubs (a switch); Crossref as a second source of reference lists (when OpenAlex's is short), exact author names for Zotero, retraction flags (to check); first-and-last author display (BACKLOG).
+3. **Part C, optional Semantic Scholar** (approved plan, not started; the owner is applying for a key, unauthenticated calls work, TLDRs are patchy): switch off by default, optional key; similar papers (Recommendations API), reference-list cross-check, TLDRs to shorten the prompt; new host `api.semanticscholar.org` in the README and store disclosure. First step: one live call from a script (needs a key if the owner has one), else mark "not tested live".
+4. Rebase `feat/lit-review` onto main, push, PR, merge, `/release` 0.3.0 (only when the owner says).
+5. Phase 2 late-indexing run on or after 2026-10-19 (`node scripts/openalex-run.mjs --from 2025-10-12 --out run3.json`, compare with `run.json`; needs the owner's key). Phase 8: Lab Kit side (its own repo and session). Store submission after 0.3.0.
 
 ## Running: `npm run dev` watcher may still be running against this repo (rebuilds `test-vault`'s plugin folder). Stop it with Ctrl+C in its terminal.
 

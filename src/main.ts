@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile, normalizePath } from "obsidian";
+import { MarkdownView, Menu, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
@@ -14,7 +14,9 @@ import type { FlagSources } from "./review/flags";
 import { chartBlockProcessor } from "./review/chart-view";
 import { GRAPH_BLOCK, graphFromNote, normaliseGraph, type GraphData } from "./review/graph-data";
 import { GRAPH_VIEW, GraphView, graphBlockProcessor, type GraphHost } from "./review/graph-view";
-import { ReviewModal, type ReviewHost } from "./review/window";
+import { REVIEW_VIEW, ReviewView } from "./review/review-view";
+import { describeSession, normaliseSession, type ReviewSession } from "./review/session";
+import type { ReviewHost, StartMode } from "./review/window";
 import { buildLookup, emptyIndex, mergeIndex, normaliseIndex, type ZoteroIndex } from "./zotero/library-index";
 import type { FixAction, SetupSnapshot } from "./setup/checks";
 import type { IntegrationInfo } from "./setup/integrate";
@@ -54,6 +56,10 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   private spendTimer: number | null = null;
   /** What the last literature reviews fetched, kept 24 hours (`review-cache.json`). */
   reviewCache: ReviewCache = emptyCache();
+  /** The literature review in progress (`review-session.json`), so closing the tab does not lose it. */
+  session: ReviewSession | null = null;
+  /** How the review tab starts the next time it is created. */
+  private nextReviewMode: StartMode = "ask";
   /** The graph of the last literature review (`review-graph.json`). */
   graph: GraphData | null = null;
   /** The Zotero library as a local, read-only index (`zotero-index.json`). */
@@ -71,9 +77,23 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.reviewCache = normaliseCache(await this.readPluginJson("review-cache.json"));
     this.zoteroIndex = normaliseIndex(await this.readPluginJson("zotero-index.json"));
     this.graph = normaliseGraph(await this.readPluginJson("review-graph.json"));
+    this.session = normaliseSession(await this.readPluginJson("review-session.json"));
+    this.registerView(REVIEW_VIEW, (leaf) => {
+      const view = new ReviewView(leaf, this);
+      view.mode = this.nextReviewMode;
+      this.nextReviewMode = "ask";
+      return view;
+    });
     this.registerView(GRAPH_VIEW, (leaf) => new GraphView(leaf, this));
     this.addCommand({ id: "open-review-graph", name: "Open review graph", callback: () => void (this.graph ? this.openGraph(this.graph) : this.openReview()) });
-    this.addRibbonIcon("network", "Open review graph", () => void (this.graph ? this.openGraph(this.graph) : this.openReview()));
+    this.addRibbonIcon("telescope", "Literature review", (evt) => this.reviewMenu(evt));
+    this.addCommand({
+      id: "resume-review", name: "Resume the last literature review",
+      checkCallback: (checking) => {
+        if (this.session && !checking) void this.openReview("resume");
+        return this.session !== null;
+      },
+    });
     // In a review note: opens the graph that the note holds (older reviews too).
     this.addCommand({
       id: "open-note-graph", name: "Open the graph in this note",
@@ -432,9 +452,37 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     }
   }
 
-  async openReview(): Promise<void> {
+  /** Opens the review in a tab (the one that is open, if any). `resume` picks up the saved review, `new` starts fresh. */
+  async openReview(mode: StartMode = "ask"): Promise<void> {
     await this.updateLedgerNow();
-    new ReviewModal(this).open();
+    const existing = this.app.workspace.getLeavesOfType(REVIEW_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) {
+      this.nextReviewMode = mode;
+      await leaf.setViewState({ type: REVIEW_VIEW, active: true });
+    } else if (mode !== "ask" && leaf.view instanceof ReviewView) {
+      leaf.view.show(mode);
+    }
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** The ribbon icon's menu: start a review, pick up the last one, open the last graph. */
+  private reviewMenu(evt: MouseEvent): void {
+    const menu = new Menu();
+    menu.addItem((item) => item.setTitle("New literature review").setIcon("plus").onClick(() => void this.openReview("new")));
+    const saved = this.session;
+    if (saved) {
+      const names = new Map(this.settings.feeds.map((f) => [f.id, f.name]));
+      menu.addItem((item) => item.setTitle(`Resume: ${describeSession(saved, names)}`).setIcon("history").onClick(() => void this.openReview("resume")));
+    }
+    if (this.graph) menu.addItem((item) => item.setTitle("Open review graph").setIcon("network").onClick(() => void this.openGraph(this.graph)));
+    menu.showAtMouseEvent(evt);
+  }
+
+  /** Keeps the review in progress (the file is written now; a review is saved a few times, not on every keystroke). */
+  saveSession(session: ReviewSession): void {
+    this.session = session;
+    void this.writePluginJson("review-session.json", session);
   }
 
   /** Shows the review graph in a tab (the given one, which is also kept for next time). */

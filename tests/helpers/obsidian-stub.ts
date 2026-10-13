@@ -53,6 +53,7 @@ export class Modal {
   constructor(readonly app: unknown) { /* nothing */ }
 }
 
+export class Menu {}
 export class SecretComponent {}
 export class Setting {}
 export class Notice {}

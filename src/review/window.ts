@@ -1,8 +1,9 @@
-// The "Generate literature review" window: choose searches and limits, see what the search will cost before it runs, run it within
-// the budget, see the papers with what you already have of them, charts and the citation network, copy the prompt for an LLM,
-// paste its answer back, and make the review note. Nothing is sent from here except the OpenAlex searches the user starts; the
-// prompt only goes to the clipboard.
-import { Modal, Notice, Setting, type App } from "obsidian";
+// The "Generate literature review" panel (shown in a tab, see review-view.ts): choose searches and limits, see what the search will
+// cost before it runs, run it within the budget, see the papers with what you already have of them, charts and the citation network,
+// copy the prompt for an LLM, paste its answer back, and make the review note. The state is saved as it changes (session.ts) so
+// nothing is lost when the tab is closed. Nothing is sent from here except the OpenAlex searches the user starts; the prompt only
+// goes to the clipboard.
+import { Notice, Setting, type App } from "obsidian";
 import { shortOpenAlexId } from "../inbox/write";
 import type { Candidate } from "../openalex/client";
 import { extractJson } from "../prompts/schemas";
@@ -20,6 +21,7 @@ import { MAX_GAP_REFERENCES, estimateGapRequests, estimateNetworkRequests, fetch
 import { buildExtraRows, networkMarkdown, networkText, type ExtraRow } from "./network-text";
 import { renderReviewNote, reviewNoteName } from "./note";
 import { DEFAULT_PROMPT_OPTIONS, buildLitReviewPrompt, checkLitReviewAnswer, paperLabel, type LitChecked } from "./prompt";
+import { describeSession, type ReviewSession } from "./session";
 
 /** What the window needs from the plugin. */
 export interface ReviewHost {
@@ -38,7 +40,13 @@ export interface ReviewHost {
   openGraph(data: GraphData): Promise<void>;
   /** Makes a file (adding a number to the name when it exists), opens it when asked, and returns its path. */
   createReviewNote(path: string, text: string, open?: boolean): Promise<string>;
+  /** The saved review in progress, if any (`review-session.json`). */
+  session: ReviewSession | null;
+  saveSession(session: ReviewSession): void;
 }
+
+/** How the panel starts when a saved review exists: ask, pick it up, or start fresh. */
+export type StartMode = "ask" | "resume" | "new";
 
 const TIER_CHOICES: Record<ReviewOptions["minTier"], string> = { possible: "Possible and better", strong: "Strong and better", priority: "Priority only" };
 
@@ -54,7 +62,7 @@ function usd(n: number): string {
 
 const NO_ROWS = (): { missing: ExtraRow[]; alsoCite: ExtraRow[] } => ({ missing: [], alsoCite: [] });
 
-export class ReviewModal extends Modal {
+export class ReviewPanel {
   private selected: Set<string>;
   private fromYear: string;
   private maxPapers = DEFAULT_PROMPT_PAPERS;
@@ -76,22 +84,101 @@ export class ReviewModal extends Modal {
   private answerText = "";
   private checked: LitChecked | null = null;
   private out!: HTMLElement;
+  private offerResume = false;
+  private saveTimer: number | null = null;
 
-  constructor(private readonly host: ReviewHost) {
-    super(host.app);
+  constructor(private readonly host: ReviewHost, private readonly root: HTMLElement) {
     const feeds = host.settings.feeds;
     this.selected = new Set(feeds.filter((f) => f.topics.length > 0).map((f) => f.id));
     const years = feeds.map((f) => f.yearsFrom).filter((y): y is number => y !== null);
     this.fromYear = String(years.length > 0 ? Math.min(...years) : new Date().getFullYear() - 5);
   }
 
-  onOpen(): void {
-    this.setTitle("Generate literature review");
-    const { contentEl } = this;
+  /** Shows the panel. With a saved review it offers to pick it up (`ask`), picks it up (`resume`) or ignores it (`new`). */
+  mount(mode: StartMode = "ask"): void {
+    const saved = this.host.session;
+    if (saved && mode === "resume") {
+      this.restore(saved);
+      return;
+    }
+    this.offerResume = saved !== null && mode === "ask" && this.result === null;
+    this.render();
+  }
+
+  /** Writes the state now (the tab is closing). */
+  flush(): void {
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    this.save();
+  }
+
+  private snapshot(): ReviewSession | null {
+    if (!this.result) return null;
+    return {
+      version: 1, savedAt: Date.now(), selected: [...this.selected], fromYear: this.fromYear, maxPapers: this.maxPapers, minTier: this.minTier,
+      abstracts: this.abstracts, result: this.result, extras: this.extras, answerText: this.answerText,
+    };
+  }
+
+  private save(): void {
+    const s = this.snapshot();
+    if (s) this.host.saveSession(s);
+  }
+
+  private saveSoon(): void {
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => { this.saveTimer = null; this.save(); }, 1000);
+  }
+
+  /** Puts a saved review back: the form, the papers, what was looked up and the pasted answer. */
+  private restore(s: ReviewSession): void {
+    const known = new Set(this.host.settings.feeds.map((f) => f.id));
+    const selected = s.selected.filter((id) => known.has(id));
+    if (selected.length > 0) this.selected = new Set(selected);
+    this.fromYear = s.fromYear === "" ? this.fromYear : s.fromYear;
+    this.maxPapers = Math.min(MAX_PROMPT_PAPERS, s.maxPapers);
+    this.minTier = s.minTier;
+    this.abstracts = s.abstracts;
+    this.result = s.result;
+    this.extras = s.extras;
+    this.answerText = s.answerText;
+    this.offerResume = false;
+    this.plan = null;
+    this.gaps = null;
+    this.rows = NO_ROWS();
+    this.render();
+    this.computeFlags();
+    this.network = buildNetwork(s.result.papers);
+    this.recheck();
+    this.renderResult();
+  }
+
+  /** Checks a restored answer again, quietly: the result is used by the graph and the note. */
+  private recheck(): void {
+    this.checked = null;
+    if (this.answerText.trim() === "") return;
+    const json = extractJson(this.answerText);
+    if (!json.ok) return;
+    const checked = checkLitReviewAnswer(json.value, this.answerLabels());
+    if (checked.ok) this.checked = checked;
+  }
+
+  private render(): void {
+    const contentEl = this.root;
+    contentEl.empty();
     const feeds = this.host.settings.feeds.filter((f) => f.topics.length > 0);
     if (feeds.length === 0) {
       contentEl.createEl("p", { text: "There is no search with topics yet. Add or import one in the settings first." });
       return;
+    }
+    const saved = this.host.session;
+    if (this.offerResume && saved) {
+      const names = new Map(this.host.settings.feeds.map((f) => [f.id, f.name]));
+      new Setting(contentEl)
+        .setName("Pick up the last review?")
+        .setDesc(describeSession(saved, names))
+        .addButton((b) => b.setButtonText("Resume").setCta().onClick(() => this.restore(saved)))
+        .addButton((b) => b.setButtonText("Start new").onClick(() => { this.offerResume = false; this.render(); }));
     }
     contentEl.createEl("p", {
       cls: "setting-item-description",
@@ -128,10 +215,6 @@ export class ReviewModal extends Modal {
       .addToggle((t) => t.setValue(false).onChange((v) => { this.allowMore = v; }));
     new Setting(contentEl).addButton((b) => b.setButtonText("Estimate the cost").setCta().onClick(() => void this.estimate()));
     this.out = contentEl.createDiv();
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
   }
 
   private options(): ReviewOptions | null {
@@ -232,6 +315,7 @@ export class ReviewModal extends Modal {
     this.answerText = "";
     this.checked = null;
     this.renderResult();
+    this.save();
   }
 
   private flagsOfCandidate(c: Candidate): Flags {
@@ -335,7 +419,7 @@ export class ReviewModal extends Modal {
     const area = this.out.createEl("textarea", { cls: "literature-feed-prompt" });
     area.rows = 6;
     area.value = this.answerText;
-    area.addEventListener("input", () => { this.answerText = area.value; });
+    area.addEventListener("input", () => { this.answerText = area.value; this.saveSoon(); });
     const feedback = this.out.createDiv();
     new Setting(this.out)
       .addButton((b) => b.setButtonText("Check answer").onClick(() => this.checkAnswer(feedback)))
@@ -428,6 +512,7 @@ export class ReviewModal extends Modal {
     this.rows = buildExtraRows(this.extras, (id) => this.labelOf(id), (c) => this.flagsOfCandidate(c));
     this.checked = null;
     this.renderResult();
+    this.save();
   }
 
   private renderGaps(): void {
@@ -565,6 +650,5 @@ export class ReviewModal extends Modal {
     }, this.names());
     const path = await this.host.createReviewNote(this.notePath(reviewNoteName(today(), searches)), text);
     new Notice(`Review note made: ${path}`);
-    this.close();
   }
 }

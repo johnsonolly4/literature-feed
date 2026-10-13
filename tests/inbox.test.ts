@@ -181,15 +181,15 @@ describe("parseInbox", () => {
     expect(parseInbox(text)).toEqual({
       scanned: "2026-10-12",
       papers: [
-        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false },
-        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false },
+        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1" },
+        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2" },
       ],
     });
   });
 
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
-    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false }]);
+    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t" }]);
   });
 });
 
@@ -289,6 +289,19 @@ describe("markSynced", () => {
     const note = renderNote(input([{ feedId: "a", feedName: "Lipoic [acid] · copolymers", papers: [paper(1, "strong"), paper(2, "possible")] }]));
     const out = markSynced(note, [{ feedId: "a", openalexId: "W1", key: "ABCD2345" }]);
     expect(out).toContain("> [!literature-feed]- Lipoic \\[acid\\] · copolymers · 1 paper %%feed:a%%");
+  });
+});
+
+describe("the title of a line", () => {
+  it("is read back from the bold text, with the escapes removed, whatever the title holds", () => {
+    const title = "Lipoic [acid] *and* _more_ # 5 | a=b ~c $d <e> back\\slash";
+    const text = renderNote(input([{ feedId: "a", feedName: "A", papers: [paper(1, "priority", title), paper(2, "possible", "Plain one")] }]));
+    expect(parseInbox(text).papers.map((p) => p.title)).toEqual([title, "Plain one"]);
+  });
+
+  it("is empty for a line that has no bold title", () => {
+    const text = "> [!literature-feed]+ F %%feed:f%%\n> - [ ] no bold text here %%oa:W1:s%%";
+    expect(parseInbox(text).papers[0].title).toBe("");
   });
 });
 

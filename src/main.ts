@@ -2,7 +2,7 @@ import { MarkdownView, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { registerInboxBlock } from "./inbox/block";
 import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
-import { buildLiteratureIndex, findLiteratureNote, isFinished, type LiteratureNote } from "./inbox/state";
+import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, type LiteratureNote, type RefreshReport } from "./inbox/state";
 import { NOTE_NAME_PATTERN, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, tidySynced } from "./inbox/write";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
@@ -28,7 +28,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     registerInboxBlock(this);
     this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
     this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
-    this.addCommand({ id: "update-read-archive", name: "Update read state and archive", callback: () => void this.refreshAndReport() });
+    this.addCommand({ id: "update-read-archive", name: "Update read state and archive", callback: () => void this.refreshAndReport(true) });
     this.addCommand({ id: "show-zotero-collections", name: "Show Zotero collections", callback: () => void this.showCollections() });
     // The weekly schedule, the ribbon icon and the Zotero sync come in later phases (see docs/plans/literature-feed.md).
   }
@@ -154,10 +154,15 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   }
 
   /** Marks papers that have a literature note as read and archives finished notes; says so when it changed something. */
-  async refreshAndReport(): Promise<void> {
+  async refreshAndReport(verbose = false): Promise<void> {
     try {
       await this.saveOpenInboxNotes();
-      const { read, archived } = await this.refreshInbox();
+      const report = await this.refreshInbox();
+      if (verbose) {
+        new Notice(describeRefresh(report), 12_000);
+        return;
+      }
+      const { read, archived } = report;
       const parts = [
         read > 0 ? `${read} paper${read === 1 ? "" : "s"} marked read` : "",
         archived > 0 ? `${archived} note${archived === 1 ? "" : "s"} archived` : "",
@@ -186,18 +191,22 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   }
 
   /** For each inbox note: Read links for papers with a literature note, then the move to the archive if it is finished. */
-  async refreshInbox(): Promise<{ read: number; archived: number }> {
+  async refreshInbox(): Promise<RefreshReport> {
     const { vault } = this.app;
-    const index = buildLiteratureIndex(this.literatureNotes());
+    const literature = this.literatureNotes();
+    const index = buildLiteratureIndex(literature);
+    const inbox = await this.readInboxNotes();
+    let papers = 0;
     const today = localDay(new Date());
     let read = 0;
     let archived = 0;
-    for (const note of await this.readInboxNotes()) {
+    for (const note of inbox) {
       let text = note.text;
+      papers += parseInbox(text).papers.length;
       if (this.settings.literatureFolder !== "") {
         const marks: { feedId: string; openalexId: string; link: string }[] = [];
         for (const p of parseInbox(text).papers) {
-          const link = findLiteratureNote(index, p.doi, p.key);
+          const link = findLiteratureNote(index, p.doi, p.key, p.title);
           if (link !== null) marks.push({ feedId: p.feedId, openalexId: p.openalexId, link });
         }
         const next = markRead(text, marks);
@@ -217,7 +226,10 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
         archived++;
       }
     }
-    return { read, archived };
+    return {
+      inboxFolder: this.settings.inboxFolder, inboxNotes: inbox.length, literatureFolder: this.settings.literatureFolder,
+      literatureNotes: literature.length, papers, read, archived,
+    };
   }
 
   /** Lists the collections Zotero's server reports (a diagnostic: compare it with what Zotero shows). */

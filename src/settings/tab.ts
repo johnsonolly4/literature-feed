@@ -57,7 +57,7 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
         items: [
           {
             name: "Literature notes folder",
-            desc: "Where your literature notes are (for example the folder ZotLit writes to). A paper with a note there, found by its DOI or Zotero key, gets a Read link. Empty: no read state.",
+            desc: "Where your literature notes are (for example the folder ZotLit writes to). A paper with a note there, found by its Zotero key, DOI or title, gets a Read link. Empty: no read state.",
             control: { type: "folder", key: "literatureFolder", includeRoot: true },
           },
           {

@@ -227,6 +227,8 @@ export interface ParsedPaper {
   doi: string | null;
   /** The line carries a "Read" link to a literature note. */
   read: boolean;
+  /** The paper's title as the line shows it (the bold text, backslash escapes removed); "" if it cannot be read. */
+  title: string;
 }
 
 export type NoteList = "ranked" | "unchecked" | "synced";
@@ -242,6 +244,7 @@ const HEADER = /^>\s*\[!literature-feed(?:-unchecked|-synced)?\][+-]?\s.*%%feed:
 const ZOTERO_KEY = /zotero:\/\/select\/library\/items\/([A-Z0-9]{8})/;
 const DOI_LINK = /\]\(https:\/\/doi\.org\/(10\.[^)\s]+)\)/;
 const READ_LINK = /\[\[[^\]|]+\|Read\]\]/;
+const LINE_TITLE = /^>\s*-\s\[[ xX]\]\s(?:⭐\s)?\*\*((?:\\.|[^*])+)\*\*/;
 const PAPER = /^>\s*-\s\[( |x|X)\]\s.*%%oa:(W\d+):([psou])%%\s*$/;
 const CODE_TO_TIER = Object.fromEntries(Object.entries(TIER_CODE).map(([tier, code]) => [code, tier])) as Record<string, ListedTier>;
 
@@ -283,6 +286,7 @@ export function parseInbox(text: string): ParsedNote {
         openalexId: paper[2], feedId, tier: CODE_TO_TIER[paper[3]], ticked: paper[1] !== " ",
         synced: line.includes(ZOTERO_LINK), list, key: ZOTERO_KEY.exec(line)?.[1] ?? null,
         doi: doiOfLine(line), read: READ_LINK.test(line),
+        title: (LINE_TITLE.exec(line)?.[1] ?? "").replace(/\\(.)/g, "$1"),
       });
     }
   });

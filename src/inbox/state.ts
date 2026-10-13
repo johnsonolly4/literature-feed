@@ -1,4 +1,5 @@
 // Read state and archive rules for the reading-inbox notes. Pure: no Obsidian.
+import { titleKey } from "../zotero/client";
 import { bareDoi } from "../zotero/map";
 import { addDays } from "./scan";
 import type { ParsedPaper } from "./write";
@@ -14,6 +15,8 @@ export interface LiteratureIndex {
   byDoi: Map<string, string>;
   /** Zotero item key to the path of the note that holds it. */
   byKey: Map<string, string>;
+  /** The note's `title` property, as lower-case letters and digits only, to the path of the note. */
+  byTitle: Map<string, string>;
 }
 
 const DOI_IN_TEXT = /10\.\d{4,9}\/[^\s"'<>\])}]+/gi;
@@ -37,11 +40,15 @@ function cleanDoi(found: string): string {
  * property whose name mentions "key" or "zotero". If two notes hold the same one, the first path in alphabetical order wins.
  */
 export function buildLiteratureIndex(notes: readonly LiteratureNote[]): LiteratureIndex {
-  const index: LiteratureIndex = { byDoi: new Map(), byKey: new Map() };
+  const index: LiteratureIndex = { byDoi: new Map(), byKey: new Map(), byTitle: new Map() };
   const sorted = [...notes].sort((a, b) => a.path.localeCompare(b.path));
   for (const note of sorted) {
     if (!note.frontmatter) continue;
     for (const [name, value] of Object.entries(note.frontmatter)) {
+      if (/^title$/i.test(name) && typeof value === "string") {
+        const key = titleKey(value);
+        if (key !== "" && !index.byTitle.has(key)) index.byTitle.set(key, note.path);
+      }
       const strings: string[] = [];
       collectStrings(value, strings);
       for (const text of strings) {
@@ -59,11 +66,40 @@ export function buildLiteratureIndex(notes: readonly LiteratureNote[]): Literatu
   return index;
 }
 
-/** The literature note for a paper: by its Zotero key first (exact), then by its DOI. Null when there is none. */
-export function findLiteratureNote(index: LiteratureIndex, doi: string | null, key: string | null): string | null {
+/**
+ * The literature note for a paper: by its Zotero key first (exact), then by its DOI, then by its title (letters and digits,
+ * any case). The title rule is for notes made from an item that was later re-created under a new key, and for notes whose
+ * frontmatter has no DOI. Null when there is none.
+ */
+export function findLiteratureNote(index: LiteratureIndex, doi: string | null, key: string | null, title: string | null = null): string | null {
   if (key && index.byKey.has(key)) return index.byKey.get(key) ?? null;
   const bare = doi ? cleanDoi(doi) : "";
-  return bare !== "" ? index.byDoi.get(bare) ?? null : null;
+  if (bare !== "" && index.byDoi.has(bare)) return index.byDoi.get(bare) ?? null;
+  const wanted = title ? titleKey(title) : "";
+  return wanted !== "" ? index.byTitle.get(wanted) ?? null : null;
+}
+
+export interface RefreshReport {
+  inboxFolder: string;
+  inboxNotes: number;
+  literatureFolder: string;
+  literatureNotes: number;
+  papers: number;
+  read: number;
+  archived: number;
+}
+
+/** What "Update read state and archive" tells the user when they run it by hand. */
+export function describeRefresh(r: RefreshReport): string {
+  const where = r.inboxFolder === "" ? "the vault root" : `"${r.inboxFolder}"`;
+  if (r.inboxNotes === 0) {
+    return `No inbox notes in ${where}. If your reading inbox note is somewhere else, move it there (or change the inbox folder in the settings).`;
+  }
+  const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const lit = r.literatureFolder === ""
+    ? "no literature folder is set, so no Read links"
+    : `${plural(r.literatureNotes, "literature note")} in "${r.literatureFolder}"`;
+  return `Checked ${plural(r.inboxNotes, "inbox note")} in ${where} (${plural(r.papers, "paper")}) against ${lit}: ${plural(r.read, "paper")} newly marked read, ${plural(r.archived, "note")} archived.`;
 }
 
 /** The Monday (`YYYY-MM-DD`) of the ISO week in a note's file name ("2026-W42 Reading inbox.md"); null if the name has none. */

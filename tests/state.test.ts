@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLiteratureIndex, findLiteratureNote, isFinished, noteWeekStart, unfinishedPapers } from "../src/inbox/state";
+import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, noteWeekStart, unfinishedPapers } from "../src/inbox/state";
 import type { ParsedPaper } from "../src/inbox/write";
 
 describe("buildLiteratureIndex", () => {
@@ -59,6 +59,55 @@ describe("findLiteratureNote", () => {
   });
 });
 
+describe("matching by title", () => {
+  // Like the owner's ZotLit notes: a title, a citekey and a Zotero key, but no DOI.
+  const index = buildLiteratureIndex([
+    { path: "Lit/qiu.md", frontmatter: { title: "Materializing RAFT\u2010Made Self-Immolative Poly(Disulfide)s: A Study", citekey: "qiu2026", "zotero-key": "OLDKEY12" } },
+    { path: "Lit/other.md", frontmatter: { Title: "A different paper", "zotero-key": "ZZZZ9999" } },
+    { path: "Lit/untitled.md", frontmatter: { citekey: "x" } },
+  ]);
+
+  it("finds the note when the key is stale and there is no DOI, whatever the case, punctuation or hyphen type", () => {
+    expect(findLiteratureNote(index, null, "NEWKEY34", "Materializing RAFT-Made Self\u2010Immolative Poly(Disulfide)s: a study")).toBe("Lit/qiu.md");
+    expect(findLiteratureNote(index, "10.1002/smll.75910", "NEWKEY34", "A DIFFERENT paper!")).toBe("Lit/other.md");
+  });
+
+  it("prefers the key, then the DOI, over the title", () => {
+    const both = buildLiteratureIndex([
+      { path: "Lit/a.md", frontmatter: { title: "Same title", "zotero-key": "KEYAAAAA" } },
+      { path: "Lit/b.md", frontmatter: { title: "Other", doi: "10.1000/b" } },
+    ]);
+    expect(findLiteratureNote(both, null, "KEYAAAAA", "Other")).toBe("Lit/a.md");
+    expect(findLiteratureNote(both, "10.1000/b", null, "Same title")).toBe("Lit/b.md");
+    expect(findLiteratureNote(both, null, null, "Same title")).toBe("Lit/a.md");
+  });
+
+  it("finds nothing for an unknown or empty title, and a title that is only punctuation", () => {
+    expect(findLiteratureNote(index, null, null, "Not in the folder")).toBeNull();
+    expect(findLiteratureNote(index, null, null, "")).toBeNull();
+    expect(findLiteratureNote(index, null, null, "?!")).toBeNull();
+    expect(findLiteratureNote(index, null, null)).toBeNull();
+  });
+});
+
+describe("describeRefresh", () => {
+  const base = { inboxFolder: "00 Inbox", inboxNotes: 1, literatureFolder: "04 Literature", literatureNotes: 2, papers: 3, read: 1, archived: 0 };
+
+  it("says plainly when there are no inbox notes in the folder, naming the folder", () => {
+    expect(describeRefresh({ ...base, inboxNotes: 0, papers: 0 })).toBe('No inbox notes in "00 Inbox". If your reading inbox note is somewhere else, move it there (or change the inbox folder in the settings).');
+    expect(describeRefresh({ ...base, inboxNotes: 0, inboxFolder: "" })).toContain("No inbox notes in the vault root.");
+  });
+
+  it("reports what was checked and what changed", () => {
+    expect(describeRefresh(base)).toBe('Checked 1 inbox note in "00 Inbox" (3 papers) against 2 literature notes in "04 Literature": 1 paper newly marked read, 0 notes archived.');
+    expect(describeRefresh({ ...base, inboxNotes: 2, papers: 1, literatureNotes: 1, read: 2, archived: 1 })).toContain("2 inbox notes");
+  });
+
+  it("says when no literature folder is set", () => {
+    expect(describeRefresh({ ...base, literatureFolder: "", literatureNotes: 0, read: 0 })).toContain("no literature folder is set, so no Read links");
+  });
+});
+
 describe("noteWeekStart", () => {
   it("gives the Monday of the ISO week in the file name", () => {
     expect(noteWeekStart("2026-W42 Reading inbox.md")).toBe("2026-10-12");
@@ -75,7 +124,7 @@ describe("noteWeekStart", () => {
 });
 
 function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
-  return { openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false, ...overrides };
+  return { openalexId: id, feedId: "a", tier: "strong", ticked: false, synced: false, list: "ranked", key: null, doi: null, read: false, title: "", ...overrides };
 }
 
 describe("isFinished", () => {

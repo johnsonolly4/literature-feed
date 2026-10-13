@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## 0.0.1 (not released)
+- Read state: a paper also matches a literature note by its title (a `title` property) when the key and DOI do not match; the command **Update read state and archive**, run by hand, says what it checked and changed, and says so when the inbox folder holds no inbox notes.
 - Read state and archive: a paper with a literature note (found by DOI or Zotero key in any frontmatter property of the notes in the literature folder) gets a `Read` link; a finished weekly note (every paper in Zotero, read or dismissed after N weeks) moves to the archive folder; new settings for the literature folder, the archive switch and the dismiss weeks; command **Update read state and archive**. Not seen in Obsidian yet.
 - README: a section "Needed for PDFs" (Zotero desktop, the Zotero Connector, and the Zotero add-on Better Find Full Text); Sync adds metadata only.
 - Zotero sync, checks and resync: Sync reads each item back and counts it as synced only if it is in the library and in the right collections; synced papers move into an "In Zotero" list per feed, and unticking one there sends it again; the Notice says which collections the papers were filed in; trashed collections count as missing; the command **Show Zotero collections** lists what Zotero's server reports; Sync saves an open note before reading it.

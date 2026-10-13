@@ -3,6 +3,7 @@
 // out again when a session is restored. The review note is the permanent copy; this file is replaced by the next review.
 import type { ReviewOptions, ReviewPaper, ReviewResult } from "./collect";
 import type { NetworkExtras } from "./network-fetch";
+import { normaliseRecord, normaliseRun, type FeedSnapshot, type ReviewRecord, type RunInfo } from "./record";
 
 export interface ReviewSession {
   version: 1;
@@ -17,6 +18,16 @@ export interface ReviewSession {
   result: ReviewResult;
   extras: NetworkExtras | null;
   answerText: string;
+  /** What was fixed when the search started (for the record), or null for a session saved before it existed. */
+  run: RunInfo | null;
+  /** The LLM the user said they used. */
+  llm: string;
+  /** Path of the note that holds the exact prompt, if one was saved. */
+  promptNote: string | null;
+  /** The earlier review this one repeats, to compare with. */
+  baseline: ReviewRecord | null;
+  /** The search definitions in use when they are not the current settings (a repeat "as recorded"), else null. */
+  snapshot: FeedSnapshot[] | null;
 }
 
 const TIERS: readonly string[] = ["priority", "strong", "possible", "unchecked"];
@@ -61,6 +72,11 @@ export function normaliseSession(raw: unknown): ReviewSession | null {
     result: { papers, total: num(r.total, papers.length), topics, spentUsd: Math.max(0, num(r.spentUsd, 0)), stopped: typeof r.stopped === "string" ? r.stopped : null },
     extras: validExtras(raw.extras),
     answerText: typeof raw.answerText === "string" ? raw.answerText : "",
+    run: normaliseRun(raw.run),
+    llm: typeof raw.llm === "string" ? raw.llm : "",
+    promptNote: typeof raw.promptNote === "string" ? raw.promptNote : null,
+    baseline: normaliseRecord(raw.baseline),
+    snapshot: Array.isArray(raw.snapshot) && raw.snapshot.length > 0 ? (normaliseRun({ ranAt: "", fromDate: "", capPerTopic: 0, maxPapers: 0, feeds: raw.snapshot })?.feeds ?? null) : null,
   };
 }
 

@@ -97,7 +97,10 @@ export interface ReviewResult {
 
 const RANK: ListedTier[] = ["priority", "strong", "possible", "unchecked"];
 
-const fetchOptions = (fromDate: string) => ({ fromDate, extra: true, sort: "relevance_score:desc" });
+/** How every review request is sorted, so a cap keeps the best matches. */
+export const REVIEW_SORT = "relevance_score:desc";
+
+const fetchOptions = (fromDate: string) => ({ fromDate, extra: true, sort: REVIEW_SORT });
 
 /** The distinct topic strings of the searches, each with the searches that use it. */
 function distinctTopics(feeds: readonly FeedConfig[]): { topic: string; feedIds: string[] }[] {

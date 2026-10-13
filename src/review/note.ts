@@ -6,6 +6,7 @@ import type { ExtraRow } from "./network-text";
 import { countFlags, type Flags } from "./flags";
 import type { LitReviewAnswer, ReadLevel } from "./prompt";
 import { READ_LEVELS, paperLabel } from "./prompt";
+import { renderRecordSection, type ReviewRecord } from "./record";
 
 export interface NoteInput {
   /** `YYYY-MM-DD`. */
@@ -26,6 +27,8 @@ export interface NoteInput {
   networkMarkdown?: string[];
   /** Missing (M) and citing (C) works, so the answer's priorities can name them. */
   extraRows?: readonly ExtraRow[];
+  /** How the review was made; adds the properties, the section "How this review was made" and the block that repeats it. */
+  record?: ReviewRecord | null;
 }
 
 const LEVEL_LABEL: Record<ReadLevel, string> = { must: "Must read", should: "Should read", skim: "Skim", skip: "Skip" };
@@ -65,7 +68,10 @@ export function renderReviewNote(input: NoteInput, searchNames: ReadonlyMap<stri
   const indexOf = new Map(input.papers.map((p, i) => [paperLabel(i), i]));
   const extraByLabel = new Map((input.extraRows ?? []).map((r) => [r.label, r]));
   const lines: string[] = [
-    "---", "kind: literature-review", "cssclasses:", "  - vt", `created: ${input.date}`, "searches:", ...input.searches.map((s) => `  - ${JSON.stringify(s)}`), "---", "",
+    "---", "kind: literature-review", "cssclasses:", "  - vt", `created: ${input.date}`, "searches:", ...input.searches.map((s) => `  - ${JSON.stringify(s)}`),
+    ...(input.record ? [`review-run: ${JSON.stringify(input.record.ranAt)}`, `review-from: ${input.record.fromDate}`] : []),
+    ...(input.record?.llm && input.record.llm.name !== "" ? [`llm: ${JSON.stringify(input.record.llm.name)}`] : []),
+    "---", "",
     `> [!info] ${input.papers.length}${input.total > input.papers.length ? ` of ${input.total}` : ""} papers from ${input.searches.join(", ")}, published since ${input.fromDate}.`
     + ` Already in Zotero: ${counts.zotero}. Already in the vault: ${counts.vault}. Listed before: ${counts.listedBefore}. Search cost about $${input.spentUsd.toFixed(3)}.`,
     "",
@@ -120,5 +126,6 @@ export function renderReviewNote(input: NoteInput, searchNames: ReadonlyMap<stri
     for (const { p, i } of rest) lines.push(`| ${cell(titleLink(p))} | ${p.year ?? ""} | ${p.citedByCount} | ${p.tier} | ${cell(flagText(input.flags[i], searchNames))} |`);
     lines.push("");
   }
+  if (input.record) lines.push(...renderRecordSection(input.record), "");
   return lines.join("\n");
 }

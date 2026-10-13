@@ -14,6 +14,7 @@ import type { FlagSources } from "./review/flags";
 import { chartBlockProcessor } from "./review/chart-view";
 import { GRAPH_BLOCK, graphFromNote, normaliseGraph, type GraphData } from "./review/graph-data";
 import { GRAPH_VIEW, GraphView, graphBlockProcessor, type GraphHost } from "./review/graph-view";
+import { recordFromNote, type ReviewRecord } from "./review/record";
 import { REVIEW_VIEW, ReviewView } from "./review/review-view";
 import { describeSession, normaliseSession, type ReviewSession } from "./review/session";
 import type { ReviewHost, StartMode } from "./review/window";
@@ -87,6 +88,14 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.registerView(GRAPH_VIEW, (leaf) => new GraphView(leaf, this));
     this.addCommand({ id: "open-review-graph", name: "Open review graph", callback: () => void (this.graph ? this.openGraph(this.graph) : this.openReview()) });
     this.addRibbonIcon("telescope", "Literature review", (evt) => this.reviewMenu(evt));
+    this.addCommand({
+      id: "repeat-review", name: "Repeat the review in this note",
+      editorCheckCallback: (checking, editor) => {
+        const record = recordFromNote(editor.getValue());
+        if (record && !checking) void this.openReview("new", record);
+        return record !== null;
+      },
+    });
     this.addCommand({
       id: "resume-review", name: "Resume the last literature review",
       checkCallback: (checking) => {
@@ -453,16 +462,15 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   }
 
   /** Opens the review in a tab (the one that is open, if any). `resume` picks up the saved review, `new` starts fresh. */
-  async openReview(mode: StartMode = "ask"): Promise<void> {
+  async openReview(mode: StartMode = "ask", repeat?: ReviewRecord): Promise<void> {
     await this.updateLedgerNow();
     const existing = this.app.workspace.getLeavesOfType(REVIEW_VIEW)[0];
     const leaf = existing ?? this.app.workspace.getLeaf("tab");
     if (!existing) {
       this.nextReviewMode = mode;
       await leaf.setViewState({ type: REVIEW_VIEW, active: true });
-    } else if (mode !== "ask" && leaf.view instanceof ReviewView) {
-      leaf.view.show(mode);
     }
+    if (leaf.view instanceof ReviewView && (repeat || (existing && mode !== "ask"))) leaf.view.show(mode, repeat);
     await this.app.workspace.revealLeaf(leaf);
   }
 

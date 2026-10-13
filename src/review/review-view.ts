@@ -1,6 +1,7 @@
 // The literature review in a tab, not a pop-up: clicking elsewhere does not close it, it can sit beside a note or a chat window, and
 // closing it saves the work (review-session.json) so it can be picked up again.
 import { ItemView, type WorkspaceLeaf } from "obsidian";
+import type { ReviewRecord } from "./record";
 import { ReviewPanel, type ReviewHost, type StartMode } from "./window";
 
 export const REVIEW_VIEW = "literature-feed-review";
@@ -32,12 +33,13 @@ export class ReviewView extends ItemView {
   }
 
   /** Draws the panel again: first opening, or the command run again with the tab already open. */
-  show(mode: StartMode): void {
+  show(mode: StartMode, repeat?: ReviewRecord): void {
     this.panel?.flush();
     this.contentEl.empty();
     this.contentEl.addClass("literature-feed-review");
     this.panel = new ReviewPanel(this.host, this.contentEl);
     this.panel.mount(mode);
+    if (repeat) this.panel.loadRecord(repeat);
   }
 
   onClose(): Promise<void> {

@@ -16,6 +16,7 @@ function session(): ReviewSession {
     result: { papers: [paper(1), paper(2)], total: 172, topics: [{ feedId: "lipoic", topic: "lipoic acid", count: 172, fetched: 100, fromCache: false }], spentUsd: 0.01, stopped: null },
     extras: { missing: [{ paper: { title: "Old", abstract: null, doi: null, year: 2010, openalexId: "https://openalex.org/W9", authors: [], venue: null, publicationDate: null }, count: 2, citers: ["W1", "W2"] }], alsoCite: [], stopped: null },
     answerText: "{\"themes\":[]}",
+    run: null, llm: "", promptNote: null, baseline: null, snapshot: null,
   };
 }
 

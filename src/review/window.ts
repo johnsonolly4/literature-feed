@@ -7,7 +7,7 @@ import { Notice, Setting, type App } from "obsidian";
 import { shortOpenAlexId } from "../inbox/write";
 import type { Candidate } from "../openalex/client";
 import { extractJson } from "../prompts/schemas";
-import type { Settings } from "../settings/data";
+import type { FeedConfig, Settings } from "../settings/data";
 import { Budget, CAP_PER_TOPIC, COST_FILTER, DEFAULT_PROMPT_PAPERS, MAX_PROMPT_PAPERS, monthOf, monthTotal, passesMonthlyLimit, type SpendTally } from "./budget";
 import type { ReviewCache } from "./cache";
 import { buildCanvas } from "./canvas";
@@ -18,9 +18,10 @@ import { flagsFor, type FlagSources, type Flags } from "./flags";
 import { buildGraphData, graphBlock, type GraphData } from "./graph-data";
 import { buildNetwork, chartData, referenceCoverage, type Network } from "./network";
 import { MAX_GAP_REFERENCES, estimateGapRequests, estimateNetworkRequests, fetchCitationGaps, fetchNetworkExtras, type GapResult, type NetworkClient, type NetworkExtras } from "./network-fetch";
-import { buildExtraRows, networkMarkdown, networkText, type ExtraRow } from "./network-text";
+import { buildExtraRows, citingLabel, networkMarkdown, networkText, type ExtraRow } from "./network-text";
 import { renderReviewNote, reviewNoteName } from "./note";
 import { DEFAULT_PROMPT_OPTIONS, buildLitReviewPrompt, checkLitReviewAnswer, paperLabel, type LitChecked } from "./prompt";
+import { buildRecord, diffPapers, feedFromSnapshot, runInfo, sha256Hex, snapshotFeed, type RecordLink, type ReviewRecord, type RunInfo } from "./record";
 import { describeSession, type ReviewSession } from "./session";
 
 /** What the window needs from the plugin. */
@@ -86,6 +87,14 @@ export class ReviewPanel {
   private out!: HTMLElement;
   private offerResume = false;
   private saveTimer: number | null = null;
+  /** What was fixed when the search started, for the record. */
+  private runMeta: RunInfo | null = null;
+  private llm = "";
+  private keepPrompt = true;
+  private promptNote: string | null = null;
+  /** The earlier review this one repeats, and whether its search definitions are used (else the current settings). */
+  private baseline: ReviewRecord | null = null;
+  private snapshotFeeds: FeedConfig[] | null = null;
 
   constructor(private readonly host: ReviewHost, private readonly root: HTMLElement) {
     const feeds = host.settings.feeds;
@@ -117,6 +126,7 @@ export class ReviewPanel {
     return {
       version: 1, savedAt: Date.now(), selected: [...this.selected], fromYear: this.fromYear, maxPapers: this.maxPapers, minTier: this.minTier,
       abstracts: this.abstracts, result: this.result, extras: this.extras, answerText: this.answerText,
+      run: this.runMeta, llm: this.llm, promptNote: this.promptNote, baseline: this.baseline, snapshot: this.snapshotFeeds ? this.snapshotFeeds.map(snapshotFeed) : null,
     };
   }
 
@@ -132,7 +142,8 @@ export class ReviewPanel {
 
   /** Puts a saved review back: the form, the papers, what was looked up and the pasted answer. */
   private restore(s: ReviewSession): void {
-    const known = new Set(this.host.settings.feeds.map((f) => f.id));
+    this.snapshotFeeds = s.snapshot ? s.snapshot.map(feedFromSnapshot) : null;
+    const known = new Set(this.feedList().map((f) => f.id));
     const selected = s.selected.filter((id) => known.has(id));
     if (selected.length > 0) this.selected = new Set(selected);
     this.fromYear = s.fromYear === "" ? this.fromYear : s.fromYear;
@@ -142,6 +153,10 @@ export class ReviewPanel {
     this.result = s.result;
     this.extras = s.extras;
     this.answerText = s.answerText;
+    this.runMeta = s.run;
+    this.llm = s.llm;
+    this.promptNote = s.promptNote;
+    this.baseline = s.baseline;
     this.offerResume = false;
     this.plan = null;
     this.gaps = null;
@@ -151,6 +166,49 @@ export class ReviewPanel {
     this.network = buildNetwork(s.result.papers);
     this.recheck();
     this.renderResult();
+  }
+
+  /** Sets up a repeat of an earlier review from its record: the same searches (as recorded), window, tier and prompt options. */
+  loadRecord(record: ReviewRecord): void {
+    this.baseline = record;
+    this.snapshotFeeds = record.feeds.map(feedFromSnapshot);
+    this.selected = new Set(record.feeds.filter((f) => f.topics.length > 0).map((f) => f.id));
+    this.fromYear = record.fromDate.slice(0, 4);
+    this.maxPapers = Math.min(MAX_PROMPT_PAPERS, record.maxPapers);
+    this.minTier = record.minTier;
+    this.abstracts = record.abstracts;
+    this.result = null;
+    this.extras = null;
+    this.answerText = "";
+    this.llm = "";
+    this.promptNote = null;
+    this.runMeta = null;
+    this.plan = null;
+    this.rows = NO_ROWS();
+    this.offerResume = false;
+    this.render();
+  }
+
+  /** The choice between the recorded search definitions and the current ones, shown while repeating a review. */
+  private renderDefinitionsChoice(contentEl: HTMLElement): void {
+    const base = this.baseline;
+    if (!base) return;
+    new Setting(contentEl)
+      .setName(`Repeating the review of ${base.ranAt.slice(0, 10)}`)
+      .setDesc("The same window, rank limit and prompt options. Choose which search definitions to use: the topics and rules as they were then, or your searches as they are now.")
+      .addDropdown((d) => {
+        d.addOption("recorded", "As recorded");
+        d.addOption("current", "Current settings");
+        d.setValue(this.snapshotFeeds ? "recorded" : "current").onChange((v) => {
+          this.snapshotFeeds = v === "recorded" ? base.feeds.map(feedFromSnapshot) : null;
+          const ids = new Set(this.feedList().map((f) => f.id));
+          const keep = base.feeds.map((f) => f.id).filter((id) => ids.has(id));
+          this.selected = new Set(keep.length > 0 ? keep : [...ids]);
+          this.plan = null;
+          this.result = null;
+          this.render();
+        });
+      });
   }
 
   /** Checks a restored answer again, quietly: the result is used by the graph and the note. */
@@ -166,11 +224,12 @@ export class ReviewPanel {
   private render(): void {
     const contentEl = this.root;
     contentEl.empty();
-    const feeds = this.host.settings.feeds.filter((f) => f.topics.length > 0);
+    const feeds = this.feedList().filter((f) => f.topics.length > 0);
     if (feeds.length === 0) {
       contentEl.createEl("p", { text: "There is no search with topics yet. Add or import one in the settings first." });
       return;
     }
+    this.renderDefinitionsChoice(contentEl);
     const saved = this.host.session;
     if (this.offerResume && saved) {
       const names = new Map(this.host.settings.feeds.map((f) => [f.id, f.name]));
@@ -226,8 +285,13 @@ export class ReviewPanel {
     return { fromDate: `${year}-01-01`, capPerTopic: CAP_PER_TOPIC, maxPapers: this.maxPapers, minTier: this.minTier, refresh: this.refresh };
   }
 
+  /** The searches in use: the recorded definitions of a repeat, or the current settings. */
+  private feedList(): FeedConfig[] {
+    return this.snapshotFeeds ?? this.host.settings.feeds;
+  }
+
   private feeds() {
-    return this.host.settings.feeds.filter((f) => this.selected.has(f.id) && f.topics.length > 0);
+    return this.feedList().filter((f) => this.selected.has(f.id) && f.topics.length > 0);
   }
 
   /** The limit for a step that follows others: the usual one, or enough for this step when the user allowed it. */
@@ -304,6 +368,7 @@ export class ReviewPanel {
       this.out.createEl("p", { cls: "literature-feed-warning", text: `The search failed: ${e instanceof Error ? e.message : "unknown error"}` });
       return;
     }
+    this.runMeta = runInfo(new Date(), feeds, opts, this.abstracts);
     await this.host.saveReviewCache();
     this.sources = this.host.flagSources();
     this.computeFlags();
@@ -340,7 +405,7 @@ export class ReviewPanel {
   }
 
   private names(): Map<string, string> {
-    return new Map(this.host.settings.feeds.map((f) => [f.id, f.name]));
+    return new Map(this.feedList().map((f) => [f.id, f.name]));
   }
 
   private promptText(): string {
@@ -367,6 +432,7 @@ export class ReviewPanel {
     const have = this.flags.filter((f) => f.zotero || f.vault).length;
     this.out.createEl("p", { text: `${result.papers.length}${result.total > result.papers.length ? ` of ${result.total}` : ""} papers kept. Spent about ${usd(result.spentUsd)}. ${have} you already have.` });
     if (result.stopped) this.out.createEl("p", { cls: "literature-feed-warning", text: `The search ${result.stopped}.` });
+    this.renderChanges(result);
     this.renderGraphRow();
 
     new Setting(this.out)
@@ -412,8 +478,16 @@ export class ReviewPanel {
       }))
       .addButton((b) => b.setButtonText("Save prompt as note").onClick(() => {
         const name = `Literature review prompt ${today()}`;
-        void this.host.createReviewNote(this.notePath(name), text).then((path) => new Notice(`Saved as ${path}. Attach it to your chat as a file.`));
+        void this.host.createReviewNote(this.notePath(name), text).then((path) => { this.promptNote = path; this.saveSoon(); new Notice(`Saved as ${path}. Attach it to your chat as a file.`); });
       }));
+    new Setting(this.out)
+      .setName("LLM used (optional)")
+      .setDesc("Recorded in the review note, with the prompt and the answer, so the review can be repeated.")
+      .addText((t) => t.setPlaceholder("For example: model name and version").setValue(this.llm).onChange((v) => { this.llm = v; this.saveSoon(); }));
+    new Setting(this.out)
+      .setName("Keep the exact prompt with the note")
+      .setDesc("Saves the prompt as its own note when you make the review note, because the data a search returns changes over time.")
+      .addToggle((t) => t.setValue(this.keepPrompt).onChange((v) => { this.keepPrompt = v; }));
 
     this.out.createEl("h4", { text: "The LLM's answer" });
     const area = this.out.createEl("textarea", { cls: "literature-feed-prompt" });
@@ -424,6 +498,27 @@ export class ReviewPanel {
     new Setting(this.out)
       .addButton((b) => b.setButtonText("Check answer").onClick(() => this.checkAnswer(feedback)))
       .addButton((b) => b.setButtonText("Create review note").setCta().onClick(() => void this.createNote(feedback)));
+  }
+
+  /** When this repeats an earlier review: what is new, what is gone and what changed rank since then. */
+  private renderChanges(result: ReviewResult): void {
+    const base = this.baseline;
+    if (!base) return;
+    const c = diffPapers(base.papers, result.papers);
+    this.out.createEl("p", { text: `Compared with the review of ${base.ranAt.slice(0, 10)}: ${c.added.length} new, ${c.removed.length} no longer returned, ${c.tierChanged.length} with a different rank.` });
+    if (c.added.length + c.removed.length + c.tierChanged.length === 0) return;
+    const details = this.out.createEl("details");
+    details.createEl("summary", { text: "Show what changed" });
+    const list = (title: string, items: string[]): void => {
+      if (items.length === 0) return;
+      details.createEl("h5", { text: title });
+      const ul = details.createEl("ul");
+      for (const t of items.slice(0, 25)) ul.createEl("li", { text: t });
+      if (items.length > 25) ul.createEl("li", { text: `and ${items.length - 25} more` });
+    };
+    list("New", c.added.map((p) => p.title));
+    list("No longer returned", c.removed.map((p) => p.title));
+    list("Different rank", c.tierChanged.map((p) => `${p.title}: ${p.from} → ${p.to}`));
   }
 
   private chartSpecsNow() {
@@ -644,9 +739,17 @@ export class ReviewPanel {
     }
     const graph = this.currentGraph();
     if (this.network) extra.push(...networkMarkdown(this.network, this.rows, (id) => this.labelOf(id), (id) => this.titleOf(id), graph && graph.nodes.length > 0 ? graphBlock(graph) : []));
+    const promptText = this.promptText();
+    if (this.keepPrompt && this.promptNote === null) this.promptNote = await this.host.createReviewNote(this.notePath(`Literature review prompt ${today()}`), promptText, false);
+    const record = this.runMeta ? buildRecord({
+      run: this.runMeta, result, coverage: referenceCoverage(result.papers),
+      missing: (this.extras?.missing ?? []).map((m, i): RecordLink => ({ label: `M${i + 1}`, id: shortOpenAlexId(m.paper.openalexId) ?? "", count: m.count })),
+      citing: (this.extras?.alsoCite ?? []).map((a, i): RecordLink => ({ label: citingLabel(i), id: shortOpenAlexId(a.paper.openalexId) ?? "", count: a.count })),
+      llm: this.answerText.trim() === "" ? null : { name: this.llm.trim(), promptChars: promptText.length, promptHash: await sha256Hex(promptText), promptNote: this.promptNote, answer: this.answerText },
+    }) : null;
     const text = renderReviewNote({
       date: today(), searches, fromDate: this.fromYear, papers: result.papers, flags: this.flags, total: result.total,
-      spentUsd: result.spentUsd, stopped: result.stopped, answer, networkMarkdown: extra, extraRows: [...this.rows.missing, ...this.rows.alsoCite],
+      spentUsd: result.spentUsd, stopped: result.stopped, answer, networkMarkdown: extra, extraRows: [...this.rows.missing, ...this.rows.alsoCite], record,
     }, this.names());
     const path = await this.host.createReviewNote(this.notePath(reviewNoteName(today(), searches)), text);
     new Notice(`Review note made: ${path}`);

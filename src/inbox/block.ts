@@ -244,6 +244,16 @@ class StatusBlock extends MarkdownRenderChild {
         void this.render();
       });
     }
+    // The Sync button next to the table, with how many papers it would send (what findPending counts).
+    const pending = rows.filter((r) => (r.paper.list === "synced" ? !r.paper.ticked : r.paper.ticked && !r.paper.synced)).length;
+    const sendNow = chips.createEl("button", {
+      cls: "literature-feed-sync", text: `Sync ${pending} to Zotero`, attr: { title: "Send the ticked papers to Zotero" },
+    });
+    sendNow.disabled = pending === 0;
+    sendNow.addEventListener("click", () => {
+      sendNow.disabled = true;
+      void this.host.syncNow().finally(() => { sendNow.disabled = pending === 0; });
+    });
 
     const table = wrap.createEl("table", { cls: "literature-feed-papers" });
     const head = table.createEl("thead").createEl("tr");
@@ -264,8 +274,8 @@ class StatusBlock extends MarkdownRenderChild {
     const shown = orderRows(filterRows(rows, this.filter, this.feedFilter), this.sort);
     if (shown.length === 0) body.createEl("tr").createEl("td", { attr: { colspan: "6" }, cls: "literature-feed-empty", text: "No papers in this view." });
     for (const { paper, status } of shown) {
-      const tr = body.createEl("tr");
-      const tick = tr.createEl("td").createEl("input", { type: "checkbox" });
+      const tr = body.createEl("tr", { cls: paper.ticked ? `is-checked is-${status}` : "" });
+      const tick = tr.createEl("td").createEl("input", { type: "checkbox", cls: "literature-feed-tick" });
       tick.checked = paper.ticked;
       tick.addEventListener("change", () => { void this.host.toggleTick(note.path, paper.feedId, paper.openalexId, tick.checked); });
 

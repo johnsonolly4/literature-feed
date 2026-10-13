@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## 0.0.1 (not released)
+- Table: a **Sync N to Zotero** button at the right end of the filter chips, right above the table (N = papers it would send; greyed when none), ticked rows are tinted across in their status colour, tick boxes are larger and blue, and the table cells are centred vertically. Not seen in Obsidian yet.
 - The table has a Year column (its header was there but the cells were missing, so the headers sat one column off); the cards keep their Show in table button at the bottom.
 - Search effectiveness: the plugin keeps a local history (`ledger.json` in its folder) of every listed paper and what you did with it (ticked, sent to Zotero, read), of what each search topic returned and had removed in each scan, and of changes to a search's rules; the command **Show search effectiveness** shows, per search, wanted and dismissed papers by tier, topic, month and rule version, with feed terms and title words that do better or worse than average as suggestions, and can copy the report as Markdown. Not seen in Obsidian yet.
 - `npm run demo` writes a demo set into `test-vault/Demo/` (four weekly notes, literature notes, a guide) and `docs/feeds/` has two demo searches to import.

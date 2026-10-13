@@ -196,7 +196,7 @@ table.literature-feed-papers td {
   padding: var(--size-4-2) var(--size-4-1);
   border-bottom: 1px solid var(--vt-card-border, var(--background-modifier-border));
   text-align: start;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .literature-feed-sort {
@@ -402,4 +402,35 @@ table.literature-feed-papers td {
   max-height: 60vh;
   margin-top: var(--size-4-3);
   overflow: auto;
+}
+
+/* Tick boxes: Obsidian's own checkbox, sized and coloured for the table (blue = Lab Kit's "doing") */
+input.literature-feed-tick[type="checkbox"] {
+  --checkbox-size: 18px;
+  --checkbox-radius: 5px;
+  --checkbox-color: rgb(var(--vt-doing, 59, 130, 246));
+  --checkbox-color-hover: rgb(var(--vt-doing, 59, 130, 246));
+  --checkbox-border-color: var(--text-faint);
+  --checkbox-border-color-hover: var(--text-muted);
+  margin: 0;
+  cursor: pointer;
+}
+
+/* A ticked row is tinted across, in the colour of its status (as the chips are) */
+table.literature-feed-papers tr.is-checked td {
+  background-color: rgba(var(--literature-feed-rgb, 59, 130, 246), 0.12);
+}
+
+table.literature-feed-papers tr.is-checked.is-ticked { --literature-feed-rgb: var(--vt-doing, 59, 130, 246); }
+table.literature-feed-papers tr.is-checked.is-in-zotero { --literature-feed-rgb: var(--vt-waiting, 245, 158, 11); }
+table.literature-feed-papers tr.is-checked.is-read,
+table.literature-feed-papers tr.is-checked.is-processed { --literature-feed-rgb: var(--vt-done, 16, 185, 129); }
+
+/* Sync sits at the right end of the filter chips, right above the table */
+.literature-feed-filters .literature-feed-sync {
+  margin-inline-start: auto;
+  height: auto;
+  padding: 2px 14px;
+  border-radius: 999px;
+  font-size: var(--font-ui-small);
 }

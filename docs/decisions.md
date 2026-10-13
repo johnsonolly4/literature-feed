@@ -5,6 +5,12 @@ Format: `date — decision — why — (who / source)`
 
 All lines below come from the agreed plan (`docs/plans/literature-feed.md`); never invent a past decision or its reason.
 
+- 2026-10-13 — The papers chosen for a search must form a coherent path: the plugin shows each search's strands and outliers (shared references and authors between its known papers) and marks a paper added to a search when it fits that search less than its known papers fit each other, naming a better-fitting search; it warns but never blocks — (user, chat 2026-10-13; plan Phase 2b)
+- 2026-10-13 — Commands may be renamed and superseded ones removed: the owner has no hotkeys set — (user, chat 2026-10-13)
+- 2026-10-13 — The plugin's searches are grouped as Watch (weekly scan), Discover (literature review) and Expand (citation gaps), plus an Improve tab per search; the scan and the review stay separate code and share only pure pieces, because the scan fetches a small window in full and never had the review's cap and ordering problem — (user, phase-plan 2026-10-13; `docs/plans/searches-merge.md`)
+- 2026-10-13 — A search's known papers (seeds) are its Zotero collection plus DOIs added by hand; the rest of the library only flags "already have", so subjects do not mix — (user, phase-plan 2026-10-13)
+- 2026-10-13 — Papers found by Discover and Expand reach Zotero by being added to this week's inbox note and synced as usual (one path, triage first, seen by the ledger); no direct Send button — (user, phase-plan 2026-10-13)
+- 2026-10-13 — Review ordering within a rank is a choice (closest to known papers, best fit, newest, most cited), default best fit, and works fetched per topic is a setting (default 1000, up to 2000); citation-count ordering hid 4 of the owner's 10 expected papers that were fetched — (user, chat 2026-10-13)
 - 2026-10-12 — Off-topic terms come in two kinds, **drop** (paper removed) and **lower** (moves down one tier) — drop is for clearly off-topic meanings, lower for on-topic but less wanted work — (user, chat 2026-10-12; plan "Decided" 3)
 - 2026-10-12 — Finished weekly inbox notes move to the archive folder automatically (setting, on by default); unticked papers count as dismissed after 4 weeks (setting); literature notes still come from ZotLit in `ZotLit Imports` — (user, chat 2026-10-12; plan "Decided" 2)
 - 2026-10-12 — First feed's project is `Projects/Lipoic acid copolymerisation` — (user, chat 2026-10-12; plan "Decided" 1)

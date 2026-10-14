@@ -18,6 +18,7 @@ import { buildMenu, commandName, commandSpec, type MenuAction } from "./menu";
 import { CrossrefClient } from "./refs/crossref";
 import { normaliseRefsSession, type RefsSession } from "./refs/panel";
 import { crossrefRequester } from "./refs/request";
+import { prefillSession } from "./refs/prefill";
 import { REFS_VIEW, RefsView } from "./refs/view";
 import { GAPS_VIEW, GapsView } from "./review/gaps-view";
 import { emptyGapsSession, normaliseGapsSession, type GapsSession } from "./review/gaps-input";
@@ -29,7 +30,8 @@ import { REVIEW_VIEW, ReviewView } from "./review/review-view";
 import { describeSession, normaliseSession, type ReviewSession } from "./review/session";
 import type { ReviewHost, StartMode } from "./review/window";
 import { buildLookup, emptyIndex, mergeIndex, normaliseIndex, type ZoteroIndex } from "./zotero/library-index";
-import type { FixAction, SetupSnapshot } from "./setup/checks";
+import { runFix, type FixAction, type SetupSnapshot } from "./setup/checks";
+import { createSeedCollection } from "./setup/seed-collection";
 import type { IntegrationInfo } from "./setup/integrate";
 import { SetupModal, type SetupHost } from "./setup/setup-modal";
 import { buildOverlap, overlapMarkdown } from "./ledger/overlap";
@@ -39,7 +41,7 @@ import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
 import { scanDue, syncDue } from "./schedule";
 import { defaultSettings, migrateLegacyKeys, normaliseSettings, type SecretName, type Settings } from "./settings/data";
-import type { SettingsHost } from "./settings/feed-modal";
+import { ConfirmModal, type SettingsHost } from "./settings/feed-modal";
 import { LiteratureFeedSettingTab } from "./settings/tab";
 import { ZoteroClient, describeCollections } from "./zotero/client";
 import { CollectionsModal } from "./zotero/collections-modal";
@@ -570,6 +572,28 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  /**
+   * Opens the reference tidy-up with these titles as its list (they only suggest: the DOI is typed into Zotero by hand). A list that
+   * is already there is replaced only after the user agrees.
+   */
+  async openRefsWith(titles: readonly string[]): Promise<void> {
+    const open = this.app.workspace.getLeavesOfType(REFS_VIEW)[0]?.view;
+    if (open instanceof RefsView) open.flush();
+    const { session, replaces } = prefillSession(this.refsSession, titles);
+    if (session.text === "") {
+      new Notice("There are no titles to look up.");
+      return;
+    }
+    const go = async (): Promise<void> => {
+      this.saveRefsSession(session);
+      await this.openRefs();
+      const view = this.app.workspace.getLeavesOfType(REFS_VIEW)[0]?.view;
+      if (view instanceof RefsView) view.reload();
+    };
+    if (replaces) new ConfirmModal(this.app, "Replace the reference list?", "The Find DOIs tab already has a list. Replace it with the titles of these papers? The list and its results there are lost.", "Replace", () => void go()).open();
+    else await go();
+  }
+
   saveRefsSession(session: RefsSession): void {
     this.refsSession = session;
     void this.writePluginJson("refs-session.json", session);
@@ -705,6 +729,16 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       if (await adapter.exists(normalizePath(`${configDir}/plugins/${id}/manifest.json`))) installed.add(id);
     }
     const notes = new Set(vault.getMarkdownFiles().map((f) => f.basename));
+    // Zotero's collections, read-only, for the seed collection rows; only with a key and user ID, and a failure is one row, not an error.
+    let zotero: SetupSnapshot["zotero"];
+    const client = this.newZoteroClient();
+    if (client) {
+      try {
+        zotero = { collections: (await client.listCollectionsRaw()).map((c) => ({ key: c.key, name: c.name, parent: c.parent, trashed: c.deleted })) };
+      } catch (e) {
+        zotero = { error: e instanceof Error ? e.message : "unknown error" };
+      }
+    }
     return {
       settings: this.settings,
       keyReadable: { openAlex: this.getSecret("openAlexKey") !== "", zotero: this.getSecret("zoteroKey") !== "" },
@@ -712,17 +746,36 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       noteExists: (name) => notes.has(name),
       pluginInstalled: (id) => installed.has(id),
       pluginEnabled: (id) => enabled.includes(id),
+      zotero,
     };
   }
 
+  /** A Zotero client, or null while the key or the user ID is missing. */
+  private newZoteroClient(): ZoteroClient | null {
+    const apiKey = this.getSecret("zoteroKey");
+    const userId = this.settings.zoteroUserId;
+    if (apiKey === "" || userId === "") return null;
+    return new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)) });
+  }
+
   async applyFix(fix: FixAction): Promise<void> {
-    if (fix.kind === "create-folder") {
-      const path = normalizePath(fix.path);
-      if (!this.app.vault.getFolderByPath(path)) await this.app.vault.createFolder(path);
-      return;
-    }
-    this.settings.literatureFolder = normalizePath(fix.path);
-    await this.saveSettings();
+    await runFix(fix, {
+      createFolder: async (raw) => {
+        const path = normalizePath(raw);
+        if (!this.app.vault.getFolderByPath(path)) await this.app.vault.createFolder(path);
+      },
+      setLiteratureFolder: async (path) => {
+        this.settings.literatureFolder = normalizePath(path);
+        await this.saveSettings();
+      },
+      // The button is the consent: this makes the one collection (its last name) in the owner's Zotero library.
+      createZoteroCollection: async (path) => {
+        const client = this.newZoteroClient();
+        if (!client) throw new Error("Add your Zotero API key and user ID in the settings first.");
+        const made = await createSeedCollection(client, path);
+        new Notice(made.outcome === "created" ? `Made the collection "${path}" in Zotero. Sync Zotero desktop to see it there.` : `"${path}" already exists in Zotero.`, 8000);
+      },
+    });
   }
 
   async readTarget(info: IntegrationInfo): Promise<{ path: string; text: string } | null> {

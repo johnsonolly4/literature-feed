@@ -42,6 +42,8 @@ export interface ReviewHost {
   refreshZoteroIndex(): Promise<string>;
   /** The local index of the Zotero library, which holds each search's seed collection. */
   zoteroIndex: ZoteroIndex;
+  /** Opens the Find DOIs tab with these titles as its list. */
+  openRefsWith(titles: readonly string[]): Promise<void>;
   flagSources(): FlagSources;
   /** The folder review notes go in ("" = the vault root). */
   reviewFolder(): string;
@@ -62,6 +64,9 @@ const SEEDS_NAME = "Papers I already know";
 const SEEDS_HINT = "10.1039/D2PY00040G, 10.1021/…";
 const SEEDS_DESC = "Paste the DOIs of papers you already know are what you are after (any text: the DOIs are picked out). Results are then ordered by how much they share with these: references they cite and authors who wrote them. This finds papers that word things differently from your searches. About $0.0001 for 50.";
 const FILL_DESC = "Replaces the box above with the papers of one search: the items directly in its seed collection in Zotero (the search's Zotero collection followed by /seeds, unless the search names another) and the extra DOIs set in the search. Reads your Zotero library first (free). Nothing is read from OpenAlex until you run or press Read papers.";
+// Capitalised words (DOI, Crossref) sit in constants because the sentence-case lint rule reads literals only.
+const FIND_DOIS_DESC = "Looks the titles up on Crossref for their DOIs. It only suggests: type the DOI into the item in Zotero yourself.";
+const FIND_DOIS_BUTTON = "Find DOIs for these";
 const LEAVE_ONE_OUT_MAX = 40;
 const TIER_CHOICES: Record<ReviewOptions["minTier"], string> = { possible: "Possible and better", strong: "Strong and better", priority: "Priority only" };
 
@@ -439,6 +444,11 @@ export class ReviewPanel {
         this.save();
       }
       for (const line of describeKnown(known, feed.name)) this.fillOut.createEl("p", { cls: line.warn ? "literature-feed-warning" : "literature-feed-meta", text: line.text });
+      if (known.withoutDoi.length > 0) {
+        const titles = known.withoutDoi.map((p) => p.title).filter((t) => t !== "");
+        new Setting(this.fillOut).setDesc(FIND_DOIS_DESC)
+          .addButton((b) => b.setButtonText(FIND_DOIS_BUTTON).setDisabled(titles.length === 0).onClick(() => void this.host.openRefsWith(titles)));
+      }
       if (known.dois.length === 0 && known.status === "ok") this.fillOut.createEl("p", { cls: "literature-feed-warning", text: "The box was left as it was: none of the items can be read." });
     } finally {
       button.setDisabled(false);

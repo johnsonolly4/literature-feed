@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { ADDED_BY, INTEGRATIONS, planIntegration, removeIntegration, type IntegrationId } from "../src/setup/integrate";
 import { HOWTO_NAME, howtoText } from "../src/setup/howto";
-import { LAB_KIT_LITERATURE_FOLDER, checkSetup, type SetupSnapshot } from "../src/setup/checks";
+import { LAB_KIT_LITERATURE_FOLDER, checkSetup, runFix, type FixAction, type FixHandlers, type SetupSnapshot } from "../src/setup/checks";
+import { PARENT_MISSING, createSeedCollection } from "../src/setup/seed-collection";
+import type { ZoteroCollection } from "../src/zotero/client";
+import type { IndexedCollection } from "../src/zotero/library-index";
 import { defaultSettings, type FeedConfig, type Settings } from "../src/settings/data";
 
 function feed(overrides: Partial<FeedConfig> = {}): FeedConfig {
-  return { id: "a", name: "Lipoic", enabled: true, topics: ["t"], groups: [], drop: [], lower: [], yearsFrom: null, zoteroCollection: "Inbox/Lipoic", project: "Projects/Lipoic hub", ...overrides };
+  return { id: "a", name: "Lipoic", enabled: true, topics: ["t"], groups: [], drop: [], lower: [], yearsFrom: null, zoteroCollection: "Inbox/Lipoic", project: "Projects/Lipoic hub", seedCollection: "", knownDois: [], ...overrides };
 }
 
-function snapshot(overrides: { settings?: Partial<Settings>; keys?: [boolean, boolean]; folders?: string[]; notes?: string[]; installed?: string[]; enabled?: string[] } = {}): SetupSnapshot {
+function snapshot(overrides: { settings?: Partial<Settings>; keys?: [boolean, boolean]; folders?: string[]; notes?: string[]; installed?: string[]; enabled?: string[]; zotero?: SetupSnapshot["zotero"] } = {}): SetupSnapshot {
   const settings: Settings = { ...defaultSettings(), zoteroUserId: "123", inboxFolder: "Inbox", archiveFolder: "Archive", literatureFolder: "Lit", feeds: [feed()], ...overrides.settings };
   const folders = overrides.folders ?? ["Inbox", "Archive", "Lit"];
   const notes = overrides.notes ?? ["Lipoic hub"];
@@ -19,6 +22,7 @@ function snapshot(overrides: { settings?: Partial<Settings>; keys?: [boolean, bo
     settings, keyReadable: { openAlex: keys[0], zotero: keys[1] },
     folderExists: (p) => folders.includes(p), noteExists: (n) => notes.includes(n),
     pluginInstalled: (id) => installed.includes(id), pluginEnabled: (id) => enabled.includes(id),
+    ...(overrides.zotero ? { zotero: overrides.zotero } : {}),
   };
 }
 
@@ -74,6 +78,136 @@ describe("checkSetup", () => {
     expect(row(checkSetup(snapshot({ enabled: ["lab-kit"] })), "zotlit")?.state).toBe("todo");
     expect(row(checkSetup(snapshot({ enabled: ["zotlit"] })), "lab-kit")?.state).toBe("info");
     expect(row(checkSetup(snapshot()), "lab-kit")?.state).toBe("ok");
+  });
+});
+
+const coll = (key: string, name: string, parent: string | null = null, trashed = false): IndexedCollection => ({ key, name, parent, trashed });
+const ZOTERO = { collections: [coll("INBX0001", "Inbox"), coll("LIPO0001", "Lipoic", "INBX0001"), coll("SEED0001", "seeds", "LIPO0001")] };
+
+describe("seed collection rows", () => {
+  it("adds none without Zotero's collections (no key or user ID)", () => {
+    expect(checkSetup(snapshot()).some((r) => r.id.startsWith("seeds-") || r.id === "zotero-collections")).toBe(false);
+  });
+
+  it("is ok when Inbox/Lipoic/seeds exists, and sits after the other per-search rows", () => {
+    const rows = checkSetup(snapshot({ zotero: ZOTERO }));
+    expect(row(rows, "seeds-a")).toMatchObject({ state: "ok", title: "Lipoic: seed collection" });
+    expect(row(rows, "seeds-a")?.fix).toBeUndefined();
+    expect(rows.map((r) => r.id).indexOf("seeds-a")).toBeGreaterThan(rows.map((r) => r.id).indexOf("project-a"));
+  });
+
+  it("offers Create it when only the last name is missing, with near matches in the text", () => {
+    const collections = [coll("INBX0001", "Inbox"), coll("LIPO0001", "Lipoic", "INBX0001"), coll("SEED0001", "Seeds", "LIPO0001")];
+    const r = row(checkSetup(snapshot({ zotero: { collections } })), "seeds-a");
+    expect(r?.state).toBe("todo");
+    expect(r?.fix).toEqual({ label: "Create it", action: { kind: "create-zotero-collection", path: "Inbox/Lipoic/seeds" } });
+    expect(r?.detail).toContain("Did you mean: Inbox/Lipoic/Seeds");
+  });
+
+  it("treats a collection in the Trash as missing", () => {
+    const collections = [coll("INBX0001", "Inbox"), coll("LIPO0001", "Lipoic", "INBX0001"), coll("SEED0001", "seeds", "LIPO0001", true)];
+    expect(row(checkSetup(snapshot({ zotero: { collections } })), "seeds-a")?.fix?.action).toEqual({ kind: "create-zotero-collection", path: "Inbox/Lipoic/seeds" });
+  });
+
+  it("offers no button when the inbox collection is missing too", () => {
+    const r = row(checkSetup(snapshot({ zotero: { collections: [coll("INBX0001", "Inbox")] } })), "seeds-a");
+    expect(r?.state).toBe("todo");
+    expect(r?.fix).toBeUndefined();
+    expect(r?.detail).toContain("Sync once first, or create the inbox collection in Zotero");
+  });
+
+  it("says not set without a Zotero collection, and uses an explicit path", () => {
+    const none = checkSetup(snapshot({ settings: { feeds: [feed({ zoteroCollection: "" })] }, zotero: ZOTERO }));
+    expect(row(none, "seeds-a")).toMatchObject({ state: "info" });
+    expect(row(none, "seeds-a")?.fix).toBeUndefined();
+    const explicit = checkSetup(snapshot({ settings: { feeds: [feed({ seedCollection: "Inbox/Lipoic/Known" })] }, zotero: ZOTERO }));
+    expect(row(explicit, "seeds-a")?.fix?.action).toEqual({ kind: "create-zotero-collection", path: "Inbox/Lipoic/Known" });
+  });
+
+  it("warns when the seed collection is the inbox or the project collection", () => {
+    const inbox = row(checkSetup(snapshot({ settings: { feeds: [feed({ seedCollection: " Inbox / Lipoic " })] }, zotero: ZOTERO })), "seeds-a");
+    expect(inbox).toMatchObject({ state: "todo" });
+    expect(inbox?.detail).toContain("same as the search's inbox collection");
+    expect(inbox?.fix).toBeUndefined();
+    const project = row(checkSetup(snapshot({ settings: { feeds: [feed({ seedCollection: "Projects/Lipoic hub" })] }, zotero: ZOTERO })), "seeds-a");
+    expect(project?.detail).toContain("project collection");
+  });
+
+  it("covers searches that are switched off, but not those without topics", () => {
+    const rows = checkSetup(snapshot({ settings: { feeds: [feed({ enabled: false }), feed({ id: "b", name: "Empty", topics: [] })] }, zotero: ZOTERO }));
+    expect(row(rows, "seeds-a")?.state).toBe("ok");
+    expect(row(rows, "seeds-b")).toBeUndefined();
+  });
+
+  it("gives one row when Zotero could not be read, not one per search", () => {
+    const rows = checkSetup(snapshot({ settings: { feeds: [feed(), feed({ id: "b", name: "Two" })] }, zotero: { error: "Zotero refused the API key (HTTP 403)." } }));
+    expect(rows.filter((r) => r.id.startsWith("seeds-"))).toEqual([]);
+    expect(row(rows, "zotero-collections")).toMatchObject({ state: "todo" });
+    expect(row(rows, "zotero-collections")?.detail).toContain("Could not read Zotero: Zotero refused the API key (HTTP 403).");
+  });
+});
+
+describe("runFix", () => {
+  function handlers() {
+    const calls: string[] = [];
+    const h: FixHandlers = {
+      createFolder: async (p) => { calls.push(`folder ${p}`); },
+      setLiteratureFolder: async (p) => { calls.push(`literature ${p}`); },
+      createZoteroCollection: async (p) => { calls.push(`collection ${p}`); },
+    };
+    return { h, calls };
+  }
+
+  it("runs the handler of the fix's kind", async () => {
+    const { h, calls } = handlers();
+    await runFix({ kind: "create-folder", path: "A" }, h);
+    await runFix({ kind: "set-literature-folder", path: "B" }, h);
+    await runFix({ kind: "create-zotero-collection", path: "C/d" }, h);
+    expect(calls).toEqual(["folder A", "literature B", "collection C/d"]);
+  });
+
+  it("does nothing for a kind it does not know, so it never sets the literature folder", async () => {
+    const { h, calls } = handlers();
+    await runFix({ kind: "something-new", path: "X" } as unknown as FixAction, h);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("createSeedCollection", () => {
+  function fakeClient(collections: ZoteroCollection[]) {
+    const created: { name: string; parent: string | null }[] = [];
+    return {
+      created,
+      client: {
+        listCollections: async () => collections,
+        createCollection: async (name: string, parent: string | null) => { created.push({ name, parent }); return "NEWCOLL1"; },
+      },
+    };
+  }
+  const live: ZoteroCollection[] = [{ key: "INBX0001", name: "Inbox", parent: null }, { key: "LIPO0001", name: "Lipoic", parent: "INBX0001" }];
+
+  it("creates only the last name, inside its parent", async () => {
+    const { client, created } = fakeClient(live);
+    expect(await createSeedCollection(client, "Inbox/Lipoic/seeds")).toEqual({ outcome: "created", key: "NEWCOLL1" });
+    expect(created).toEqual([{ name: "seeds", parent: "LIPO0001" }]);
+  });
+
+  it("sends nothing when the collection exists now", async () => {
+    const { client, created } = fakeClient([...live, { key: "SEED0001", name: "seeds", parent: "LIPO0001" }]);
+    expect(await createSeedCollection(client, "Inbox/Lipoic/seeds")).toEqual({ outcome: "exists", key: "SEED0001" });
+    expect(created).toEqual([]);
+  });
+
+  it("refuses when more than the last name is missing", async () => {
+    const { client, created } = fakeClient([{ key: "INBX0001", name: "Inbox", parent: null }]);
+    await expect(createSeedCollection(client, "Inbox/Lipoic/seeds")).rejects.toThrow(PARENT_MISSING);
+    expect(created).toEqual([]);
+  });
+
+  it("refuses an empty path", async () => {
+    const { client, created } = fakeClient(live);
+    await expect(createSeedCollection(client, " / ")).rejects.toThrow("no collection path");
+    expect(created).toEqual([]);
   });
 });
 

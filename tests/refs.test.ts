@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { authorsLine, chooseBest, compact, evaluate, longestCommonSubstring, titleScore, type CrossrefItem } from "../src/refs/match";
 import { cleanText, doiInText, parseReference, splitReferences } from "../src/refs/split";
+import { prefillSession, referenceTextFromTitles } from "../src/refs/prefill";
 
 const R1 = "Veldmar, K. R.; Orrinson, P. T.; Fenwick de Laro, J.; Brennick, C. M.; Halvorn, C. J. Controlled-radical polymerization of lipoic acid: a general route to degradable vinyl copolymers. J. Am. Chem. Soc. 2023, 145, 22728-22734.";
 const R2 = "Smith, J.; Doe, A. Degradable vinyl copolymers made with lipoic acid and RAFT agents. Macromolecules 2024, 57, 100-110.";
@@ -169,5 +170,25 @@ describe("matching a Crossref record", () => {
     expect(authorsLine({ DOI: "x", author: Array.from({ length: 10 }, (_, i) => ({ given: "A", family: `F${i}` })) }, 3)).toBe("F0 A; F1 A; F2 A; et al.");
     expect(authorsLine({ DOI: "x" })).toBe("");
     expect(authorsLine({ DOI: "x", author: [{ name: "The Consortium" }] })).toBe("The Consortium");
+  });
+});
+
+describe("titles as a reference list (Find DOIs for seeds)", () => {
+  const titles = ["Self-driving polymer synthesis", "  Closed-loop optimisation\n of RAFT  ", "", "Flow chemistry chapter without an identifier"];
+
+  it("gives a numbered list that splits back into one reference per title", () => {
+    const text = referenceTextFromTitles(titles);
+    expect(text.split("\n")).toHaveLength(3);
+    expect(splitReferences(text).map((r) => r.text)).toEqual(["Self-driving polymer synthesis", "Closed-loop optimisation of RAFT", "Flow chemistry chapter without an identifier"]);
+  });
+
+  it("starts a session with that text and no results, and says when it would replace a list", () => {
+    const empty = prefillSession(null, titles);
+    expect(empty.replaces).toBe(false);
+    expect(empty.session).toMatchObject({ version: 1, rows: [], included: [] });
+    const open = { version: 1 as const, text: "1. Something pasted earlier", rows: [], included: [] };
+    expect(prefillSession(open, titles).replaces).toBe(true);
+    expect(prefillSession({ ...open, text: "  \n" }, titles).replaces).toBe(false);
+    expect(prefillSession({ ...open, text: empty.session.text }, titles).replaces).toBe(false);
   });
 });

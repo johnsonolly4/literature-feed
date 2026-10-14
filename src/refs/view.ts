@@ -31,11 +31,22 @@ export class RefsView extends ItemView {
   }
 
   onOpen(): Promise<void> {
+    this.reload();
+    return Promise.resolve();
+  }
+
+  /** Saves what the panel holds now (it saves a second after typing; the plugin may be about to replace the session). */
+  flush(): void {
+    this.panel?.flush();
+  }
+
+  /** Builds the panel again from the saved session (after the plugin replaced it). The old panel must not save over the new session. */
+  reload(): void {
+    this.panel?.discard();
     this.contentEl.empty();
     this.contentEl.addClass("literature-feed-review");
     this.panel = new RefsPanel(this.host, this.contentEl, this.host.refsSession, (s) => this.host.saveRefsSession(s));
     this.panel.mount();
-    return Promise.resolve();
   }
 
   onClose(): Promise<void> {

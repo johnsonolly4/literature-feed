@@ -1,6 +1,9 @@
 // Check setup: what the plugin needs and whether it is there. Pure: no Obsidian; the facts about the vault are passed in as a
 // snapshot, and a row's fix is data (what to do), which the window carries out after the user presses its button.
-import type { Settings } from "../settings/data";
+import { resolveSeedCollection, seedCollectionPath } from "../review/known";
+import type { FeedConfig, Settings } from "../settings/data";
+import { pathParts, planCollection } from "../zotero/client";
+import type { IndexedCollection } from "../zotero/library-index";
 
 /** The folder Lab Kit's ZotLit setup uses for literature notes. */
 export const LAB_KIT_LITERATURE_FOLDER = "04 Literature/ZotLit Imports";
@@ -14,11 +17,31 @@ export interface SetupSnapshot {
   noteExists(name: string): boolean;
   pluginInstalled(id: string): boolean;
   pluginEnabled(id: string): boolean;
+  /** Zotero's collections as just read, or why they could not be read. Absent without a Zotero key and user ID: no seed rows then. */
+  zotero?: { collections: IndexedCollection[] } | { error: string };
 }
 
 export type FixAction =
   | { kind: "create-folder"; path: string }
-  | { kind: "set-literature-folder"; path: string };
+  | { kind: "set-literature-folder"; path: string }
+  | { kind: "create-zotero-collection"; path: string };
+
+/** What carrying out a fix does, one function per kind. */
+export interface FixHandlers {
+  createFolder(path: string): Promise<void>;
+  setLiteratureFolder(path: string): Promise<void>;
+  createZoteroCollection(path: string): Promise<void>;
+}
+
+/** Carries out a fix by its kind. A kind that is not known does nothing (it must never fall through to another fix). */
+export async function runFix(fix: FixAction, handlers: FixHandlers): Promise<void> {
+  switch (fix.kind) {
+    case "create-folder": return handlers.createFolder(fix.path);
+    case "set-literature-folder": return handlers.setLiteratureFolder(fix.path);
+    case "create-zotero-collection": return handlers.createZoteroCollection(fix.path);
+    default: return;
+  }
+}
 
 export interface SetupRow {
   id: string;
@@ -85,6 +108,8 @@ export function checkSetup(snap: SetupSnapshot): SetupRow[] {
     }
   }
 
+  rows.push(...seedRows(s.feeds, snap.zotero));
+
   if (!snap.pluginInstalled("zotlit")) {
     rows.push({ id: "zotlit", state: "info", title: "ZotLit", detail: "Not installed. It makes the literature notes that give papers their Read link; this plugin works without it." });
   } else if (!snap.pluginEnabled("zotlit")) {
@@ -102,6 +127,34 @@ export function checkSetup(snap: SetupSnapshot): SetupRow[] {
     detail: "Cannot be checked from here. Fetching PDFs needs the Zotero Connector and the Better Find Full Text add-on in Zotero (see the README).",
   });
   return rows;
+}
+
+/** One row per search with topics (switched on or not) about its seed collection in Zotero. */
+function seedRows(feeds: readonly FeedConfig[], zotero: SetupSnapshot["zotero"]): SetupRow[] {
+  const withTopics = feeds.filter((f) => f.topics.length > 0);
+  if (!zotero || withTopics.length === 0) return [];
+  if ("error" in zotero) {
+    return [{ id: "zotero-collections", state: "todo", title: "Zotero collections", detail: `Could not read Zotero: ${zotero.error} The seed collections were not checked.` }];
+  }
+  const live = zotero.collections.filter((c) => !c.trashed);
+  const same = (a: string, b: string): boolean => pathParts(a).join("/") === pathParts(b).join("/") && pathParts(a).length > 0;
+  return withTopics.map((feed): SetupRow => {
+    const id = `seeds-${feed.id}`;
+    const title = `${feed.name}: seed collection`;
+    const path = seedCollectionPath(feed);
+    if (path === null) return { id, state: "info", title, detail: "Not set: the search has no Zotero collection, so it has no seed collection (the papers you know are right for it). Set the Zotero collection, or a seed collection path, in the search." };
+    if (same(path, feed.zoteroCollection) || same(path, feed.project)) {
+      return { id, state: "todo", title, detail: `"${path}" is the same as the search's ${same(path, feed.zoteroCollection) ? "inbox" : "project"} collection, so every synced paper would count as a known paper. Give the search its own seed collection (by default its Zotero collection followed by /seeds).` };
+    }
+    const found = resolveSeedCollection(zotero.collections, path);
+    if (found.key !== null) return { id, state: "ok", title, detail: `"${path}" exists in Zotero.` };
+    const near = found.nearMisses.length > 0 ? ` Did you mean: ${found.nearMisses.join("; ")}?` : "";
+    const plan = planCollection(live, path);
+    if (plan.toCreate.length === 1) {
+      return { id, state: "todo", title, detail: `"${path}" was not found in Zotero (names are matched exactly, capitals included).${near} Create it, then put the papers you know are right in it.`, fix: { label: "Create it", action: { kind: "create-zotero-collection", path } } };
+    }
+    return { id, state: "todo", title, detail: `"${path}" was not found in Zotero, and "${plan.toCreate[0]}", which it goes in, is missing too.${near} Sync once first, or create the inbox collection in Zotero.` };
+  });
 }
 
 function folderRow(id: string, title: string, path: string, snap: SetupSnapshot, unsetDetail: string, missingDetail: string): SetupRow {

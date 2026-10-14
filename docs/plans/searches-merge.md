@@ -46,7 +46,7 @@ Settled in the review: no remembered collection key (found by path only; Sync is
 - Done when: tests, lint, build; in `test-vault` Fill's counts for the SDL search add up to the item count Zotero shows in its `seeds` collection, and the ten reference DOIs are among the known papers. (The plugin sees what Zotero desktop has synced to zotero.org; sync first.)
 - Depends on: nothing.
 
-### Phase 2.2 — Seed collection in Check setup, and Find DOIs for seeds
+### Phase 2.2 — Seed collection in Check setup, and Find DOIs for seeds (built 2026-10-14; code and unit tests only, see BACKLOG → Not yet tested)
 - Check setup reads the Zotero collections when the key and user ID are set (a failed read gives one row "could not read Zotero"). For every search with topics (switched on or not): ok; not set; the same as the inbox or project collection (warning); not found, with **Create it** (new fix `create-zotero-collection`: last name only, the parent must exist, otherwise "Sync once first, or create the inbox collection in Zotero"). Pressing the button is the consent for that one collection. `applyFix` handles each kind by name (today any kind other than create-folder sets the literature folder).
 - The warning about seeds without a DOI gets **Find DOIs for these**: opens the Find DOIs tab with their titles filled in. It only suggests; the owner types the DOI into Zotero.
 - Files: `src/setup/checks.ts`, `src/setup/setup-modal.ts`, `src/main.ts`, `src/refs/view.ts` (or `panel.ts`), `src/review/window.ts`; tests in `tests/setup.test.ts` (each row state, searches switched off covered, an unknown fix kind leaves the literature folder alone) and `tests/refs.test.ts`.

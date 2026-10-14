@@ -28,6 +28,9 @@ import { renderReviewNote, reviewNoteName } from "./note";
 import { DEFAULT_PROMPT_OPTIONS, buildLitReviewPrompt, checkLitReviewAnswer, paperLabel, type LitChecked } from "./prompt";
 import { buildRecord, diffPapers, feedFromSnapshot, runInfo, sha256Hex, snapshotFeed, type RecordLink, type ReviewRecord, type RunInfo } from "./record";
 import { describeSession, type ReviewSession } from "./session";
+import { REVIEW_COLUMNS, buildReviewRows, fitText, reviewChips, reviewSearchText, type ReviewRow } from "./review-rows";
+import { authorsShort } from "./authors-text";
+import { DataTable, type Column } from "../ui/data-table";
 
 /** What the window needs from the plugin. */
 export interface ReviewHost {
@@ -652,20 +655,34 @@ ${c.abstract ?? ""}`)).slice(0, 4000);
         );
       }));
 
-    const table = this.out.createEl("table", { cls: "literature-feed-papers" });
-    const head = table.createEl("thead").createEl("tr");
-    for (const h of ["", "Paper", "Year", "Cited", "Rank", "Have"]) head.createEl("th", { text: h });
-    const body = table.createEl("tbody");
-    result.papers.forEach((p, i) => {
-      const tr = body.createEl("tr");
-      tr.createEl("td", { text: paperLabel(i) });
-      tr.createEl("td", { text: p.title });
-      tr.createEl("td", { text: p.year === null ? "" : String(p.year) });
-      tr.createEl("td", { text: String(p.citedByCount) });
-      tr.createEl("td", { text: p.tier });
-      const f = this.flags[i];
-      tr.createEl("td", { text: [f.zotero ? "Zotero" : "", f.vault ? "note" : "", f.listedBefore.length > 0 ? "listed" : ""].filter((x) => x !== "").join(", ") });
+    // Display only: the prompt, the note and the graph keep taking `result.papers` in the same order (the table's default sort).
+    const hasSeeds = this.seeds !== null;
+    const searches = this.feeds().map((f) => ({ id: f.id, name: f.name }));
+    const rows = buildReviewRows(result.papers, this.flags, this.names(), this.seeds);
+    const secondary = new Set(["year", "cited", "rank", "overlap"]);
+    const table = new DataTable<ReviewRow>(this.out, {
+      app: this.host.app, storageKey: "review-papers", searchLabel: "Search the papers", empty: "No paper matches.", pageSize: Math.max(25, rows.length),
+      columns: REVIEW_COLUMNS.filter((c) => hasSeeds || (c.key !== "overlap" && c.key !== "fit")).map((c): Column<ReviewRow> => ({
+        ...c, ...(secondary.has(c.key) ? { secondary: true } : {}), ...(c.key === "cited" || c.key === "overlap" ? { align: "end" as const } : {}),
+        render: (td, r) => {
+          if (c.key === "order") td.setText(r.label);
+          else if (c.key === "title") {
+            td.createDiv({ cls: "literature-feed-title", text: r.title });
+            const who = authorsShort(r.authors);
+            if (who !== "") td.createDiv({ cls: "literature-feed-meta", text: who });
+          } else if (c.key === "year") td.setText(r.year === null ? "" : String(r.year));
+          else if (c.key === "cited") td.setText(String(r.citedBy));
+          else if (c.key === "rank") td.setText(r.tier);
+          else if (c.key === "overlap") td.setText(r.seed ? String(r.seed.score) : "");
+          else if (c.key === "fit") td.setText(fitText(r));
+          else if (c.key === "searches") td.setText(r.searches.join(", "));
+          else td.setText(c.csv?.(r) === undefined ? "" : String(c.csv(r)));
+        },
+      })),
+      chips: reviewChips(searches, hasSeeds), searchText: reviewSearchText, rowKey: (r) => r.key,
+      defaultView: { chip: "all", query: "", sort: { by: "order", desc: false } },
     });
+    table.setRows(rows);
 
     this.renderCharts();
     this.renderNetwork();

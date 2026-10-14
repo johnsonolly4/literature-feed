@@ -20,4 +20,4 @@ One look and one set of mechanisms for every search report. Built with `createEl
 5. Colours only from `styles.css` tokens (`--vt-*` with Obsidian fallbacks; chip `tone-*`).
 
 ## Not migrated yet
-Inbox block table and cards (`inbox/block.ts`), review window result lists (`review/window.ts`), refs panel, graph side panels, settings tab and modals. They look right already; moving them is mechanical but should be checked against screenshots in Obsidian.
+Inbox block table and cards (`inbox/block.ts`), the review window's "Possibly missing" and "Cite several" lists (`review/window.ts`; its papers table is on the kit, rows in `review/review-rows.ts`), refs panel, graph side panels, settings tab and modals. They look right already; moving them is mechanical but should be checked against screenshots in Obsidian.

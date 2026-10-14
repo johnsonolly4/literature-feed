@@ -75,7 +75,7 @@ Settled in the review: no remembered collection key (found by path only; Sync is
 - Done when: tests; the old in-review gaps list is gone and its button opens the tool with the paper filled in; a known-papers run on the owner's SDL search lists gaps.
 - Depends on: Phase 2.
 
-### Phase 4 — Review results on the UI kit
+### Phase 4 — Review results on the UI kit (built 2026-10-14: `review-rows.ts`, `DataTable` in `window.ts`; invented-paper tests only, SDL ranks not checked on real data, see BACKLOG)
 - The review's paper list becomes a `DataTable`: chips by rank, by search, In Zotero / not, known paper; columns rank, overlap with known papers, fit, year, citations; search box; the order chosen in the window is the default sort. Behaviour otherwise unchanged (prompt, note and graph take the same papers).
 - Files: `src/review/window.ts`, new `src/review/review-rows.ts`, `styles.css`; tests for the rows and chips.
 - Done when: tests; the owner's ten papers show the same ranks as the table in this session's chat (seed order: 1, 2, 4, 6, 7, 9, 15, 25 among the fetched).

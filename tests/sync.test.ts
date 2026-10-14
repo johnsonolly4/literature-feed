@@ -164,7 +164,7 @@ describe("runSync: collections", () => {
 
   it("an empty collection or project setting is not a path to check", async () => {
     const { deps } = fakes({ collections: EXISTING });
-    const result = await runSync([{ ...feedA, zoteroCollection: "", project: "" }], pending(["a", "W1"]), deps, NONE);
+    const result = await runSync([{ ...feedA, zoteroCollection: "", project: "", seedCollection: "", knownDois: [] }], pending(["a", "W1"]), deps, NONE);
     expect(result.blocked).toEqual([]);
     expect(result.synced).toHaveLength(1);
   });

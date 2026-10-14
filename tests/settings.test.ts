@@ -14,7 +14,7 @@ const feedFile = readFileSync(new URL("../docs/feeds/lipoic-acid-copolymers.json
 
 function feed(overrides: Partial<FeedConfig> = {}): FeedConfig {
   return {
-    id: "f", name: "F", enabled: true, topics: ["lipoic"], yearsFrom: null, zoteroCollection: "", project: "",
+    id: "f", name: "F", enabled: true, topics: ["lipoic"], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [],
     groups: [{ name: "Lipoic acid", role: "required", terms: ["lipoic acid"] }], drop: [], lower: [], ...overrides,
   };
 }
@@ -256,6 +256,29 @@ describe("helpers", () => {
     expect(original.groups[0].terms).toEqual(["lipoic acid"]);
     expect(original.topics).toEqual(["lipoic"]);
   });
+
+  it("cloneFeed and duplicateFeed share no list of known DOIs", () => {
+    const original = { ...feed(), knownDois: ["10.1000/a"] };
+    const copy = cloneFeed(original);
+    copy.knownDois.push("10.1000/b");
+    expect(original.knownDois).toEqual(["10.1000/a"]);
+    const dup = duplicateFeed(original, [original]);
+    dup.knownDois.push("10.1000/c");
+    expect(original.knownDois).toEqual(["10.1000/a"]);
+    expect(dup.seedCollection).toBe(original.seedCollection);
+  });
+
+  it("searches saved before the seed fields existed load with them empty", () => {
+    const s = normaliseSettings({ feeds: [{ name: "Old", topics: ["t"], zoteroCollection: "Inbox/Old" }] });
+    expect(s.feeds[0]).toMatchObject({ seedCollection: "", knownDois: [], zoteroCollection: "Inbox/Old" });
+  });
+
+  it("keeps a seed collection and known DOIs, and drops values of the wrong type", () => {
+    const good = normaliseSettings({ feeds: [{ name: "A", seedCollection: " Lib/Known ", knownDois: [" 10.1000/a ", "", 4, "10.1000/a", "10.1000/b"] }] });
+    expect(good.feeds[0]).toMatchObject({ seedCollection: "Lib/Known", knownDois: ["10.1000/a", "10.1000/b"] });
+    const bad = normaliseSettings({ feeds: [{ name: "B", seedCollection: 5, knownDois: "10.1000/a" }] });
+    expect(bad.feeds[0]).toMatchObject({ seedCollection: "", knownDois: [] });
+  });
 });
 
 describe("checkFeed", () => {
@@ -326,6 +349,14 @@ describe("feed JSON", () => {
     expect(parseFeedJson(JSON.stringify({ name: "x", groups: "no" })).errors).toEqual(['"groups" must be a list.']);
   });
 
+  it("an import carries the seed collection and known DOIs, and refuses them with the wrong type", () => {
+    const ok = parseFeedJson(JSON.stringify({ name: "x", seedCollection: "Lib/Known", knownDois: ["10.1000/a"] }));
+    expect(ok.feed).toMatchObject({ seedCollection: "Lib/Known", knownDois: ["10.1000/a"] });
+    expect(parseFeedJson(JSON.stringify({ name: "x", knownDois: "10.1000/a" })).errors).toEqual(['"knownDois" must be a list of DOIs.']);
+    expect(parseFeedJson(JSON.stringify({ name: "x", seedCollection: ["a"] })).errors).toEqual(['"seedCollection" must be a collection path (text).']);
+    expect(parseFeedJson(JSON.stringify({ name: "x" })).feed).toMatchObject({ seedCollection: "", knownDois: [] });
+  });
+
   it("an import never switches itself on, whatever the file says", () => {
     expect(parseFeedJson(JSON.stringify({ name: "x", enabled: true, id: "evil" })).feed).toMatchObject({ enabled: false, id: "x" });
   });
@@ -333,7 +364,7 @@ describe("feed JSON", () => {
   it("export round-trips and holds no key, id or switch", () => {
     const original = parseFeedJson(feedFile).feed as FeedConfig;
     const json = feedToJson({ ...original, enabled: true });
-    expect(Object.keys(JSON.parse(json))).toEqual(["name", "topics", "groups", "drop", "lower", "yearsFrom", "zoteroCollection", "project"]);
+    expect(Object.keys(JSON.parse(json))).toEqual(["name", "topics", "groups", "drop", "lower", "yearsFrom", "zoteroCollection", "project", "seedCollection", "knownDois"]);
     expect(json).not.toMatch(/key|enabled|"id"/i);
     expect(parseFeedJson(json).feed).toEqual(original);
   });

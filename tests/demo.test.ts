@@ -95,7 +95,7 @@ describe("the demo set", () => {
   it("gives the search report something to say: a term that does well and one that does badly", () => {
     const ledger = emptyLedger();
     const feed = (id: string): FeedConfig => ({
-      id, name: id, enabled: true, topics: ["t"], groups: [], drop: [], lower: [], yearsFrom: null, zoteroCollection: "", project: "",
+      id, name: id, enabled: true, topics: ["t"], groups: [], drop: [], lower: [], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [],
     });
     recordDefinitions(ledger, [feed("demo-polymers"), feed("demo-catalysts")], today);
     updateFromNotes(ledger, inboxNames().map((name) => ({ name, papers: parseInbox(read("Inbox", name)).papers })), today);

@@ -1,10 +1,10 @@
 # Status
-_Updated: 2026-10-14 (searches-merge plan revised; Phase 1 built). Cap 40 lines. History lives in git and `docs/changelog.md`, not here._
+_Updated: 2026-10-14 (searches-merge Phase 2.1 built). Cap 40 lines. History lives in git and `docs/changelog.md`, not here._
 
 **Version:** 0.3.0 released (moves only at `/release`; TypeScript in `src/`). Releases so far: 0.1.0, 0.1.1, 0.2.0, 0.3.0, all desktop-only, squash-merged via PRs #2 to #5. 0.3.0 ships the literature review, citation gaps, Find DOIs, the report kit, review ordering, known papers and seed search strings.
 
 ## Now
-Branch `feat/searches-merge` (from `main` at 0.3.0): plan revised (`docs/plans/searches-merge.md`) and **Phase 1 built**: `src/menu.ts` (commands by group, ribbon **Find papers** menu as data), commands renamed "Watch: …" etc., "Open review graph" and "Open the graph in this note" removed, 677 tests, lint and build clean. Not seen in Obsidian (BACKLOG → Not yet tested). The 0.3.0 notes below still apply.
+Branch `feat/searches-merge` (from `main` at 0.3.0): plan revised (`docs/plans/searches-merge.md`), **Phase 1 built** (`src/menu.ts`, the **Find papers** menu, commands renamed by group) and **Phase 2.1 built**: Zotero index format 2 (collections per item, Trash left out; `src/zotero/library-index.ts`, `client.ts`), search fields `seedCollection` and `knownDois`, pure `src/review/known.ts`, **Fill from seed collection** in the review window and the two fields in the search editor; 700 tests, lint and build clean. Neither phase seen in Obsidian or run against the real Zotero API (BACKLOG → Not yet tested). The 0.3.0 notes below still apply.
 `main` at 0.3.0 (672 tests, lint and build clean). The local branch `feat/lit-review` is merged as one squashed commit (PR #5); its own history (real author names in early test fixtures) was never pushed and can be deleted. The literature review (`src/review/`, `src/zotero/library-index.ts`) is built and was run once by the owner in `test-vault` (Lipoic acid copolymers, 60 of 172 papers, $0.010, LLM answer pasted). Since then, from their feedback:
 - OpenAlex lookups priced as filtered lists ($0.0001) and a reference-list coverage line (`a36712e`).
 - The graph is drawn inside the review note (`literature-feed-graph` block, **Open full graph**), at the top of the window, in the commands (`c6a6c60`). The owner had never seen it because **Open graph** sat below the table and charts.
@@ -23,7 +23,7 @@ None of these has run in Obsidian (code and unit tests only). `test-vault`'s plu
 
 ## Next (plan: `docs/plans/searches-merge.md`; top item is the next session)
 1. Owner tries 0.3.0 in `test-vault` (gaps on the kit, author audit, review order/cap, known papers, seed strings) and reports; fix what they find.
-2. Searches merge (plan revised 2026-10-14: separate seed collection per search, author-gap work out of scope). Phase 1 (Find papers menu) is built on `feat/searches-merge`. Next, in this order: 2 Known papers per search (own seed collection + extra DOIs), 2b Coherence (outliers, strands, fit, promotion check), 4 Review results on the kit, 3 Expand as the one gaps tool, 5 Add to inbox, 5b Promote to seeds, 6 Improve tab, 6b Library map; 7 optional.
+2. Searches merge (plan revised 2026-10-14: separate seed collection per search, author-gap work out of scope). Phases 1 and 2.1 are built on `feat/searches-merge`. Next, in this order: 2.2 seed collection in Check setup (Create it) and Find DOIs for seeds without a DOI, 2b Coherence (outliers, strands, fit, promotion check), 4 Review results on the kit, 3 Expand as the one gaps tool, 5 Add to inbox, 5b Promote to seeds, 6 Improve tab, 6b Library map; 7 optional.
 3. Earlier open items: owner tests the review (BACKLOG → Not yet tested); small options (BACKLOG); Semantic Scholar Part C (not started); late-indexing run on or after 2026-10-19.
 ## Running: `npm run dev` watcher may still be running against this repo (rebuilds `test-vault`'s plugin folder). Stop it with Ctrl+C in its terminal.
 ## Waiting on owner (needs a human)

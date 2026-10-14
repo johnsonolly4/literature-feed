@@ -13,6 +13,8 @@ import type { ReviewCache } from "./cache";
 import { buildCanvas } from "./canvas";
 import { chartBlock, chartSpecs } from "./chart";
 import { drawChart } from "./chart-view";
+import type { ZoteroIndex } from "../zotero/library-index";
+import { describeKnown, knownPapers } from "./known";
 import { buildSeedProfile, seedDois, type SeedProfile } from "./seeds";
 import { leaveOneOut, suggestQueries } from "./seed-queries";
 import { REVIEW_ORDERS, planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewOrder, type ReviewPlan, type ReviewResult } from "./collect";
@@ -38,6 +40,8 @@ export interface ReviewHost {
   spend: SpendTally;
   /** Reads the Zotero library into the local index (read-only) and says what it found. */
   refreshZoteroIndex(): Promise<string>;
+  /** The local index of the Zotero library, which holds each search's seed collection. */
+  zoteroIndex: ZoteroIndex;
   flagSources(): FlagSources;
   /** The folder review notes go in ("" = the vault root). */
   reviewFolder(): string;
@@ -57,6 +61,8 @@ const SUGGEST_DESC = "Reads the papers above (about $0.0001), finds the phrases 
 const SEEDS_NAME = "Papers I already know";
 const SEEDS_HINT = "10.1039/D2PY00040G, 10.1021/…";
 const SEEDS_DESC = "Paste the DOIs of papers you already know are what you are after (any text: the DOIs are picked out). Results are then ordered by how much they share with these: references they cite and authors who wrote them. This finds papers that word things differently from your searches. About $0.0001 for 50.";
+const FILL_DESC = "Replaces the box above with the papers of one search: the items directly in its seed collection in Zotero (the search's Zotero collection followed by /seeds, unless the search names another) and the extra DOIs set in the search. Reads your Zotero library first (free). Nothing is read from OpenAlex until you run or press Read papers.";
+const LEAVE_ONE_OUT_MAX = 40;
 const TIER_CHOICES: Record<ReviewOptions["minTier"], string> = { possible: "Possible and better", strong: "Strong and better", priority: "Priority only" };
 
 function today(): string {
@@ -82,6 +88,10 @@ export class ReviewPanel {
   private seedText = "";
   private seeds: SeedProfile | null = null;
   private seedOut!: HTMLElement;
+  private seedArea: { setValue(v: string): unknown } | null = null;
+  private fillOut!: HTMLElement;
+  /** The search whose seed collection "Fill from seed collection" reads. */
+  private fillFeedId = "";
   private abstracts = true;
   private refresh = false;
   private allowMore = false;
@@ -297,7 +307,19 @@ export class ReviewPanel {
       .addTextArea((t) => {
         t.inputEl.rows = 4;
         t.setPlaceholder(SEEDS_HINT).setValue(this.seedText).onChange((v) => { this.seedText = v; });
+        this.seedArea = t;
       });
+    const searches = this.host.settings.feeds;
+    if (searches.length > 0) {
+      if (!searches.some((f) => f.id === this.fillFeedId)) this.fillFeedId = (searches.find((f) => this.selected.has(f.id)) ?? searches[0]).id;
+      new Setting(contentEl).setName("Fill from seed collection").setDesc(FILL_DESC)
+        .addDropdown((d) => {
+          for (const f of searches) d.addOption(f.id, f.name);
+          d.setValue(this.fillFeedId).onChange((v) => { this.fillFeedId = v; this.fillOut.empty(); });
+        })
+        .addButton((b) => b.setButtonText("Fill").onClick(() => void this.fillFromSeedCollection(b)));
+      this.fillOut = contentEl.createDiv();
+    }
     new Setting(contentEl).setName("Searches from these papers").setDesc(SUGGEST_DESC)
       .addButton((b) => b.setButtonText("Read papers and suggest searches").onClick(() => void this.suggestFromSeeds(b)));
     this.seedOut = contentEl.createDiv();
@@ -393,6 +415,36 @@ export class ReviewPanel {
     });
   }
 
+  /** Refreshes the Zotero index, then puts one search's known papers in the box (it stays editable) and says what was found. */
+  private async fillFromSeedCollection(button: { setDisabled(d: boolean): unknown }): Promise<void> {
+    const feed = this.host.settings.feeds.find((f) => f.id === this.fillFeedId);
+    if (!feed) return;
+    button.setDisabled(true);
+    this.fillOut.empty();
+    this.fillOut.createEl("p", { cls: "literature-feed-meta", text: "Reading your Zotero library…" });
+    try {
+      // Without keys the index may still be there from an earlier refresh; a failed refresh then says so and the old index is used.
+      let stale = "";
+      try {
+        await this.host.refreshZoteroIndex();
+      } catch (e) {
+        stale = `Could not refresh the Zotero library (${e instanceof Error ? e.message : "unknown error"}); this uses the last copy.`;
+      }
+      const known = knownPapers(feed, this.host.zoteroIndex);
+      this.fillOut.empty();
+      if (stale !== "") this.fillOut.createEl("p", { cls: "literature-feed-warning", text: stale });
+      if (known.dois.length > 0) {
+        this.seedText = known.dois.join("\n");
+        this.seedArea?.setValue(this.seedText);
+        this.save();
+      }
+      for (const line of describeKnown(known, feed.name)) this.fillOut.createEl("p", { cls: line.warn ? "literature-feed-warning" : "literature-feed-meta", text: line.text });
+      if (known.dois.length === 0 && known.status === "ok") this.fillOut.createEl("p", { cls: "literature-feed-warning", text: "The box was left as it was: none of the items can be read." });
+    } finally {
+      button.setDisabled(false);
+    }
+  }
+
   /** Reads the papers (when they changed) and shows the suggested strings. */
   private async suggestFromSeeds(button: { setDisabled(d: boolean): unknown }): Promise<void> {
     button.setDisabled(true);
@@ -425,9 +477,10 @@ export class ReviewPanel {
 ${c.abstract ?? ""}`)).slice(0, 4000);
     const bg = background;
     const queries = suggestQueries(papers, { background: bg });
-    const test = leaveOneOut(papers, { background: bg });
+    // The test rebuilds the strings once per paper (locally, no requests), so a long list is tested on its first papers only.
+    const test = leaveOneOut(papers.slice(0, LEAVE_ONE_OUT_MAX), { background: bg });
     const title = (id: string): string => papers.find((p) => p.id === id)?.title ?? id;
-    out.createEl("p", { text: `${papers.length} papers read. Strings built like these find a paper they were not built from ${test.found} times out of ${test.total} (each paper left out in turn): treat them as a start, not a net. ${seeds.missing.length > 0 ? `${seeds.missing.length} DOIs were not found in OpenAlex.` : ""}` });
+    out.createEl("p", { text: `${papers.length} papers read. Strings built like these find a paper they were not built from ${test.found} times out of ${test.total} (each ${papers.length > LEAVE_ONE_OUT_MAX ? `of the first ${LEAVE_ONE_OUT_MAX} papers` : "paper"} left out in turn): treat them as a start, not a net. ${seeds.missing.length > 0 ? `${seeds.missing.length} DOIs were not found in OpenAlex.` : ""}` });
     if (queries.length === 0) {
       out.createEl("p", { cls: "literature-feed-meta", text: "These papers share too little wording to build a string from. Add more papers on the same subject." });
       return;

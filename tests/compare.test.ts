@@ -6,7 +6,7 @@ import type { FeedConfig } from "../src/settings/data";
 function feed(id = "a", name = "Polymers"): FeedConfig {
   return {
     id, name, enabled: true, topics: ["one", "two"], groups: [{ name: "Poly", role: "required", terms: ["polymer"] }],
-    drop: [], lower: [], yearsFrom: null, zoteroCollection: "", project: "",
+    drop: [], lower: [], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [],
   };
 }
 

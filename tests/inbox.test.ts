@@ -9,7 +9,7 @@ import { lipoicFeed } from "./fixtures/lipoic-feed";
 import { priorityFlow, strongComonomer, possible, droppedNoLipoic, withSentence } from "./fixtures/lipoic-papers";
 
 const feed: FeedConfig = {
-  ...lipoicFeed, id: "lipoic", enabled: true, topics: ["t"], yearsFrom: null, zoteroCollection: "", project: "",
+  ...lipoicFeed, id: "lipoic", enabled: true, topics: ["t"], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [],
 };
 
 function candidate(c: { title: string; abstract: string | null }, n: number, extra: Partial<Candidate> = {}): Candidate {

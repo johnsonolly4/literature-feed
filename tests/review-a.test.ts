@@ -10,7 +10,7 @@ import { Budget, CAP_PER_TOPIC, addSpend, emptyTally, estimateSearch, monthOf, m
 import { CACHE_TTL_MS, MAX_TOPIC_ENTRIES, emptyCache, getTopic, getWork, normaliseCache, putTopic, putWorks, topicKey } from "../src/review/cache";
 import { fitScore, orderPapers, planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewPaper } from "../src/review/collect";
 import { countFlags, flagsFor } from "../src/review/flags";
-import { buildLookup, doiOfItem, emptyIndex, findInZotero, mergeIndex, normaliseIndex } from "../src/zotero/library-index";
+import { buildLookup, doiOfItem, emptyIndex, findInZotero, mergeIndex, normaliseIndex, type IndexedCollection, type LibraryItemRow } from "../src/zotero/library-index";
 import type { FeedConfig } from "../src/settings/data";
 
 const noSleep = async (): Promise<void> => { /* tests do not wait */ };
@@ -19,7 +19,7 @@ function feed(id: string, topics: string[], overrides: Partial<FeedConfig> = {})
   return {
     id, name: `Feed ${id}`, enabled: true, topics,
     groups: [{ name: "Poly", role: "required", terms: ["polymer"] }, { name: "Flow", role: "priority", terms: ["flow"] }],
-    drop: ["clinical"], lower: [], yearsFrom: null, zoteroCollection: "", project: "", ...overrides,
+    drop: ["clinical"], lower: [], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [], ...overrides,
   };
 }
 
@@ -336,6 +336,9 @@ describe("planning and running a review", () => {
 
 // ---- flags and the Zotero index ---------------------------------------------------------------------------------------
 
+const row = (key: string, doi: string, title: string, over: Partial<LibraryItemRow> = {}): LibraryItemRow => ({ key, doi, title, collections: [], trashed: false, note: false, ...over });
+const coll = (key: string, name: string, parent: string | null = null, trashed = false): IndexedCollection => ({ key, name, parent, trashed });
+
 describe("the Zotero index", () => {
   it("takes a DOI from the field or from a line in Extra, in any form", () => {
     expect(doiOfItem({ DOI: " https://doi.org/10.1000/ABC " })).toBe("10.1000/abc");
@@ -344,18 +347,18 @@ describe("the Zotero index", () => {
   });
 
   it("merges a refresh: adds and replaces, removes deleted and emptied items, keeps the highest library version", () => {
-    let index = mergeIndex(emptyIndex(), [{ key: "AAAAAAAA", doi: "10.1/a", title: "Paper A" }, { key: "BBBBBBBB", doi: "", title: "Paper B" }], [], 10);
+    let index = mergeIndex(emptyIndex(), [row("AAAAAAAA", "10.1/a", "Paper A"), row("BBBBBBBB", "", "Paper B")], [], 10, []);
     expect(index.libraryVersion).toBe(10);
-    index = mergeIndex(index, [{ key: "AAAAAAAA", doi: "10.1/a", title: "Paper A renamed" }, { key: "CCCCCCCC", doi: "10.1/c", title: "C" }], ["BBBBBBBB"], 12);
+    index = mergeIndex(index, [row("AAAAAAAA", "10.1/a", "Paper A renamed"), row("CCCCCCCC", "10.1/c", "C")], ["BBBBBBBB"], 12, []);
     expect(Object.keys(index.items).sort()).toEqual(["AAAAAAAA", "CCCCCCCC"]);
     expect(index.items.AAAAAAAA.title).toBe("Paper A renamed");
-    index = mergeIndex(index, [{ key: "CCCCCCCC", doi: "", title: "" }], [], 5);
+    index = mergeIndex(index, [row("CCCCCCCC", "", "")], [], 5, []);
     expect(index.items.CCCCCCCC).toBeUndefined();
     expect(index.libraryVersion).toBe(12);
   });
 
   it("finds an item by DOI first and then by title, and reads a damaged file without throwing", () => {
-    const index = mergeIndex(emptyIndex(), [{ key: "AAAAAAAA", doi: "10.1/a", title: "Alpha Beta" }, { key: "BBBBBBBB", doi: "", title: "Gamma: Delta" }], [], 3);
+    const index = mergeIndex(emptyIndex(), [row("AAAAAAAA", "10.1/a", "Alpha Beta"), row("BBBBBBBB", "", "Gamma: Delta")], [], 3, []);
     const lookup = buildLookup(index);
     expect(findInZotero(lookup, "https://doi.org/10.1/A", "other title")).toBe("AAAAAAAA");
     expect(findInZotero(lookup, null, "gamma delta")).toBe("BBBBBBBB");
@@ -365,6 +368,52 @@ describe("the Zotero index", () => {
     expect(Object.keys(odd.items)).toEqual(["AAAAAAAA"]);
     expect(odd.libraryVersion).toBe(0);
     for (const x of [null, 3, []]) expect(normaliseIndex(x)).toEqual(emptyIndex());
+  });
+
+  it("keeps collections with the items, removes trashed items, and brings a restored one back", () => {
+    const cols = [coll("COLLAAAA", "Inbox"), coll("COLLBBBB", "seeds", "COLLAAAA")];
+    let index = mergeIndex(emptyIndex(), [row("AAAAAAAA", "10.1/a", "A", { collections: ["COLLBBBB"] }), row("BBBBBBBB", "10.1/b", "B", { collections: ["COLLAAAA"] })], [], 10, cols);
+    expect(index.items.AAAAAAAA.collections).toEqual(["COLLBBBB"]);
+    expect(index.collections).toEqual(cols);
+    index = mergeIndex(index, [row("AAAAAAAA", "10.1/a", "A", { collections: ["COLLBBBB"], trashed: true })], [], 11, cols);
+    expect(Object.keys(index.items)).toEqual(["BBBBBBBB"]);
+    index = mergeIndex(index, [row("AAAAAAAA", "10.1/a", "A", { collections: ["COLLBBBB"] })], [], 12, cols);
+    expect(Object.keys(index.items).sort()).toEqual(["AAAAAAAA", "BBBBBBBB"]);
+  });
+
+  it("drops collection keys that are not in the collection list any more, in items that were not fetched too", () => {
+    const both = [coll("COLLAAAA", "Inbox"), coll("COLLBBBB", "seeds", "COLLAAAA")];
+    let index = mergeIndex(emptyIndex(), [row("AAAAAAAA", "10.1/a", "A", { collections: ["COLLAAAA", "COLLBBBB", "COLLGONE"] })], [], 10, both);
+    expect(index.items.AAAAAAAA.collections).toEqual(["COLLAAAA", "COLLBBBB"]);
+    index = mergeIndex(index, [], [], 11, [coll("COLLAAAA", "Inbox")]);
+    expect(index.items.AAAAAAAA.collections).toEqual(["COLLAAAA"]);
+    index = mergeIndex(index, [], [], 12, [coll("COLLAAAA", "Inbox", null, true)]);
+    expect(index.items.AAAAAAAA.collections).toEqual(["COLLAAAA"]);
+  });
+
+  it("keeps a loose note only when it is in a collection, and never a child note", () => {
+    const cols = [coll("COLLAAAA", "seeds")];
+    const index = mergeIndex(emptyIndex(), [row("NOTEAAAA", "", "", { note: true, collections: ["COLLAAAA"] }), row("NOTEBBBB", "", "", { note: true })], [], 3, cols);
+    expect(index.items).toEqual({ NOTEAAAA: { doi: "", title: "", collections: ["COLLAAAA"], note: true } });
+  });
+
+  it("reads a format 1 file with its items but as never refreshed, and the next refresh replaces them", () => {
+    const old = normaliseIndex({ version: 1, libraryVersion: 40, items: { AAAAAAAA: { doi: "10.1/a", title: "A" }, GONEGONE: { doi: "10.1/g", title: "Deleted since" } } });
+    expect(old.version).toBe(2);
+    expect(old.libraryVersion).toBe(0);
+    expect(old.items.AAAAAAAA).toEqual({ doi: "10.1/a", title: "A", collections: [] });
+    expect(buildLookup(old).byDoi.get("10.1/a")).toBe("AAAAAAAA");
+    const next = mergeIndex(old, [row("AAAAAAAA", "10.1/a", "A", { collections: ["COLLAAAA"] })], [], 50, [coll("COLLAAAA", "Inbox")]);
+    expect(Object.keys(next.items)).toEqual(["AAAAAAAA"]);
+    expect(next.libraryVersion).toBe(50);
+  });
+
+  it("reads a format 2 file back unchanged and ignores damaged collections and lists", () => {
+    const index = mergeIndex(emptyIndex(), [row("AAAAAAAA", "10.1/a", "A", { collections: ["COLLAAAA"] })], [], 7, [coll("COLLAAAA", "Inbox"), coll("COLLBBBB", "seeds", "COLLAAAA", true)]);
+    expect(normaliseIndex(JSON.parse(JSON.stringify(index)))).toEqual(index);
+    const odd = normaliseIndex({ version: 2, libraryVersion: 3, collections: [null, { key: "x", name: "short key" }, { key: "COLLAAAA", name: 5 }, { key: "COLLBBBB", name: "ok", parent: "" }], items: { AAAAAAAA: { doi: "d", title: "t", collections: ["COLLBBBB", 4] } } });
+    expect(odd.collections).toEqual([coll("COLLBBBB", "ok")]);
+    expect(odd.items.AAAAAAAA.collections).toEqual(["COLLBBBB"]);
   });
 });
 
@@ -389,6 +438,7 @@ describe("ZoteroClient library calls", () => {
     expect(got.items).toHaveLength(101);
     expect(got.libraryVersion).toBe(41);
     expect(calls[0].url).toContain("itemType=-attachment");
+    expect(calls[0].url).toContain("includeTrashed=1");
     expect(calls[0].url).not.toContain("since=");
     expect(calls[1].url).toContain("start=100");
     const second = zotero([{ status: 200, json: [], headers: { "last-modified-version": "41" } }]);
@@ -406,7 +456,7 @@ describe("ZoteroClient library calls", () => {
 });
 
 describe("flags", () => {
-  const index = mergeIndex(emptyIndex(), [{ key: "AAAAAAAA", doi: "10.1000/p.1", title: "Polymer paper 1" }], [], 1);
+  const index = mergeIndex(emptyIndex(), [row("AAAAAAAA", "10.1000/p.1", "Polymer paper 1")], [], 1, []);
   const literature = buildLiteratureIndex([{ path: "Lit/note.md", frontmatter: { title: "Polymer paper 2", DOI: "10.1000/p.2" } }]);
   const ledger = emptyLedger();
   ledger.papers["a/W3"] = { title: "x", tier: "strong", start: "2026-10-05", topics: [], terms: [], def: 0 };

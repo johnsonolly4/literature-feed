@@ -167,7 +167,7 @@ describe("the ledger", () => {
     ledger.papers["a/W1"] = entry({ dismissed: "2026-10-15", dismissReason: "no-access" });
     ledger.papers["a/W2"] = entry({ read: "2026-10-14", dismissed: "2026-10-15", dismissReason: "irrelevant" });
     ledger.papers["a/W3"] = entry({ ticked: "2026-10-13" });
-    const feed: FeedConfig = { id: "a", name: "A", enabled: true, topics: ["t"], groups: [], drop: [], lower: [], yearsFrom: null, zoteroCollection: "", project: "" };
+    const feed: FeedConfig = { id: "a", name: "A", enabled: true, topics: ["t"], groups: [], drop: [], lower: [], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [] };
     const [f] = buildReport(ledger, [feed], "2026-10-20", 4).feeds;
     expect(f.totals).toEqual({ listed: 3, interested: 2, dismissed: 1, undecided: 0, read: 1, noAccess: 1 });
     expect(reportMarkdown(buildReport(ledger, [feed], "2026-10-20", 4))).toContain("| Listed | Wanted | Dismissed | Undecided | Read | No access | Wanted rate |");

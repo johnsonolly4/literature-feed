@@ -11,7 +11,7 @@ function feed(overrides: Partial<FeedConfig> = {}): FeedConfig {
     id: "a", name: "Polymers", enabled: true,
     topics: ["(\"lipoic acid\") AND polymer", "dithiolane AND \"ring-opening\""],
     groups: [{ name: "Polymerisation", role: "required", terms: ["polymer", "copolymer"] }, { name: "Flow", role: "priority", terms: ["flow"] }],
-    drop: ["clinical trial"], lower: ["adhesive"], yearsFrom: 2020, zoteroCollection: "", project: "", ...overrides,
+    drop: ["clinical trial"], lower: ["adhesive"], yearsFrom: 2020, zoteroCollection: "", project: "", seedCollection: "", knownDois: [], ...overrides,
   };
 }
 

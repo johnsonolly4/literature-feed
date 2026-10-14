@@ -106,7 +106,7 @@ export function snapshotFeed(f: FeedConfig): FeedSnapshot {
 
 /** A search from its snapshot, to run again. It is not saved anywhere, so the Zotero fields are empty. */
 export function feedFromSnapshot(s: FeedSnapshot): FeedConfig {
-  return { ...JSON.parse(JSON.stringify(s)) as FeedSnapshot, enabled: true, zoteroCollection: "", project: "" };
+  return { ...JSON.parse(JSON.stringify(s)) as FeedSnapshot, enabled: true, zoteroCollection: "", project: "", seedCollection: "", knownDois: [] };
 }
 
 export function runInfo(now: Date, feeds: readonly FeedConfig[], opts: ReviewOptions, abstracts: boolean): RunInfo {

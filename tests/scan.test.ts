@@ -8,7 +8,7 @@ import { droppedNoLipoic, possible, priorityFlow, strongComonomer } from "./fixt
 const NOW = new Date(2026, 9, 12, 9, 30); // Monday 2026-10-12, week 42
 
 function feed(id: string, overrides: Partial<FeedConfig> = {}): FeedConfig {
-  return { ...lipoicFeed, id, name: `Feed ${id}`, enabled: true, topics: ["t1", "t2"], yearsFrom: null, zoteroCollection: "", project: "", ...overrides };
+  return { ...lipoicFeed, id, name: `Feed ${id}`, enabled: true, topics: ["t1", "t2"], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [], ...overrides };
 }
 
 function cand(c: { title: string; abstract: string | null }, n: number): Candidate {

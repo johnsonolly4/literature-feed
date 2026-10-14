@@ -16,7 +16,7 @@ const toRead = (id: string, o: Partial<ParsedPaper> = {}) => paper(id, { synced:
 function feed(id: string, overrides: Partial<FeedConfig> = {}): FeedConfig {
   return {
     id, name: `Feed ${id}`, enabled: true, topics: ["one", "two"], groups: [], drop: [], lower: [],
-    yearsFrom: null, zoteroCollection: "", project: "", ...overrides,
+    yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [], ...overrides,
   };
 }
 

@@ -8,7 +8,7 @@ const TODAY = "2026-10-13";
 const OLD = "2026-08-03"; // long past: an unticked paper counts as dismissed
 
 function feed(id: string, name: string, topics: string[] = ["first", "second", "third"]): FeedConfig {
-  return { id, name, enabled: true, topics, groups: [], drop: [], lower: [], yearsFrom: null, zoteroCollection: "", project: "" };
+  return { id, name, enabled: true, topics, groups: [], drop: [], lower: [], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [] };
 }
 
 function paper(overrides: Partial<LedgerPaper> = {}): LedgerPaper {

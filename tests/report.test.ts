@@ -10,7 +10,7 @@ const NEW = "2026-10-12"; // this week: unticked papers are undecided
 function feed(id = "a", overrides: Partial<FeedConfig> = {}): FeedConfig {
   return {
     id, name: `Feed ${id}`, enabled: true, topics: ["first query", "second query"], groups: [], drop: [], lower: [], yearsFrom: null,
-    zoteroCollection: "", project: "", ...overrides,
+    zoteroCollection: "", project: "", seedCollection: "", knownDois: [], ...overrides,
   };
 }
 

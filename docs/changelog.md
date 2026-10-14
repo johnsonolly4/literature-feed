@@ -3,6 +3,8 @@
 ## Next version (not released)
 - Commands are grouped by what you are doing and named that way in the command palette (**Watch:**, **Discover:**, **Expand:**, **Improve:**, **Tools:**). The telescope ribbon icon is now the **Find papers** menu with the same groups. The commands **Open review graph** and **Open the graph in this note** are gone: the menu opens the last graph and **Open this note's report view** opens a note's graph. The ids of the other commands are unchanged.
 
+- Each search has a **Seed collection** (default: its Zotero collection followed by `/seeds`) and **Known papers (extra DOIs)**. In the review, **Fill from seed collection** puts a search's known papers in the **Papers I already know** box, with the counts and the cost shown first, and says what is wrong when the collection is missing or empty or when items have no DOI. The Zotero index now stores which collections each item is in and leaves out items in the Trash (an older index is read once more in full). The test of suggested searches checks at most 40 papers.
+
 ## 0.3.0 (2026-10-13)
 - Reports share one look: tables with chips, sorting and a search box, a side pane for details, and **Open this note's report view** reopens a report from its note.
 - Citation gaps: one table of works and one of authors, switched by chips; clicking an author opens their papers beside the table (it did nothing before for runs saved by an older version); the settings fold away after a run; the gaps note can reopen the view; an LLM prompt checks whether under- or over-cited authors really are, against what it finds on the web, and its verdicts come back into the table and the note.

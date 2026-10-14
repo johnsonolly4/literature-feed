@@ -283,20 +283,25 @@ export class ZoteroClient {
 
   /**
    * Every item that is not an attachment (all pages), or only those changed since a library version, with the library version
-   * after the last page. Read-only: used to keep the local index of the library for a literature review.
+   * after the last page. Items in Zotero's Trash are included and marked, so a refresh can remove them. Read-only: used to keep
+   * the local index of the library for a literature review.
    */
   async listLibraryItems(since = 0): Promise<{ items: LibraryItemRow[]; libraryVersion: number }> {
     const items: LibraryItemRow[] = [];
     let libraryVersion = since;
     for (let start = 0, pages = 0; pages < 400; start += PAGE, pages++) {
-      const res = await this.send("GET", "read your library for the review", `/items?format=json&itemType=-attachment&limit=${PAGE}&start=${start}${since > 0 ? `&since=${since}` : ""}`);
+      const res = await this.send("GET", "read your library for the review", `/items?format=json&itemType=-attachment&includeTrashed=1&limit=${PAGE}&start=${start}${since > 0 ? `&since=${since}` : ""}`);
       const rows = Array.isArray(res.json) ? res.json : [];
       const version = Number(res.headers["last-modified-version"]);
       if (Number.isFinite(version) && version > libraryVersion) libraryVersion = version;
       for (const row of rows) {
         if (!isRecord(row) || typeof row.key !== "string" || !isRecord(row.data)) continue;
         const title = typeof row.data.title === "string" ? row.data.title : "";
-        items.push({ key: row.key, doi: doiOfItem(row.data), title });
+        const collections = Array.isArray(row.data.collections) ? row.data.collections.filter((c): c is string => typeof c === "string") : [];
+        items.push({
+          key: row.key, doi: doiOfItem(row.data), title, collections,
+          trashed: isTrue(row.data.deleted) || isTrue(row.deleted), note: row.data.itemType === "note",
+        });
       }
       if (rows.length < PAGE) break;
     }

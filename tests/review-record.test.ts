@@ -14,7 +14,7 @@ function feed(overrides: Partial<FeedConfig> = {}): FeedConfig {
   return {
     id: "lipoic", name: "Lipoic acid copolymers", enabled: true, topics: ["lipoic acid copolymer", "\"thioctic acid\" AND vinyl"],
     groups: [{ name: "Lipoic", role: "required", terms: ["lipoic acid", "thioctic acid"] }, { name: "Degradable", role: "priority", terms: ["degradable"] }],
-    drop: ["clinical trial"], lower: ["adhesive"], yearsFrom: 2021, zoteroCollection: "Lit", project: "p1", ...overrides,
+    drop: ["clinical trial"], lower: ["adhesive"], yearsFrom: 2021, zoteroCollection: "Lit", project: "p1", seedCollection: "", knownDois: [], ...overrides,
   };
 }
 

@@ -8,7 +8,7 @@ function feed(): FeedConfig {
   return {
     id: "a", name: "A", enabled: true, topics: ["one", "two", "three"],
     groups: [{ name: "Poly", role: "required", terms: ["polymer"] }, { name: "Flow", role: "boost", terms: ["flow"] }],
-    drop: ["gold"], lower: ["adhesive"], yearsFrom: null, zoteroCollection: "", project: "",
+    drop: ["gold"], lower: ["adhesive"], yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [],
   };
 }
 

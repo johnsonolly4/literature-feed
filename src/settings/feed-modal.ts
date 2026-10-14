@@ -1,7 +1,9 @@
 // Windows opened from the settings tab: confirm, edit a feed (with Test), import a feed.
-import { App, Modal, Setting } from "obsidian";
+import { App, Modal, Setting, type TextComponent } from "obsidian";
 import { OpenAlexClient } from "../openalex/client";
 import { obsidianRequester } from "../openalex/request";
+import { seedCollectionPath } from "../review/known";
+import { seedDois } from "../review/seeds";
 import {
   GROUP_ROLES, checkFeed, cloneFeed, parseFeedJson, parseLines, parseYear,
   type FeedConfig, type SecretName, type Settings,
@@ -35,6 +37,11 @@ const ROLE_LABELS: Record<GroupRole, string> = {
 const TIER_LABELS: [keyof TestSummary["perTier"], string][] = [
   ["priority", "Priority"], ["strong", "Strong"], ["possible", "Possible"], ["unchecked", "Unchecked"], ["dropped", "Dropped"],
 ];
+
+/** The seed collection the search uses when its own field is empty, for the placeholder. */
+function seedPlaceholder(feed: FeedConfig): string {
+  return seedCollectionPath({ zoteroCollection: feed.zoteroCollection, seedCollection: "" }) ?? "Set a Zotero collection first";
+}
 
 export class ConfirmModal extends Modal {
   constructor(app: App, private readonly title: string, private readonly message: string, private readonly action: string, private readonly onConfirm: () => void) {
@@ -82,10 +89,22 @@ export class FeedModal extends Modal {
         .onChange((v) => { draft.yearsFrom = parseYear(v); }));
     new Setting(contentEl).setName("Zotero collection")
       .setDesc("Where synced papers go: a collection, or a slash between a collection and the one inside it. It must exist in Zotero unless creating inbox collections is switched on in the settings.")
-      .addText((t) => t.setValue(draft.zoteroCollection).onChange((v) => { draft.zoteroCollection = v.trim(); }));
+      .addText((t) => t.setValue(draft.zoteroCollection).onChange((v) => { draft.zoteroCollection = v.trim(); seedInput?.setPlaceholder(seedPlaceholder(draft)); }));
     new Setting(contentEl).setName("Project")
       .setDesc("Optional second collection, written the same way. It must exist in Zotero unless creating project collections is switched on in the settings.")
       .addText((t) => t.setValue(draft.project).onChange((v) => { draft.project = v.trim(); }));
+    let seedInput: TextComponent | null = null;
+    new Setting(contentEl).setName("Seed collection")
+      .setDesc("The Zotero collection that holds the papers you know are right for this search, written the same way. Leave empty to use the Zotero collection followed by /seeds. Only items directly in it count, not those in collections inside it.")
+      .addText((t) => {
+        seedInput = t;
+        t.setPlaceholder(seedPlaceholder(draft)).setValue(draft.seedCollection).onChange((v) => { draft.seedCollection = v.trim(); });
+      });
+    let doiCount: HTMLElement | null = null;
+    const showDoiCount = (): void => { doiCount?.setText(`${seedDois(draft.knownDois.join("\n")).length} DOIs recognised.`); };
+    this.addLines("Known papers (extra DOIs)", "Papers to add to the seed collection's, one per line. Any text with DOIs in it will do.", () => draft.knownDois, (v) => { draft.knownDois = v; showDoiCount(); }, 3);
+    doiCount = contentEl.createDiv({ cls: "setting-item-description" });
+    showDoiCount();
 
     this.addLines("Search topics", "One OpenAlex search per line. Quotes, brackets, AND and OR work.", () => draft.topics, (v) => { draft.topics = v; }, 5);
 

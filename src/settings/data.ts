@@ -13,6 +13,10 @@ export interface FeedConfig extends Feed {
   yearsFrom: number | null;
   zoteroCollection: string;
   project: string;
+  /** The Zotero collection that holds this search's known papers, written like `zoteroCollection`. "" = `<zoteroCollection>/seeds`. */
+  seedCollection: string;
+  /** Extra known papers, one per line (any text with DOIs in it), added to the seed collection's. */
+  knownDois: string[];
 }
 
 /** The two API keys. Their values live in Obsidian's secret storage; settings hold only the id of the secret. */
@@ -193,6 +197,8 @@ function normaliseFeed(raw: unknown, taken: Set<string>): FeedConfig | null {
     yearsFrom: normaliseYear(raw.yearsFrom),
     zoteroCollection: text(raw.zoteroCollection),
     project: text(raw.project),
+    seedCollection: text(raw.seedCollection),
+    knownDois: textList(raw.knownDois),
   };
 }
 
@@ -303,6 +309,8 @@ export function newFeed(existing: readonly FeedConfig[]): FeedConfig {
     yearsFrom: null,
     zoteroCollection: "",
     project: "",
+    seedCollection: "",
+    knownDois: [],
   };
 }
 
@@ -314,6 +322,7 @@ export function cloneFeed(feed: FeedConfig): FeedConfig {
     groups: feed.groups.map((g) => ({ ...g, terms: [...g.terms] })),
     drop: [...feed.drop],
     lower: [...feed.lower],
+    knownDois: [...feed.knownDois],
   };
 }
 
@@ -345,8 +354,8 @@ export function checkFeed(feed: FeedConfig): string[] {
 
 /** The feed as it is exported: no id, no on/off switch, never a key. */
 export function feedToJson(feed: FeedConfig): string {
-  const { name, topics, groups, drop, lower, yearsFrom, zoteroCollection, project } = feed;
-  return JSON.stringify({ name, topics, groups, drop, lower, yearsFrom, zoteroCollection, project }, null, 2) + "\n";
+  const { name, topics, groups, drop, lower, yearsFrom, zoteroCollection, project, seedCollection, knownDois } = feed;
+  return JSON.stringify({ name, topics, groups, drop, lower, yearsFrom, zoteroCollection, project, seedCollection, knownDois }, null, 2) + "\n";
 }
 
 export interface ParsedFeed {
@@ -373,6 +382,8 @@ export function parseFeedJson(input: string, existing: readonly FeedConfig[] = [
   for (const key of ["drop", "lower"] as const) {
     if (raw[key] !== undefined && !Array.isArray(raw[key])) errors.push(`"${key}" must be a list of terms.`);
   }
+  if (raw.knownDois !== undefined && !Array.isArray(raw.knownDois)) errors.push('"knownDois" must be a list of DOIs.');
+  if (raw.seedCollection !== undefined && typeof raw.seedCollection !== "string") errors.push('"seedCollection" must be a collection path (text).');
   if (raw.groups !== undefined && !Array.isArray(raw.groups)) {
     errors.push('"groups" must be a list.');
   } else if (Array.isArray(raw.groups)) {

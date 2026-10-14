@@ -644,8 +644,12 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
     const client = new ZoteroClient({ request: zoteroRequester, userId, apiKey, sleep });
     const since = this.zoteroIndex.libraryVersion;
-    const [fetched, deleted] = await Promise.all([client.listLibraryItems(since), client.listDeleted(since)]);
-    this.zoteroIndex = mergeIndex(this.zoteroIndex, fetched.items, deleted, fetched.libraryVersion);
+    // One request at a time (the Zotero client's rule). The collections are read last and again every time, so renamed, moved and
+    // trashed ones are right and a collection made while the items were read is not mistaken for an unknown one.
+    const fetched = await client.listLibraryItems(since);
+    const deleted = await client.listDeleted(since);
+    const collections = await client.listCollectionsRaw();
+    this.zoteroIndex = mergeIndex(this.zoteroIndex, fetched.items, deleted, fetched.libraryVersion, collections.map((c) => ({ key: c.key, name: c.name, parent: c.parent, trashed: c.deleted })));
     await this.writePluginJson("zotero-index.json", this.zoteroIndex);
     return `Zotero index up to date: ${Object.keys(this.zoteroIndex.items).length} items (${fetched.items.length} read this time${deleted.length > 0 ? `, ${deleted.length} removed` : ""}).`;
   }

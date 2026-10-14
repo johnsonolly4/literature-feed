@@ -16,7 +16,7 @@ function paper(id: string, overrides: Partial<ParsedPaper> = {}): ParsedPaper {
 function feed(overrides: Partial<FeedConfig> = {}): FeedConfig {
   return {
     id: "a", name: "Feed a", enabled: true, topics: ["one", "two"], groups: [{ name: "G", role: "required", terms: ["x"] }], drop: ["bad"], lower: [],
-    yearsFrom: null, zoteroCollection: "", project: "", ...overrides,
+    yearsFrom: null, zoteroCollection: "", project: "", seedCollection: "", knownDois: [], ...overrides,
   };
 }
 

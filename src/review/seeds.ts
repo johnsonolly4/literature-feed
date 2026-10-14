@@ -18,6 +18,8 @@ export interface SeedProfile {
   missing: string[];
   /** The papers' words, for building search strings from them (absent in profiles saved before this existed). */
   papers?: { id: string; title: string; abstract: string | null }[];
+  /** What each paper cites and who wrote it (author keys), for the links between papers (absent in profiles saved before this existed). */
+  perPaper?: { id: string; refs: string[]; authors: string[] }[];
 }
 
 /** The DOIs in a pasted text, for the seeds (a reference list, links, one per line: anything). */
@@ -37,7 +39,8 @@ export function buildSeedProfile(dois: readonly string[], found: readonly Candid
     for (const k of new Set(c.authors.map(authorKey).filter((k) => k !== ""))) authors[k] = (authors[k] ?? 0) + 1;
   }
   const papers = found.flatMap((c) => { const id = shortOpenAlexId(c.openalexId); return id === null ? [] : [{ id, title: c.title, abstract: c.abstract ?? null }]; });
-  return { dois: [...dois], ids, refs, authors, missing: dois.filter((d) => !have.has(d.toLowerCase())), papers };
+  const perPaper = found.flatMap((c) => { const id = shortOpenAlexId(c.openalexId); return id === null ? [] : [{ id, refs: [...new Set(c.referencedWorks ?? [])], authors: [...new Set(c.authors.map(authorKey).filter((k) => k !== ""))] }]; });
+  return { dois: [...dois], ids, refs, authors, missing: dois.filter((d) => !have.has(d.toLowerCase())), papers, perPaper };
 }
 
 export interface SeedScore {

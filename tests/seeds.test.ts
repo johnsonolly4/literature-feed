@@ -18,6 +18,7 @@ describe("seed profile", () => {
     expect(profile.authors["poe|c"]).toBe(1);
     expect(profile.ids).toEqual(["W1", "W2", "W3"]);
     expect(profile.missing).toEqual(["10.1/s4"]);
+    expect(profile.perPaper?.[0]).toEqual({ id: "W1", refs: ["R1", "R2", "R3"], authors: ["lee|a", "roe|b"] });
   });
 
   it("picks DOIs out of any pasted text", () => {

@@ -16,6 +16,7 @@ import { drawChart } from "./chart-view";
 import type { ZoteroIndex } from "../zotero/library-index";
 import { describeKnown, knownPapers } from "./known";
 import { buildSeedProfile, seedDois, type SeedProfile } from "./seeds";
+import { coherence, coherenceLines } from "./coherence";
 import { leaveOneOut, suggestQueries } from "./seed-queries";
 import { REVIEW_ORDERS, planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewOrder, type ReviewPlan, type ReviewResult } from "./collect";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
@@ -490,6 +491,12 @@ ${c.abstract ?? ""}`)).slice(0, 4000);
     // The test rebuilds the strings once per paper (locally, no requests), so a long list is tested on its first papers only.
     const test = leaveOneOut(papers.slice(0, LEAVE_ONE_OUT_MAX), { background: bg });
     const title = (id: string): string => papers.find((p) => p.id === id)?.title ?? id;
+    const note = coherenceLines(coherence(seeds), title);
+    if (note.length > 0) {
+      const box = out.createDiv({ cls: "literature-feed-detailwork" });
+      box.createEl("strong", { text: "How your papers link" });
+      for (const l of note) box.createDiv({ cls: "literature-feed-meta", text: l });
+    }
     out.createEl("p", { text: `${papers.length} papers read. Strings built like these find a paper they were not built from ${test.found} times out of ${test.total} (each ${papers.length > LEAVE_ONE_OUT_MAX ? `of the first ${LEAVE_ONE_OUT_MAX} papers` : "paper"} left out in turn): treat them as a start, not a net. ${seeds.missing.length > 0 ? `${seeds.missing.length} DOIs were not found in OpenAlex.` : ""}` });
     if (queries.length === 0) {
       out.createEl("p", { cls: "literature-feed-meta", text: "These papers share too little wording to build a string from. Add more papers on the same subject." });

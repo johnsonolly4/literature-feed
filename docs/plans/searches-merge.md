@@ -55,7 +55,7 @@ Settled in the review: no remembered collection key (found by path only; Sync is
 
 **Deferred to Phase 2b:** the cached seed profile `known-papers.json` (with its date and a refresh button). Phase 2 does not need it; the coherence analysis does.
 
-### Phase 2b — Coherence of a search's papers
+### Phase 2b — Coherence of a search's papers (built 2026-10-14: `coherence.ts`, `SeedProfile.perPaper`, box in the review window; unit tests only, real-data check open, see BACKLOG)
 - Makes sure the papers chosen for a search form one coherent path, and says where they do not. Pure `src/review/coherence.ts` on the seed profiles (no new requests):
   - **Links** between every two known papers: shared references plus shared authors (3 each), as `seeds.ts` scores them.
   - **Outliers**: a known paper linked to none or almost none of the others (below a quarter of the median), shown with "does not belong here, or this search needs a second strand".

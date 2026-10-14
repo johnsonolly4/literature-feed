@@ -207,6 +207,23 @@ describe("creating and updating items", () => {
     const { client } = fake([res(412)]);
     await expect(client.addToCollectionsAndTag(found, ["C2"], [])).rejects.toThrow("Press Sync again");
   });
+
+  it("takes an item out of one collection, keeping the others, with the version check", async () => {
+    const { client, calls } = fake([res(204, null, { "last-modified-version": "9" })]);
+    const { item, changed } = await client.removeFromCollections({ ...found, collections: ["C1", "C2"] }, ["C2"]);
+    expect(changed).toBe(true);
+    expect(calls[0].method).toBe("PATCH");
+    expect(calls[0].headers["If-Unmodified-Since-Version"]).toBe("7");
+    expect(JSON.parse(calls[0].body ?? "")).toEqual({ collections: ["C1"] });
+    expect(item).toEqual({ key: "ITEM0001", version: 9, collections: ["C1"], tags: [{ tag: "x", type: 1 }] });
+  });
+
+  it("sends nothing when the item is not in the collection", async () => {
+    const { client, calls } = fake([]);
+    const { changed } = await client.removeFromCollections(found, ["C9"]);
+    expect(changed).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe("limits and errors", () => {

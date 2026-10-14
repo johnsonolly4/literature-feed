@@ -25,6 +25,7 @@ import { emptyGapsSession, normaliseGapsSession, type GapsSession } from "./revi
 import { GAPS_KIND, gapsRecordFromNote, parseGapsSnapshot, sessionFromRecord } from "./review/gaps-note";
 import { REPORT_BLOCK, reportsInNote, type ReportKind } from "./ui/report-block";
 import { reportBlockProcessor } from "./ui/report-view";
+import { promoteItem, seedTarget, undoPromote, type PromoteResult } from "./review/promote";
 import { recordFromNote, type ReviewRecord } from "./review/record";
 import { REVIEW_VIEW, ReviewView } from "./review/review-view";
 import { describeSession, normaliseSession, type ReviewSession } from "./review/session";
@@ -676,6 +677,34 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.zoteroIndex = mergeIndex(this.zoteroIndex, fetched.items, deleted, fetched.libraryVersion, collections.map((c) => ({ key: c.key, name: c.name, parent: c.parent, trashed: c.deleted })));
     await this.writePluginJson("zotero-index.json", this.zoteroIndex);
     return `Zotero index up to date: ${Object.keys(this.zoteroIndex.items).length} items (${fetched.items.length} read this time${deleted.length > 0 ? `, ${deleted.length} removed` : ""}).`;
+  }
+
+  /** A search's seed collection in the local Zotero index (its path and key), or why there is none. */
+  seedTargetFor(feedId: string): { key: string; path: string } | { error: string } {
+    const feed = this.settings.feeds.find((f) => f.id === feedId);
+    return feed ? seedTarget(feed, this.zoteroIndex) : { error: "That search no longer exists." };
+  }
+
+  /**
+   * Puts one Zotero item in a search's seed collection (or, with `undo`, takes it out again). Collection membership only. The local
+   * index is read again afterwards so the known papers count follows. Throws with a message the user can read.
+   */
+  async promoteToSeeds(feedId: string, itemKey: string, undo = false): Promise<PromoteResult> {
+    const feed = this.settings.feeds.find((f) => f.id === feedId);
+    if (!feed) throw new Error("That search no longer exists.");
+    const target = seedTarget(feed, this.zoteroIndex);
+    if ("error" in target) throw new Error(target.error);
+    const client = this.newZoteroClient();
+    if (!client) throw new Error("Add your Zotero API key and user ID in the settings first.");
+    const result = undo ? await undoPromote(client, itemKey, target.key) : await promoteItem(client, itemKey, target.key);
+    if (result.status === "added" || result.status === "removed") {
+      try {
+        await this.refreshZoteroIndex();
+      } catch {
+        // The write landed; the index catches up at the next refresh.
+      }
+    }
+    return result;
   }
 
   /** Where the three flags (in Zotero, in the vault, listed before) come from; a source that is not available is left out. */

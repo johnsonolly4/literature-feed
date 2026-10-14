@@ -17,6 +17,9 @@ import type { ZoteroIndex } from "../zotero/library-index";
 import { describeKnown, knownPapers } from "./known";
 import { buildSeedProfile, seedDois, type SeedProfile } from "./seeds";
 import { coherence, coherenceLines } from "./coherence";
+import { authorKey } from "./gaps-authors";
+import { confirmText, distortionCheck, seedTarget, type PromoteResult } from "./promote";
+import { ConfirmModal } from "../settings/feed-modal";
 import { leaveOneOut, suggestQueries } from "./seed-queries";
 import { REVIEW_ORDERS, planReview, runReview, type ReviewClient, type ReviewOptions, type ReviewOrder, type ReviewPlan, type ReviewResult } from "./collect";
 import { flagsFor, type FlagSources, type Flags } from "./flags";
@@ -44,6 +47,8 @@ export interface ReviewHost {
   spend: SpendTally;
   /** Reads the Zotero library into the local index (read-only) and says what it found. */
   refreshZoteroIndex(): Promise<string>;
+  /** Puts a Zotero item in a search's seed collection, or with `undo` takes it out; reads the index again. Throws a readable message. */
+  promoteToSeeds(feedId: string, itemKey: string, undo?: boolean): Promise<PromoteResult>;
   /** The local index of the Zotero library, which holds each search's seed collection. */
   zoteroIndex: ZoteroIndex;
   /** Opens the Find DOIs tab with these titles as its list. */
@@ -431,6 +436,55 @@ export class ReviewPanel {
     });
   }
 
+  /** Shows what promoting a paper to the chosen search's seeds would do to them, and asks. */
+  private confirmPromote(r: ReviewRow): void {
+    const feed = this.host.settings.feeds.find((f) => f.id === this.fillFeedId);
+    const itemKey = r.flags.zotero;
+    if (!feed || itemKey === null) return;
+    const target = seedTarget(feed, this.host.zoteroIndex);
+    if ("error" in target) {
+      new Notice(target.error, 8000);
+      return;
+    }
+    const p = this.result?.papers[r.index];
+    const check = p && this.seeds
+      ? distortionCheck(this.seeds, { id: p.id, refs: [...new Set(p.referencedWorks)], authors: [...new Set(p.authors.map(authorKey).filter((k) => k !== ""))], title: p.title, abstract: p.abstract ?? null })
+      : null;
+    new ConfirmModal(this.host.app, "Promote to seeds", confirmText(check, r.title, feed.name, target.path), "Promote", () => void this.runPromote(feed, itemKey, r.title)).open();
+  }
+
+  private async runPromote(feed: FeedConfig, itemKey: string, title: string): Promise<void> {
+    try {
+      const result = await this.host.promoteToSeeds(feed.id, itemKey);
+      if (result.status === "missing") {
+        new Notice("That item is not in your Zotero library any more (or is in the trash).", 8000);
+        return;
+      }
+      this.showKnown(feed);
+      if (result.status === "already") {
+        new Notice(`"${title}" was already in the seed collection of ${feed.name}.`, 6000);
+        return;
+      }
+      const note = createFragment();
+      note.createSpan({ text: `"${title}" is now a seed of ${feed.name}. ` });
+      note.createEl("button", { text: "Undo" }).addEventListener("click", () => {
+        this.host.promoteToSeeds(feed.id, itemKey, true).then(
+          () => { this.showKnown(feed); new Notice("Taken out of the seed collection again.", 5000); },
+          (e: unknown) => new Notice(`Could not undo: ${e instanceof Error ? e.message : "unknown error"}`, 8000),
+        );
+      });
+      new Notice(note, 15000);
+    } catch (e) {
+      new Notice(`Could not promote: ${e instanceof Error ? e.message : "unknown error"}`, 8000);
+    }
+  }
+
+  /** The count line under Fill from seed collection, from the index as it is now (the seeds box is not touched). */
+  private showKnown(feed: FeedConfig): void {
+    this.fillOut.empty();
+    for (const line of describeKnown(knownPapers(feed, this.host.zoteroIndex), feed.name)) this.fillOut.createEl("p", { cls: line.warn ? "literature-feed-warning" : "literature-feed-meta", text: line.text });
+  }
+
   /** Refreshes the Zotero index, then puts one search's known papers in the box (it stays editable) and says what was found. */
   private async fillFromSeedCollection(button: { setDisabled(d: boolean): unknown }): Promise<void> {
     const feed = this.host.settings.feeds.find((f) => f.id === this.fillFeedId);
@@ -683,9 +737,17 @@ ${c.abstract ?? ""}`)).slice(0, 4000);
       },
     };
     this.renderAddToInbox(addOut, rows);
+    const promoteColumn: Column<ReviewRow> = {
+      key: "promote", label: "Seed",
+      render: (td, r) => {
+        if (r.flags.zotero === null || r.seed?.isSeed === true) return;
+        td.createEl("button", { text: "Promote to seeds", attr: { "aria-label": `Promote ${r.label} to the seed collection of the search chosen under Papers I already know` } })
+          .addEventListener("click", () => this.confirmPromote(r));
+      },
+    };
     const table = new DataTable<ReviewRow>(this.out, {
       app: this.host.app, storageKey: "review-papers", searchLabel: "Search the papers", empty: "No paper matches.", pageSize: Math.max(25, rows.length),
-      columns: [tickColumn, ...REVIEW_COLUMNS.filter((c) => hasSeeds || (c.key !== "overlap" && c.key !== "fit")).map((c): Column<ReviewRow> => ({
+      columns: [tickColumn, ...(this.host.settings.feeds.some((f) => f.id === this.fillFeedId) ? [promoteColumn] : []),...REVIEW_COLUMNS.filter((c) => hasSeeds || (c.key !== "overlap" && c.key !== "fit")).map((c): Column<ReviewRow> => ({
         ...c, ...(secondary.has(c.key) ? { secondary: true } : {}), ...(c.key === "cited" || c.key === "overlap" ? { align: "end" as const } : {}),
         render: (td, r) => {
           if (c.key === "order") td.setText(r.label);

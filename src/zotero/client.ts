@@ -357,4 +357,16 @@ export class ZoteroClient {
     const version = Number(res.headers["last-modified-version"]) || found.version;
     return { item: { key: found.key, version, collections: nextCollections, tags: nextTags }, changed: true };
   }
+
+  /** Takes an item out of collections (it stays in the library and in its other collections). Sends nothing when it is in none of them. */
+  async removeFromCollections(found: ZoteroFound, collections: readonly string[]): Promise<{ item: ZoteroFound; changed: boolean }> {
+    const nextCollections = found.collections.filter((c) => !collections.includes(c));
+    if (nextCollections.length === found.collections.length) return { item: found, changed: false };
+    const res = await this.send("PATCH", "take the paper out of the collection", `/items/${encodeURIComponent(found.key)}`, {
+      body: { collections: nextCollections },
+      headers: { "If-Unmodified-Since-Version": String(found.version) },
+    });
+    const version = Number(res.headers["last-modified-version"]) || found.version;
+    return { item: { ...found, version, collections: nextCollections }, changed: true };
+  }
 }

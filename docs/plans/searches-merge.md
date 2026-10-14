@@ -87,7 +87,7 @@ Settled in the review: no remembered collection key (found by path only; Sync is
 - Done when: tests; in `test-vault` one paper added from the review and one from gaps appear in the week's note, Sync sends them to the right collections, and the ledger counts them under their search.
 - Depends on: Phase 4 (review table), Phase 2b (fit marks); Phase 3 for the gaps side only.
 
-### Phase 5b — Promote to seeds
+### Phase 5b — Promote to seeds (built 2026-10-14: `promote.ts`, `removeFromCollections` in `client.ts`, a Seed column in `window.ts`, a link in `block.ts`, `promoteToSeeds` in `main.ts`; unit tests only, not run against Zotero or in Obsidian, see BACKLOG; the Improve tab entry waits for Phase 6)
 - A **Promote to seeds** action on a paper in the inbox table, the review table and the Improve tab: shows the distortion check (Phase 2b), asks to confirm, then adds the paper's Zotero item to the search's seed collection (collection membership only; the existing PATCH in `client.ts` that adds collections; the item must already be in Zotero, so an unsent paper is sent first by the usual Sync). Undo removes it from the seed collection again. Known papers refresh after.
 - Files: `src/zotero/client.ts`, `src/inbox/block.ts`, `src/review/window.ts`, `src/review/known.ts`; tests for the collection write, the confirm text and undo.
 - Done when: tests; in `test-vault` a synced paper is promoted and shows up in the search's known papers count and in Zotero's seed collection.

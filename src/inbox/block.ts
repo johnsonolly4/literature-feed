@@ -2,7 +2,9 @@
 // chips, order, filter); with `show: home` it is a small card for another note. Built with createEl only. It redraws when
 // the note it reads, or a literature note, is modified, so ticking a box updates it. The checkbox lines in the note are
 // the stored data: the table reads them, and ticking in the table edits the matching line.
-import { MarkdownRenderChild, Menu, TFile, type App, type MarkdownPostProcessorContext, type Plugin } from "obsidian";
+import { MarkdownRenderChild, Menu, Notice, TFile, type App, type MarkdownPostProcessorContext, type Plugin } from "obsidian";
+import { confirmText, type PromoteResult } from "../review/promote";
+import { ConfirmModal } from "../settings/feed-modal";
 import type { Settings } from "../settings/data";
 import { DEFAULT_LIMIT, buildCards, countsLine, homeSummary, parseLimit, type FeedCard } from "./cards";
 import { describeCounts, describeFeedRow, localDay } from "./scan";
@@ -21,6 +23,10 @@ export interface BlockHost {
   toggleTick(path: string, feedId: string, openalexId: string, ticked: boolean): Promise<void>;
   /** Dismisses one paper's line (and why), or takes the dismissal back with null. */
   setDismissed(path: string, feedId: string, openalexId: string, reason: DismissReason | null): Promise<void>;
+  /** A search's seed collection in the local Zotero index, or why there is none. */
+  seedTargetFor(feedId: string): { key: string; path: string } | { error: string };
+  /** Puts a synced paper's Zotero item in the search's seed collection (or with `undo` takes it out). Throws a readable message. */
+  promoteToSeeds(feedId: string, itemKey: string, undo?: boolean): Promise<PromoteResult>;
   /** Called after every scan, so open blocks redraw even when the note itself did not change. */
   scanListeners: Set<() => void>;
 }
@@ -322,6 +328,15 @@ class StatusBlock extends MarkdownRenderChild {
           void this.host.toggleTick(note.path, paper.feedId, paper.openalexId, !paper.ticked);
         });
       }
+      // A sent paper is in Zotero, so it can join its search's seed collection (the fit is checked in the review window, not here).
+      if (status !== "dismissed" && paper.synced && paper.key) {
+        const seed = links.createEl("a", { text: "Promote to seeds", href: "#" });
+        const itemKey = paper.key;
+        seed.addEventListener("click", (e) => {
+          e.preventDefault();
+          this.confirmPromote(paper.feedId, itemKey, paper.title, names.get(paper.feedId) ?? paper.feedId);
+        });
+      }
       const alsoIn = (shared.get(paper.openalexId) ?? []).filter((f) => f !== paper.feedId).map((f) => names.get(f) ?? f);
       const found = [names.get(paper.feedId) ?? paper.feedId, alsoIn.length > 0 ? `also in ${alsoIn.join(", ")}` : "", paper.topics.length > 0 ? `topic${paper.topics.length === 1 ? "" : "s"} ${paper.topics.join(", ")}` : ""].filter((m) => m !== "");
       links.createDiv({ cls: "literature-feed-meta", text: found.join(" · ") });
@@ -340,6 +355,32 @@ class StatusBlock extends MarkdownRenderChild {
         });
       }
     }
+  }
+
+  private confirmPromote(feedId: string, itemKey: string, title: string, searchName: string): void {
+    const target = this.host.seedTargetFor(feedId);
+    if ("error" in target) {
+      new Notice(target.error, 8000);
+      return;
+    }
+    new ConfirmModal(this.host.app, "Promote to seeds", confirmText(null, title, searchName, target.path), "Promote", () => {
+      this.host.promoteToSeeds(feedId, itemKey).then(
+        (result) => {
+          if (result.status === "missing") { new Notice("That item is not in your Zotero library any more (or is in the trash).", 8000); return; }
+          if (result.status === "already") { new Notice(`"${title}" was already in the seed collection of ${searchName}.`, 6000); return; }
+          const note = createFragment();
+          note.createSpan({ text: `"${title}" is now a seed of ${searchName}. ` });
+          note.createEl("button", { text: "Undo" }).addEventListener("click", () => {
+            this.host.promoteToSeeds(feedId, itemKey, true).then(
+              () => new Notice("Taken out of the seed collection again.", 5000),
+              (e: unknown) => new Notice(`Could not undo: ${e instanceof Error ? e.message : "unknown error"}`, 8000),
+            );
+          });
+          new Notice(note, 15000);
+        },
+        (e: unknown) => new Notice(`Could not promote: ${e instanceof Error ? e.message : "unknown error"}`, 8000),
+      );
+    }).open();
   }
 
   private externalLink(parent: HTMLElement, text: string, href: string): void {

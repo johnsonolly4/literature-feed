@@ -1,6 +1,7 @@
 # Literature Feed: changelog
 
 ## Next version (not released)
+- Commands are grouped by what you are doing and named that way in the command palette (**Watch:**, **Discover:**, **Expand:**, **Improve:**, **Tools:**). The telescope ribbon icon is now the **Find papers** menu with the same groups. The commands **Open review graph** and **Open the graph in this note** are gone: the menu opens the last graph and **Open this note's report view** opens a note's graph. The ids of the other commands are unchanged.
 
 ## 0.3.0 (2026-10-13)
 - Reports share one look: tables with chips, sorting and a search box, a side pane for details, and **Open this note's report view** reopens a report from its note.

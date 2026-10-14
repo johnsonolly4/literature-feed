@@ -14,8 +14,8 @@ import type { FlagSources } from "./review/flags";
 import { chartBlockProcessor } from "./review/chart-view";
 import { GRAPH_BLOCK, graphFromNote, normaliseGraph, type GraphData } from "./review/graph-data";
 import { GRAPH_VIEW, GraphView, graphBlockProcessor, type GraphHost } from "./review/graph-view";
+import { buildMenu, commandName, commandSpec, type MenuAction } from "./menu";
 import { CrossrefClient } from "./refs/crossref";
-import { TEXT } from "./refs/text";
 import { normaliseRefsSession, type RefsSession } from "./refs/panel";
 import { crossrefRequester } from "./refs/request";
 import { REFS_VIEW, RefsView } from "./refs/view";
@@ -49,6 +49,8 @@ import { zoteroRequester } from "./zotero/request";
 const ARCHIVED_NOTE_PATTERN = /^\d{4}-W\d{2} Reading inbox( \d+)?\.md$/;
 
 /** The first automatic check waits this long after Obsidian's layout is ready, so the vault is indexed and the start-up is not slowed. */
+/** The command palette name of a command: its group, then its title (`src/menu.ts`). */
+const nameOf = (id: string): string => commandName(commandSpec(id));
 const START_DELAY_MS = 15_000;
 /** While Obsidian stays open the schedule is checked this often. */
 const CHECK_EVERY_MS = 60 * 60 * 1000;
@@ -100,9 +102,9 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.gapsSession = normaliseGapsSession(await this.readPluginJson("gaps-session.json"));
     this.refsSession = normaliseRefsSession(await this.readPluginJson("refs-session.json"));
     this.registerView(REFS_VIEW, (leaf) => new RefsView(leaf, this));
-    this.addCommand({ id: "find-dois", name: TEXT.command, callback: () => void this.openRefs() });
+    this.addCommand({ id: "find-dois", name: nameOf("find-dois"), callback: () => void this.openRefs() });
     this.registerView(GAPS_VIEW, (leaf) => new GapsView(leaf, this));
-    this.addCommand({ id: "citation-gaps", name: "Citation gaps of one paper", callback: () => void this.openGaps() });
+    this.addCommand({ id: "citation-gaps", name: nameOf("citation-gaps"), callback: () => void this.openGaps() });
     this.registerView(REVIEW_VIEW, (leaf) => {
       const view = new ReviewView(leaf, this);
       view.mode = this.nextReviewMode;
@@ -110,10 +112,9 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       return view;
     });
     this.registerView(GRAPH_VIEW, (leaf) => new GraphView(leaf, this));
-    this.addCommand({ id: "open-review-graph", name: "Open review graph", callback: () => void (this.graph ? this.openGraph(this.graph) : this.openReview()) });
-    this.addRibbonIcon("telescope", "Literature review", (evt) => this.reviewMenu(evt));
+    this.addRibbonIcon("telescope", "Find papers", (evt) => this.reviewMenu(evt));
     this.addCommand({
-      id: "repeat-review", name: "Repeat the review in this note",
+      id: "repeat-review", name: nameOf("repeat-review"),
       editorCheckCallback: (checking, editor) => {
         const record = recordFromNote(editor.getValue());
         if (record && !checking) void this.openReview("new", record);
@@ -121,19 +122,10 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       },
     });
     this.addCommand({
-      id: "resume-review", name: "Resume the last literature review",
+      id: "resume-review", name: nameOf("resume-review"),
       checkCallback: (checking) => {
         if (this.session && !checking) void this.openReview("resume");
         return this.session !== null;
-      },
-    });
-    // In a review note: opens the graph that the note holds (older reviews too).
-    this.addCommand({
-      id: "open-note-graph", name: "Open the graph in this note",
-      editorCheckCallback: (checking, editor) => {
-        const graph = graphFromNote(editor.getValue());
-        if (graph && !checking) void this.openGraph(graph);
-        return graph !== null;
       },
     });
     this.reportKinds.set(GAPS_KIND, { label: "gaps view", open: (data) => this.openGapsSnapshot(data) });
@@ -141,7 +133,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.registerMarkdownCodeBlockProcessor(REPORT_BLOCK, (source, el) => reportBlockProcessor(source, el, this.reportKinds));
     // In any report note: opens the interactive view the note was made from (a snapshot in the note, else its record, else a graph).
     this.addCommand({
-      id: "open-note-report", name: "Open this note's report view",
+      id: "open-note-report", name: nameOf("open-note-report"),
       editorCheckCallback: (checking, editor) => {
         const open = this.reportOpener(editor.getValue());
         if (open && !checking) void open();
@@ -152,22 +144,22 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.tab = new LiteratureFeedSettingTab(this, this);
     this.addSettingTab(this.tab);
     registerInboxBlock(this);
-    this.addCommand({ id: "scan-now", name: "Scan now", callback: () => void this.scanNow() });
-    this.addCommand({ id: "check-setup", name: "Check setup", callback: () => void this.openSetup() });
+    this.addCommand({ id: "scan-now", name: nameOf("scan-now"), callback: () => void this.scanNow() });
+    this.addCommand({ id: "check-setup", name: nameOf("check-setup"), callback: () => void this.openSetup() });
     this.registerMarkdownCodeBlockProcessor("literature-feed-chart", (source, el) => chartBlockProcessor(source, el));
-    this.addCommand({ id: "literature-review", name: "Generate literature review", callback: () => void this.openReview() });
-    this.addCommand({ id: "llm-review", name: "Review a search with an LLM", callback: () => void this.openPrompt("review") });
-    this.addCommand({ id: "llm-topics", name: "Tweak search terms with an LLM", callback: () => void this.openPrompt("topics") });
-    this.addCommand({ id: "llm-compare", name: "Compare searches with an LLM", callback: () => void this.openPrompt("compare") });
-    this.addCommand({ id: "llm-new-search", name: "New search from a description with an LLM", callback: () => void this.openPrompt("new") });
-    this.addCommand({ id: "open-inbox", name: "Open reading inbox", callback: () => void this.openInbox() });
+    this.addCommand({ id: "literature-review", name: nameOf("literature-review"), callback: () => void this.openReview() });
+    this.addCommand({ id: "llm-review", name: nameOf("llm-review"), callback: () => void this.openPrompt("review") });
+    this.addCommand({ id: "llm-topics", name: nameOf("llm-topics"), callback: () => void this.openPrompt("topics") });
+    this.addCommand({ id: "llm-compare", name: nameOf("llm-compare"), callback: () => void this.openPrompt("compare") });
+    this.addCommand({ id: "llm-new-search", name: nameOf("llm-new-search"), callback: () => void this.openPrompt("new") });
+    this.addCommand({ id: "open-inbox", name: nameOf("open-inbox"), callback: () => void this.openInbox() });
     this.addRibbonIcon("book-open", "Open reading inbox", () => void this.openInbox());
     // A link a note can hold: [Reading inbox](obsidian://literature-feed-inbox) opens the newest weekly note (its name changes every week).
     this.registerObsidianProtocolHandler("literature-feed-inbox", () => void this.openInbox());
-    this.addCommand({ id: "sync-ticked", name: "Sync ticked papers", callback: () => void this.syncNow() });
-    this.addCommand({ id: "update-read-archive", name: "Update read state and archive", callback: () => void this.refreshAndReport(true) });
-    this.addCommand({ id: "search-effectiveness", name: "Show search effectiveness", callback: () => void this.showEffectiveness() });
-    this.addCommand({ id: "show-zotero-collections", name: "Show Zotero collections", callback: () => void this.showCollections() });
+    this.addCommand({ id: "sync-ticked", name: nameOf("sync-ticked"), callback: () => void this.syncNow() });
+    this.addCommand({ id: "update-read-archive", name: nameOf("update-read-archive"), callback: () => void this.refreshAndReport(true) });
+    this.addCommand({ id: "search-effectiveness", name: nameOf("search-effectiveness"), callback: () => void this.showEffectiveness() });
+    this.addCommand({ id: "show-zotero-collections", name: nameOf("show-zotero-collections"), callback: () => void this.showCollections() });
     this.app.workspace.onLayoutReady(() => {
       const first = window.setTimeout(() => void this.checkSchedule(), START_DELAY_MS);
       this.register(() => window.clearTimeout(first));
@@ -593,19 +585,29 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     void this.writePluginJson("gaps-session.json", session);
   }
 
-  /** The ribbon icon's menu: start a review, pick up the last one, open the last graph. */
+  /** The ribbon icon's menu (Find papers): Watch, Discover, Expand, Improve and the tools, as `buildMenu` lists them. */
   private reviewMenu(evt: MouseEvent): void {
-    const menu = new Menu();
-    menu.addItem((item) => item.setTitle("New literature review").setIcon("plus").onClick(() => void this.openReview("new")));
     const saved = this.session;
-    if (saved) {
-      const names = new Map(this.settings.feeds.map((f) => [f.id, f.name]));
-      menu.addItem((item) => item.setTitle(`Resume: ${describeSession(saved, names)}`).setIcon("history").onClick(() => void this.openReview("resume")));
-    }
-    menu.addItem((item) => item.setTitle(TEXT.command).setIcon("list-checks").onClick(() => void this.openRefs()));
-    menu.addItem((item) => item.setTitle("Citation gaps of one paper").setIcon("search-check").onClick(() => void this.openGaps()));
-    if (this.gapsSession?.last) menu.addItem((item) => item.setTitle("Open the last citation gaps report").setIcon("search-check").onClick(() => void this.openGaps()));
-    if (this.graph) menu.addItem((item) => item.setTitle("Open review graph").setIcon("network").onClick(() => void this.openGraph(this.graph)));
+    const names = new Map(this.settings.feeds.map((f) => [f.id, f.name]));
+    const run: Record<MenuAction, () => void> = {
+      "open-inbox": () => void this.openInbox(),
+      "scan-now": () => void this.scanNow(),
+      "review-new": () => void this.openReview("new"),
+      "review-resume": () => void this.openReview("resume"),
+      "open-graph": () => void this.openGraph(this.graph),
+      "gaps": () => void this.openGaps(),
+      "gaps-last": () => void this.openGaps(),
+      // Until the Improve tab exists (searches-merge plan, Phase 6) this is the search-effectiveness report.
+      "improve": () => void this.showEffectiveness(),
+      "find-dois": () => void this.openRefs(),
+      "check-setup": () => void this.openSetup(),
+    };
+    const menu = new Menu();
+    buildMenu({ resume: saved ? describeSession(saved, names) : null, hasGraph: this.graph !== null, hasGapsReport: Boolean(this.gapsSession?.last) }).forEach((section, i) => {
+      if (i > 0) menu.addSeparator();
+      menu.addItem((item) => item.setTitle(section.label).setIsLabel(true));
+      for (const entry of section.entries) menu.addItem((item) => item.setTitle(entry.title).setIcon(entry.icon).onClick(run[entry.action]));
+    });
     menu.showAtMouseEvent(evt);
   }
 

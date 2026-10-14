@@ -30,7 +30,11 @@ export interface InboxPaper {
   matched: string[];
   /** Which of the feed's search topics (1-based, in the feed's order) returned the paper; empty when unknown. */
   topics: number[];
+  /** Where the paper was added from, when not by a scan: "review" (the literature review). Written as `%%via:review%%`. */
+  origin?: PaperOrigin;
 }
+
+export type PaperOrigin = "review";
 
 export interface FeedSection {
   feedId: string;
@@ -166,7 +170,7 @@ function paperLine(p: InboxPaper): string {
   if (terms) bits.push(terms + (p.matched.length > 6 ? ", …" : ""));
   const star = p.tier === "priority" ? "⭐ " : "";
   const title = escapeMd(p.title) || "(no title)";
-  const found = p.topics.length > 0 ? `%%tp:${p.topics.join(",")}%% ` : "";
+  const found = (p.origin ? `%%via:${p.origin}%% ` : "") + (p.topics.length > 0 ? `%%tp:${p.topics.join(",")}%% ` : "");
   return `> - [ ] ${star}**${title}**${authors ? ` — ${authors}` : ""} · ${bits.join(" · ")} ${found}%%oa:${p.openalexId}:${TIER_CODE[p.tier]}%%`;
 }
 
@@ -243,6 +247,8 @@ export interface ParsedPaper {
   read: boolean;
   /** The search topics (1-based) that found the paper, from the line's hidden marker; empty for lines made before it existed. */
   topics: number[];
+  /** Where the line was added from (`%%via:review%%`); null for a scanned paper and for lines made before the marker existed. */
+  origin: PaperOrigin | null;
   /** The paper's title as the line shows it (the bold text, backslash escapes removed); "" if it cannot be read. */
   title: string;
   /** The authors text after the dash ("A. Author, B. Writer et al."), escapes removed; "" if none. */
@@ -276,6 +282,7 @@ const HEADER = /^>\s*\[!literature-feed(?:-unchecked|-synced)?\][+-]?\s.*%%feed:
 const ZOTERO_KEY = /zotero:\/\/select\/library\/items\/([A-Z0-9]{8})/;
 const DOI_LINK = /\]\(https:\/\/doi\.org\/(10\.[^)\s]+)\)/;
 const TOPICS = /%%tp:(\d+(?:,\d+)*)%%/;
+const VIA = /%%via:(review)%%/;
 const READ_LINK = /\[\[[^\]|]+\|Read\]\]/;
 const READ_PATH = /\[\[([^\]|]+)\|Read\]\]/;
 const TITLE_BLOCK = /^>\s*-\s\[[ xX-]\]\s(?:⭐\s)?\*\*(?:\\.|[^*])+\*\*/;
@@ -304,7 +311,7 @@ function detailsOfLine(line: string): Pick<ParsedPaper, "authors" | "venue" | "y
   const empty = { authors: "", venue: "", year: null, preprint: false, titleOnly: false, matched: [] };
   const head = TITLE_BLOCK.exec(line);
   if (!head) return empty;
-  let rest = line.slice(head[0].length).replace(/\s*%%tp:[\d,]+%%/, "").replace(DISMISS_MARK, "").replace(/\s*%%oa:[^%]+%%\s*$/, "");
+  let rest = line.slice(head[0].length).replace(/\s*%%via:[a-z]+%%/, "").replace(/\s*%%tp:[\d,]+%%/, "").replace(DISMISS_MARK, "").replace(/\s*%%oa:[^%]+%%\s*$/, "");
   let authors = "";
   if (rest.startsWith(" — ")) {
     const cut = rest.indexOf(" · ");
@@ -358,6 +365,7 @@ export function parseInbox(text: string): ParsedNote {
         doi: doiOfLine(line), read: READ_LINK.test(line),
         title: (LINE_TITLE.exec(line)?.[1] ?? "").replace(/\\(.)/g, "$1"),
         topics: (TOPICS.exec(line)?.[1] ?? "").split(",").filter((n) => n !== "").map(Number),
+        origin: (VIA.exec(line)?.[1] as PaperOrigin | undefined) ?? null,
         readLink: READ_PATH.exec(line)?.[1] ?? null,
         ...detailsOfLine(line),
       });
@@ -451,6 +459,30 @@ export function mergeIntoNote(existing: string, input: NoteInput): string {
 /** A new note when there is none, otherwise the existing one with the new papers added. */
 export function buildNote(existing: string | null, input: NoteInput): string {
   return existing === null ? renderNote(input) : mergeIntoNote(existing, input);
+}
+
+/** What adding papers by hand to the week's note did: the new text, the papers put in, and those already listed for that search. */
+export interface AddResult {
+  text: string;
+  added: InboxPaper[];
+  skipped: InboxPaper[];
+}
+
+/** Adds papers to one search's lists in the week's note (`existing` is null when the note is not there yet). */
+export function addToNote(existing: string | null, input: { week: string; scanned: string; feedId: string; feedName: string; papers: readonly InboxPaper[] }): AddResult {
+  const parsed = existing === null ? null : parseInbox(existing);
+  const present = new Set((parsed?.papers ?? []).filter((p) => p.feedId === input.feedId).map((p) => p.openalexId));
+  const seen = new Set<string>();
+  const added: InboxPaper[] = [];
+  const skipped: InboxPaper[] = [];
+  for (const p of input.papers) {
+    if (present.has(p.openalexId) || seen.has(p.openalexId)) skipped.push(p);
+    else added.push(p);
+    seen.add(p.openalexId);
+  }
+  const section = { feedId: input.feedId, feedName: input.feedName, papers: added };
+  const text = added.length === 0 && existing !== null ? existing : buildNote(existing, { week: input.week, scanned: parsed?.scanned || input.scanned, sections: [section] });
+  return { text, added, skipped };
 }
 
 export interface SyncedMark {

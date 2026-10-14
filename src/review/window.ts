@@ -4,7 +4,7 @@
 // nothing is lost when the tab is closed. Nothing is sent from here except the OpenAlex searches the user starts; the prompt only
 // goes to the clipboard.
 import { Menu, Notice, Setting, type App } from "obsidian";
-import { shortOpenAlexId } from "../inbox/write";
+import { shortOpenAlexId, type InboxPaper } from "../inbox/write";
 import type { Candidate } from "../openalex/client";
 import { extractJson } from "../prompts/schemas";
 import type { FeedConfig, Settings } from "../settings/data";
@@ -28,7 +28,7 @@ import { renderReviewNote, reviewNoteName } from "./note";
 import { DEFAULT_PROMPT_OPTIONS, buildLitReviewPrompt, checkLitReviewAnswer, paperLabel, type LitChecked } from "./prompt";
 import { buildRecord, diffPapers, feedFromSnapshot, runInfo, sha256Hex, snapshotFeed, type RecordLink, type ReviewRecord, type RunInfo } from "./record";
 import { describeSession, type ReviewSession } from "./session";
-import { REVIEW_COLUMNS, buildReviewRows, fitText, reviewChips, reviewSearchText, type ReviewRow } from "./review-rows";
+import { REVIEW_COLUMNS, buildReviewRows, fitText, reviewChips, reviewPaperToInbox, reviewSearchText, type ReviewRow } from "./review-rows";
 import { authorsShort } from "./authors-text";
 import { DataTable, type Column } from "../ui/data-table";
 
@@ -48,6 +48,8 @@ export interface ReviewHost {
   zoteroIndex: ZoteroIndex;
   /** Opens the Find DOIs tab with these titles as its list. */
   openRefsWith(titles: readonly string[]): Promise<void>;
+  /** Adds papers to one search's lists in this week's inbox note; says which went in and which were already listed. */
+  addToInbox(feedId: string, papers: readonly InboxPaper[]): Promise<{ added: InboxPaper[]; skipped: InboxPaper[] }>;
   flagSources(): FlagSources;
   /** The folder review notes go in ("" = the vault root). */
   reviewFolder(): string;
@@ -71,6 +73,8 @@ const FILL_DESC = "Replaces the box above with the papers of one search: the ite
 // Capitalised words (DOI, Crossref) sit in constants because the sentence-case lint rule reads literals only.
 const FIND_DOIS_DESC = "Looks the titles up on Crossref for their DOIs. It only suggests: type the DOI into the item in Zotero yourself.";
 const FIND_DOIS_BUTTON = "Find DOIs for these";
+// Holds the capitalised word Sync, which the sentence-case lint rule reads in literals only.
+const ADD_DESC = "Tick papers in the table, choose the search they belong to, and they join that search's list in this week's reading-inbox note, where Sync sends them to Zotero. Papers already listed for that search are left out.";
 const LEAVE_ONE_OUT_MAX = 40;
 const TIER_CHOICES: Record<ReviewOptions["minTier"], string> = { possible: "Possible and better", strong: "Strong and better", priority: "Priority only" };
 
@@ -113,6 +117,9 @@ export class ReviewPanel {
   private network: Network | null = null;
   private extras: NetworkExtras | null = null;
   private rows = NO_ROWS();
+  /** OpenAlex ids ticked in the papers table, to add to this week's inbox. */
+  private addTicks = new Set<string>();
+  private addSearchId = "";
   private gapIndex = 0;
   private gaps: { paper: string; result: GapResult; flags: Flags[] } | null = null;
   private answerText = "";
@@ -660,9 +667,25 @@ ${c.abstract ?? ""}`)).slice(0, 4000);
     const searches = this.feeds().map((f) => ({ id: f.id, name: f.name }));
     const rows = buildReviewRows(result.papers, this.flags, this.names(), this.seeds);
     const secondary = new Set(["year", "cited", "rank", "overlap"]);
+    this.addTicks = new Set([...this.addTicks].filter((id) => rows.some((r) => r.key === id)));
+    const addOut = this.out.createDiv();
+    const tickColumn: Column<ReviewRow> = {
+      key: "add", label: "Add",
+      render: (td, r) => {
+        const box = td.createEl("input", { type: "checkbox", cls: "literature-feed-tick" });
+        box.checked = this.addTicks.has(r.key);
+        box.setAttribute("aria-label", `Add ${r.label} to this week's inbox`);
+        box.addEventListener("change", () => {
+          if (box.checked) this.addTicks.add(r.key);
+          else this.addTicks.delete(r.key);
+          this.renderAddToInbox(addOut, rows);
+        });
+      },
+    };
+    this.renderAddToInbox(addOut, rows);
     const table = new DataTable<ReviewRow>(this.out, {
       app: this.host.app, storageKey: "review-papers", searchLabel: "Search the papers", empty: "No paper matches.", pageSize: Math.max(25, rows.length),
-      columns: REVIEW_COLUMNS.filter((c) => hasSeeds || (c.key !== "overlap" && c.key !== "fit")).map((c): Column<ReviewRow> => ({
+      columns: [tickColumn, ...REVIEW_COLUMNS.filter((c) => hasSeeds || (c.key !== "overlap" && c.key !== "fit")).map((c): Column<ReviewRow> => ({
         ...c, ...(secondary.has(c.key) ? { secondary: true } : {}), ...(c.key === "cited" || c.key === "overlap" ? { align: "end" as const } : {}),
         render: (td, r) => {
           if (c.key === "order") td.setText(r.label);
@@ -678,7 +701,7 @@ ${c.abstract ?? ""}`)).slice(0, 4000);
           else if (c.key === "searches") td.setText(r.searches.join(", "));
           else td.setText(c.csv?.(r) === undefined ? "" : String(c.csv(r)));
         },
-      })),
+      }))],
       chips: reviewChips(searches, hasSeeds), searchText: reviewSearchText, rowKey: (r) => r.key,
       defaultView: { chip: "all", query: "", sort: { by: "order", desc: false } },
     });
@@ -831,6 +854,55 @@ ${c.abstract ?? ""}`)).slice(0, 4000);
     this.checked = null;
     this.renderResult();
     this.save();
+  }
+
+  /** The search the ticked papers go to: the one chosen, else the one that found most of them, else the first. */
+  private addTarget(rows: readonly ReviewRow[]): string {
+    const list = this.feedList();
+    if (this.addSearchId !== "" && list.some((f) => f.id === this.addSearchId)) return this.addSearchId;
+    const counts = new Map<string, number>();
+    for (const r of rows) if (this.addTicks.has(r.key)) for (const id of r.feedIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+    const best = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+    return best ?? list[0]?.id ?? "";
+  }
+
+  /** The "Add N to this week's inbox" control above the papers table: which search, each ticked paper's fit, and the button. */
+  private renderAddToInbox(el: HTMLElement, rows: readonly ReviewRow[]): void {
+    el.empty();
+    const list = this.feedList();
+    if (list.length === 0) return;
+    const ticked = rows.filter((r) => this.addTicks.has(r.key));
+    const target = this.addTarget(rows);
+    new Setting(el)
+      .setName("Add to this week's inbox")
+      .setDesc(ADD_DESC)
+      .addDropdown((d) => {
+        for (const f of list) d.addOption(f.id, f.name);
+        d.setValue(target).onChange((v) => { this.addSearchId = v; this.renderAddToInbox(el, rows); });
+      })
+      .addButton((b) => {
+        b.setButtonText(`Add ${ticked.length} to this week's inbox`).setCta().setDisabled(ticked.length === 0 || target === "");
+        b.onClick(() => { b.setDisabled(true); void this.addTickedToInbox(target, ticked).then(() => this.renderResult()); });
+      });
+    for (const r of ticked) {
+      const fit = fitText(r);
+      if (fit !== "") el.createDiv({ cls: "literature-feed-meta", text: `${r.label} ${r.title}: ${fit}${fit === "Known" ? "" : " (against the known papers in the box above)"}` });
+    }
+  }
+
+  private async addTickedToInbox(feedId: string, ticked: readonly ReviewRow[]): Promise<void> {
+    const papers = (this.result?.papers ?? []).filter((p) => ticked.some((r) => r.key === p.id)).map((p) => reviewPaperToInbox(p, feedId));
+    if (papers.length === 0) return;
+    try {
+      const { added, skipped } = await this.host.addToInbox(feedId, papers);
+      for (const p of added) this.addTicks.delete(p.openalexId);
+      const name = this.feedList().find((f) => f.id === feedId)?.name ?? feedId;
+      const parts = [`Added ${added.length} to ${name} in this week's inbox.`];
+      if (skipped.length > 0) parts.push(`Already listed there: ${skipped.map((p) => p.title).join("; ")}.`);
+      new Notice(parts.join(" "), 8000);
+    } catch (e) {
+      new Notice(`Could not add to the inbox: ${e instanceof Error ? e.message : "unknown error"}`, 8000);
+    }
   }
 
   private renderGaps(): void {

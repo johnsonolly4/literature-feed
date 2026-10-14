@@ -68,7 +68,7 @@ Settled in the review: no remembered collection key (found by path only; Sync is
 - Done when: tests with invented papers (one outlier, two strands, a paper that fits another search better); on the cached data the test paper above is flagged and the two strands appear.
 - Depends on: Phase 2.
 
-### Phase 3 — Expand as the one gaps tool
+### Phase 3 — Expand as the one gaps tool (SKIPPED 2026-10-14 by the owner: they have built an alternative in Python to incorporate later; nothing built)
 - Citation gaps gains a fourth start: **a search's known papers** (set-level gaps: the existing reference-list path with the known DOIs).
 - The review's per-paper **Find gaps** opens Citation gaps on that paper instead of drawing its own list; its code in `window.ts` goes.
 - Files: `src/review/gaps-panel.ts`, `src/review/gaps-input.ts`, `src/review/window.ts`, `src/main.ts`; tests on the input and the hand-off.
@@ -81,7 +81,7 @@ Settled in the review: no remembered collection key (found by path only; Sync is
 - Done when: tests; the owner's ten papers show the same ranks as the table in this session's chat (seed order: 1, 2, 4, 6, 7, 9, 15, 25 among the fetched).
 - Depends on: Phase 2 (known-paper chip). Independent of Phase 3.
 
-### Phase 5 — Add to this week's inbox from Discover and Expand
+### Phase 5 — Add to this week's inbox from Discover and Expand (review side built 2026-10-14: `addToNote` and `%%via:review%%` in `write.ts`, `origin` through `sync.ts`/`map.ts`, Add column in `window.ts`, `addToInbox` in `main.ts`; the gaps side waits for the Python tool; per-search fit and "fits X better" not done, see BACKLOG)
 - A tick column in the review table and the gaps Works table; **Add N to this week's inbox** asks which search (Discover: the search that found it; Expand: chosen from a menu) and writes the lines with the inbox's own code (`mergeIntoNote`), with a provenance marker (review or gaps of which paper) that Sync turns into the Zotero Extra line and `found-by/openalex` tag as today. Papers already listed for that search are skipped and named. Each ticked paper shows its fit to the chosen search (Phase 2b) and, when it fits another search better, says so; the owner can still add it.
 - Files: `src/inbox/write.ts`, `src/inbox/sync.ts`, `src/review/window.ts`, `src/review/gaps-panel.ts`, `src/main.ts`; tests on the line format, the merge (no duplicate, ticks kept) and the Extra line.
 - Done when: tests; in `test-vault` one paper added from the review and one from gaps appear in the week's note, Sync sends them to the right collections, and the ledger counts them under their search.

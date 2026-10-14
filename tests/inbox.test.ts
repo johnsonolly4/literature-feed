@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Candidate } from "../src/openalex/client";
 import type { FeedConfig } from "../src/settings/data";
 import {
-  buildNote, buildPapers, doiUrl, escapeMd, isoWeek, mergeIntoNote, noteName, parseInbox, renderNote, shortOpenAlexId, weekLabel,
+  addToNote, buildNote, buildPapers, doiUrl, escapeMd, isoWeek, mergeIntoNote, noteName, parseInbox, renderNote, shortOpenAlexId, weekLabel,
   NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, setTick, tidySynced, waitingByFeed, waitingByTier, type FeedSection, type InboxPaper, type NoteInput,
 } from "../src/inbox/write";
 import { lipoicFeed } from "./fixtures/lipoic-feed";
@@ -181,15 +181,15 @@ describe("parseInbox", () => {
     expect(parseInbox(text)).toEqual({
       scanned: "2026-10-12",
       papers: [
-        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: ["lipoic acid"], dismissed: null },
-        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, matched: ["lipoic acid"], dismissed: null },
+        { openalexId: "W1", feedId: "lipoic", tier: "priority", ticked: true, synced: false, list: "ranked", key: null, doi: "10.1000/p.1", read: false, title: "Paper 1", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, origin: null, matched: ["lipoic acid"], dismissed: null },
+        { openalexId: "W2", feedId: "lipoic", tier: "unchecked", ticked: false, synced: false, list: "unchecked", key: null, doi: "10.1000/p.2", read: false, title: "Paper 2", topics: [], authors: "A. Author", venue: "Journal", year: 2026, preprint: false, titleOnly: false, readLink: null, origin: null, matched: ["lipoic acid"], dismissed: null },
       ],
     });
   });
 
   it("ignores lines that are not ours, and accepts an upper-case X", () => {
     const text = "random\n- [ ] a task %%oa:W1:p%%\n> [!literature-feed]+ F %%feed:f%%\n> - [X] **t** %%oa:W7:s%%\n> - [ ] no marker";
-    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [], authors: "", venue: "", year: null, preprint: false, titleOnly: false, readLink: null, matched: [], dismissed: null }]);
+    expect(parseInbox(text).papers).toEqual([{ openalexId: "W7", feedId: "f", tier: "strong", ticked: true, synced: false, list: "ranked", key: null, doi: null, read: false, title: "t", topics: [], authors: "", venue: "", year: null, preprint: false, titleOnly: false, readLink: null, origin: null, matched: [], dismissed: null }]);
   });
 });
 
@@ -559,5 +559,47 @@ describe("mergeIntoNote", () => {
     expect(buildNote(null, first)).toBe(renderNote(first));
     const note = renderNote(first);
     expect(buildNote(note, { ...first, scanned: "2026-10-13" })).toBe(mergeIntoNote(note, { ...first, scanned: "2026-10-13" }));
+  });
+});
+
+describe("adding papers by hand (addToNote)", () => {
+  const args = { week: "2026-W42", scanned: "2026-10-14", feedId: "lipoic", feedName: "Lipoic acid copolymers" };
+  const fromReview = (n: number): InboxPaper => ({ ...paper(n, "possible"), origin: "review", topics: [2] });
+
+  it("makes the note when there is none, marks the lines, and reads the mark back", () => {
+    const r = addToNote(null, { ...args, papers: [fromReview(1)] });
+    expect(r.added.map((p) => p.openalexId)).toEqual(["W1"]);
+    expect(r.text).toContain("%%via:review%% %%tp:2%% %%oa:W1:o%%");
+    const [p] = parseInbox(r.text).papers;
+    expect(p).toMatchObject({ openalexId: "W1", feedId: "lipoic", origin: "review", topics: [2], title: "Paper 1" });
+    expect(p.matched).toEqual(["lipoic acid"]);
+  });
+
+  it("scanned lines have no origin, and a line without the mark parses as before", () => {
+    const text = renderNote(input([{ feedId: "lipoic", feedName: "L", papers: [paper(1, "strong")] }]));
+    expect(text).not.toContain("%%via:");
+    expect(parseInbox(text).papers[0].origin).toBeNull();
+  });
+
+  it("keeps every existing line and tick, skips papers already listed for that search, and names them", () => {
+    const base = renderNote(input([{ feedId: "lipoic", feedName: "Lipoic acid copolymers", papers: [paper(1, "strong"), paper(2, "possible")] }])).replace("> - [ ] **Paper 1**", "> - [x] **Paper 1**");
+    const r = addToNote(base, { ...args, papers: [fromReview(1), fromReview(3), fromReview(3)] });
+    expect(r.added.map((p) => p.openalexId)).toEqual(["W3"]);
+    expect(r.skipped.map((p) => p.openalexId)).toEqual(["W1", "W3"]);
+    expect(parseInbox(r.text).papers.map((p) => `${p.openalexId}:${p.ticked}`)).toEqual(["W1:true", "W2:false", "W3:false"]);
+    expect(parseInbox(r.text).scanned).toBe("2026-10-12");
+  });
+
+  it("returns the note unchanged when everything is already there", () => {
+    const base = renderNote(input([{ feedId: "lipoic", feedName: "L", papers: [paper(1, "strong")] }]));
+    const r = addToNote(base, { ...args, papers: [fromReview(1)] });
+    expect(r.text).toBe(base);
+    expect(r.added).toEqual([]);
+  });
+
+  it("lists the same paper under another search as a new line", () => {
+    const base = renderNote(input([{ feedId: "lipoic", feedName: "L", papers: [paper(1, "strong")] }]));
+    const r = addToNote(base, { ...args, feedId: "other", feedName: "Other", papers: [fromReview(1)] });
+    expect(parseInbox(r.text).papers.map((p) => `${p.feedId}:${p.openalexId}`)).toEqual(["lipoic:W1", "other:W1"]);
   });
 });

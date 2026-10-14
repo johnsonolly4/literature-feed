@@ -48,6 +48,8 @@ export function feedTag(feedId: string): string {
 export interface Provenance {
   feedName: string;
   topics: readonly number[];
+  /** "review": the paper was added by hand from the literature review, not found by a scan. */
+  origin?: "review";
 }
 
 /** The tag every item that a feed's OpenAlex search found first gets (next to `feed/<id>`). */
@@ -56,7 +58,7 @@ export const FOUND_BY_TAG = "found-by/openalex";
 export function foundByLine(p: Provenance): string {
   const name = p.feedName.replace(/\s+/g, " ").trim();
   const topics = p.topics.length === 0 ? "" : `, topic${p.topics.length === 1 ? "" : "s"} ${p.topics.length === 1 ? p.topics[0] : `${p.topics.slice(0, -1).join(", ")} and ${p.topics[p.topics.length - 1]}`}`;
-  return `Found by: OpenAlex search, feed "${name}"${topics}`;
+  return `Found by: OpenAlex ${p.origin === "review" ? "review" : "search"}, feed "${name}"${topics}`;
 }
 
 export function toZoteroItem(work: OpenAlexWork, feedId: string, collectionKeys: readonly string[], found?: Provenance): ZoteroItem {

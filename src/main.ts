@@ -1,9 +1,9 @@
 import { MarkdownView, Menu, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { registerInboxBlock } from "./inbox/block";
-import { localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
+import { inboxPath, localDay, runScan, scanCounts, updatedSeen, type ScanOutcome } from "./inbox/scan";
 import { describeSync, findPending, runSync } from "./inbox/sync";
 import { buildLiteratureIndex, describeRefresh, findLiteratureNote, isFinished, type LiteratureNote, type RefreshReport } from "./inbox/state";
-import { NOTE_NAME_PATTERN, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setDismissed, setTick, tidySynced, type DismissReason, type ParsedPaper } from "./inbox/write";
+import { NOTE_NAME_PATTERN, addToNote, ensureNoteClasses, markRead, markSynced, mergeIntoNote, parseInbox, renderNote, setDismissed, setTick, tidySynced, weekLabel, type AddResult, type DismissReason, type InboxPaper, type ParsedPaper } from "./inbox/write";
 import { emptyLedger, forgetFeeds, normaliseLedger, recordDefinitions, recordDropped, recordScan, updateFromNotes, type Ledger } from "./ledger/ledger";
 import { topicStatRows, titlesByVerdict, type TopicStatRow } from "./prompts/build";
 import { emptyDecisions, normaliseDecisions, type Decisions } from "./prompts/decisions";
@@ -942,6 +942,32 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
   /** The inbox notes (by their file name) in the inbox folder, with their text. */
   private async readInboxNotes(): Promise<{ file: TFile; text: string }[]> {
     return Promise.all(this.inboxFiles().map(async (file) => ({ file, text: await this.app.vault.read(file) })));
+  }
+
+  /** Adds papers to one search's lists in this week's note (made if it is not there), without touching any line already in it. */
+  async addToInbox(feedId: string, papers: readonly InboxPaper[]): Promise<{ added: InboxPaper[]; skipped: InboxPaper[] }> {
+    const feed = this.settings.feeds.find((f) => f.id === feedId);
+    if (!feed) throw new Error("that search no longer exists");
+    const { vault } = this.app;
+    const now = new Date();
+    const path = normalizePath(inboxPath(this.settings.inboxFolder, now));
+    const args = { week: weekLabel(now), scanned: localDay(now), feedId, feedName: feed.name, papers };
+    let result: AddResult;
+    const existing = vault.getFileByPath(path);
+    if (existing) {
+      result = addToNote(null, args);
+      await vault.process(existing, (current) => {
+        result = addToNote(ensureNoteClasses(tidySynced(current)), args);
+        return result.text;
+      });
+    } else {
+      result = addToNote(null, args);
+      const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      if (folder !== "" && !vault.getFolderByPath(folder)) await vault.createFolder(folder);
+      await vault.create(path, result.text);
+    }
+    await this.updateLedgerNow();
+    return { added: result.added, skipped: result.skipped };
   }
 
   /** The weekly notes (by file name) in the inbox folder. */

@@ -4,7 +4,7 @@ import type { OpenAlexClient } from "../openalex/client";
 import type { FeedConfig } from "../settings/data";
 import { planCollection, type ZoteroClient, type ZoteroCollection, type ZoteroFound } from "../zotero/client";
 import { bareDoi, feedTag, toZoteroItem } from "../zotero/map";
-import { parseInbox, type SyncedMark } from "./write";
+import { parseInbox, type PaperOrigin, type SyncedMark } from "./write";
 
 export interface PendingPaper {
   path: string;
@@ -12,6 +12,8 @@ export interface PendingPaper {
   openalexId: string;
   /** The search topics (1-based) that found the paper, read from its line; empty when unknown. */
   topics: number[];
+  /** Where the line was added from (the review), or null for a scanned paper. */
+  origin: PaperOrigin | null;
 }
 
 /**
@@ -23,7 +25,7 @@ export function findPending(notes: readonly { path: string; text: string }[]): P
   for (const note of notes) {
     for (const p of parseInbox(note.text).papers) {
       const wanted = !p.dismissed && (p.list === "synced" ? !p.ticked : p.ticked && !p.synced);
-      if (wanted) out.push({ path: note.path, feedId: p.feedId, openalexId: p.openalexId, topics: p.topics });
+      if (wanted) out.push({ path: note.path, feedId: p.feedId, openalexId: p.openalexId, topics: p.topics, origin: p.origin });
     }
   }
   return out;
@@ -140,7 +142,7 @@ export async function runSync(feeds: readonly FeedConfig[], pending: readonly Pe
         item = (await deps.zotero.addToCollectionsAndTag(found, keys, [feedTag(feed.id)])).item;
         outcome = "existing";
       } else {
-        item = await deps.zotero.createItem(toZoteroItem(work, feed.id, keys, { feedName: feed.name, topics: p.topics }));
+        item = await deps.zotero.createItem(toZoteroItem(work, feed.id, keys, { feedName: feed.name, topics: p.topics, ...(p.origin ? { origin: p.origin } : {}) }));
         outcome = "added";
       }
       // Read it back: a link in the note means the item is really in the library, in the collections it was meant for.

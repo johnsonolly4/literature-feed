@@ -96,6 +96,10 @@ describe("where the item was found", () => {
     expect(foundByLine({ feedName: "  A   B ", topics: [] })).toContain('feed "A B"');
   });
 
+  it("says the review when the paper was added from it", () => {
+    expect(foundByLine({ feedName: "F", topics: [], origin: "review" })).toBe('Found by: OpenAlex review, feed "F"');
+  });
+
   it("adds the found-by tag and the Extra line after the OpenAlex id, next to the feed tag", () => {
     const item = toZoteroItem(work(), "f", ["C1"], { feedName: "Feed", topics: [1] });
     expect(item.tags).toEqual([{ tag: feedTag("f") }, { tag: FOUND_BY_TAG }]);

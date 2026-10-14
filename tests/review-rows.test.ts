@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Candidate } from "../src/openalex/client";
 import { orderPapers, type ReviewPaper } from "../src/review/collect";
 import type { Flags } from "../src/review/flags";
-import { REVIEW_COLUMNS, buildReviewRows, fitText, reviewChips, reviewSearchText } from "../src/review/review-rows";
+import { REVIEW_COLUMNS, buildReviewRows, fitText, reviewChips, reviewPaperToInbox, reviewSearchText } from "../src/review/review-rows";
 import { buildSeedProfile, seedScore } from "../src/review/seeds";
 import { viewRows, chipCounts, rowsToCsv, type TableModel } from "../src/ui/table-model";
 
@@ -83,5 +83,31 @@ describe("review rows", () => {
   it("show no fit or known marks when there are no known papers", () => {
     const plain = buildReviewRows(papers.map((p) => ({ ...p, seed: undefined })), flags, names, null);
     expect(plain.every((r) => r.fit === null && r.seed === null)).toBe(true);
+  });
+});
+
+describe("adding review papers to the inbox", () => {
+  const other = buildSeedProfile(["10.1/o1", "10.1/o2", "10.1/o3"], [
+    { ...cand(11, ["Q1", "Q2", "Q3"], ["Ola Ng"]), doi: "https://doi.org/10.1/o1" },
+    { ...cand(12, ["Q1", "Q2", "Q4"], ["Ola Ng"]), doi: "https://doi.org/10.1/o2" },
+    { ...cand(13, ["Q2", "Q3", "Q5"], ["Ola Ng"]), doi: "https://doi.org/10.1/o3" },
+  ]);
+  const q = paper("q", ["Q1", "Q2", "Q3"], ["Ola Ng"]);
+
+  it("names the search a paper fits better when the other searches' known papers are given", () => {
+    const [plain] = buildReviewRows([q], [flags[0]], names, profile);
+    expect(fitText(plain)).toBe("Doesn't fit");
+    const [better] = buildReviewRows([q], [flags[0]], names, profile, [{ name: "Beta", profile: other }]);
+    expect(fitText(better)).toBe("Fits Beta better");
+  });
+
+  it("makes an inbox entry from the search's own find, marked as from the review", () => {
+    const p = paper("W9", [], [], { doi: "10.1/x", abstract: "text", finds: [{ feedId: "a", tier: "priority", matched: ["lipoic acid"], topics: [2] }, { feedId: "b", tier: "possible", matched: [], topics: [1] }] });
+    expect(reviewPaperToInbox(p, "a")).toMatchObject({ openalexId: "W9", tier: "priority", matched: ["lipoic acid"], topics: [2], origin: "review", noAbstract: false });
+    expect(reviewPaperToInbox(p, "b").tier).toBe("possible");
+  });
+
+  it("gives a search that did not find the paper the possible tier and no terms", () => {
+    expect(reviewPaperToInbox(paper("W8", [], []), "zzz")).toMatchObject({ tier: "possible", matched: [], topics: [], noAbstract: true });
   });
 });

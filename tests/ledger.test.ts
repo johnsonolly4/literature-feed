@@ -30,6 +30,13 @@ describe("updateFromNotes", () => {
     expect(ledger.papers["a/W1"].ticked).toBeUndefined();
   });
 
+  it("counts a line added by hand from the review under the search it was added to", () => {
+    const ledger = emptyLedger();
+    updateFromNotes(ledger, [{ name: NOTE, papers: [paper("W5", { feedId: "b", topics: [2], origin: "review" })] }], "2026-10-13");
+    expect(ledger.papers["b/W5"]).toMatchObject({ title: "Paper W5", tier: "strong", start: "2026-10-12", topics: [2] });
+    expect(ledger.papers["a/W5"]).toBeUndefined();
+  });
+
   it("stamps each outcome once, on the day it is first seen, and never takes it back", () => {
     const ledger = emptyLedger();
     updateFromNotes(ledger, [{ name: NOTE, papers: [paper("W1")] }], "2026-10-13");

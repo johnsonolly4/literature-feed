@@ -1,6 +1,6 @@
 // The rows of the review's papers table, and its columns, chips and search text. Pure: the window only draws them (with the UI kit's
 // DataTable). The rows keep the order of the result (rank, then the order chosen in the window), which is the table's default sort.
-import type { ListedTier } from "../inbox/write";
+import type { InboxPaper, ListedTier } from "../inbox/write";
 import type { ReviewPaper } from "./collect";
 import { fitOfNew, type Fit } from "./coherence";
 import type { Flags } from "./flags";
@@ -34,17 +34,33 @@ export const TIER_ORDER: readonly ListedTier[] = ["priority", "strong", "possibl
 export const TIER_NAME: Record<ListedTier, string> = { priority: "Priority", strong: "Strong", possible: "Possible", unchecked: "No abstract" };
 
 /** One row per paper, in the order given. `flags` is parallel to `papers`. */
-export function buildReviewRows(papers: readonly ReviewPaper[], flags: readonly Flags[], names: ReadonlyMap<string, string>, profile: SeedProfile | null): ReviewRow[] {
+export function buildReviewRows(
+  papers: readonly ReviewPaper[], flags: readonly Flags[], names: ReadonlyMap<string, string>, profile: SeedProfile | null,
+  /** The known papers of the other searches, when they are at hand: a paper that does not fit then names the search it fits better. */
+  others: readonly { name: string; profile: SeedProfile }[] = [],
+): ReviewRow[] {
   return papers.map((p, i) => {
     const feedIds = [...new Set(p.finds.map((f) => f.feedId))];
     const fit = profile && !p.seed?.isSeed
-      ? fitOfNew({ id: p.id, refs: [...new Set(p.referencedWorks)], authors: [...new Set(p.authors.map(authorKey).filter((k) => k !== ""))] }, profile)
+      ? fitOfNew({ id: p.id, refs: [...new Set(p.referencedWorks)], authors: [...new Set(p.authors.map(authorKey).filter((k) => k !== ""))] }, profile, others)
       : null;
     return {
       key: p.id, index: i, label: paperLabel(i), title: p.title, authors: p.authors, year: p.year, citedBy: p.citedByCount, tier: p.tier,
       seed: p.seed ?? null, fit, feedIds, searches: feedIds.map((id) => names.get(id) ?? id), flags: flags[i] ?? { zotero: null, vault: null, listedBefore: [] },
     };
   });
+}
+
+/**
+ * The inbox entry for a review paper under one search: the tier, terms and topics are that search's own find; a search that did
+ * not find the paper gets it at "possible" (the user chose to add it). The line is marked as coming from the review.
+ */
+export function reviewPaperToInbox(p: ReviewPaper, feedId: string): InboxPaper {
+  const find = p.finds.find((f) => f.feedId === feedId);
+  return {
+    openalexId: p.id, title: p.title, authors: p.authors, venue: p.venue, year: p.year, publicationDate: p.publicationDate, doi: p.doi,
+    isPreprint: p.isPreprint, noAbstract: !p.abstract?.trim(), tier: find?.tier ?? "possible", matched: find?.matched ?? [], topics: find?.topics ?? [], origin: "review",
+  };
 }
 
 /** The chips: All, one per rank present, one per search, what you have, and (with known papers) known and fitting. */

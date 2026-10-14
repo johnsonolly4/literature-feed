@@ -21,6 +21,7 @@ import { crossrefRequester } from "./refs/request";
 import { prefillSession } from "./refs/prefill";
 import { REFS_VIEW, RefsView } from "./refs/view";
 import { GAPS_VIEW, GapsView } from "./review/gaps-view";
+import { IMPROVE_VIEW, ImproveView } from "./improve/view";
 import { emptyGapsSession, normaliseGapsSession, type GapsSession } from "./review/gaps-input";
 import { GAPS_KIND, gapsRecordFromNote, parseGapsSnapshot, sessionFromRecord } from "./review/gaps-note";
 import { REPORT_BLOCK, reportsInNote, type ReportKind } from "./ui/report-block";
@@ -36,7 +37,7 @@ import { createSeedCollection } from "./setup/seed-collection";
 import type { IntegrationInfo } from "./setup/integrate";
 import { SetupModal, type SetupHost } from "./setup/setup-modal";
 import { buildOverlap, overlapMarkdown } from "./ledger/overlap";
-import { buildReport, reportMarkdown } from "./ledger/report";
+import { buildReport, reportMarkdown, type Report } from "./ledger/report";
 import { ReportModal } from "./ledger/report-modal";
 import { OpenAlexClient } from "./openalex/client";
 import { obsidianRequester } from "./openalex/request";
@@ -107,6 +108,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.registerView(REFS_VIEW, (leaf) => new RefsView(leaf, this));
     this.addCommand({ id: "find-dois", name: nameOf("find-dois"), callback: () => void this.openRefs() });
     this.registerView(GAPS_VIEW, (leaf) => new GapsView(leaf, this));
+    this.registerView(IMPROVE_VIEW, (leaf) => new ImproveView(leaf, this));
+    this.addCommand({ id: "improve-search", name: nameOf("improve-search"), callback: () => this.chooseImprove() });
     this.addCommand({ id: "citation-gaps", name: nameOf("citation-gaps"), callback: () => void this.openGaps() });
     this.registerView(REVIEW_VIEW, (leaf) => {
       const view = new ReviewView(leaf, this);
@@ -515,6 +518,40 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  /** Opens the Improve tab for one search (the tab that is open is pointed at it). */
+  async openImprove(feedId: string): Promise<void> {
+    await this.updateLedgerNow();
+    const existing = this.app.workspace.getLeavesOfType(IMPROVE_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    await leaf.setViewState({ type: IMPROVE_VIEW, active: true, state: { feedId } });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** Improve for the only search, or a menu of the searches to choose from. */
+  private chooseImprove(evt?: MouseEvent): void {
+    const feeds = this.settings.feeds;
+    if (feeds.length === 0) {
+      new Notice("Add a search in the settings first.");
+      return;
+    }
+    if (feeds.length === 1) {
+      void this.openImprove(feeds[0].id);
+      return;
+    }
+    const menu = new Menu();
+    for (const f of feeds) menu.addItem((item) => item.setTitle(f.name).onClick(() => { void this.openImprove(f.id); }));
+    if (evt) menu.showAtMouseEvent(evt);
+    else menu.showAtPosition({ x: window.innerWidth / 2, y: window.innerHeight / 3 });
+  }
+
+  /** The effectiveness report for the Improve tab, with the ledger brought up to date from the inbox notes first. */
+  async improveReport(): Promise<Report> {
+    await this.saveOpenInboxNotes();
+    const inbox = (await this.readInboxNotes()).map((n) => ({ name: n.file.name, papers: parseInbox(n.text).papers }));
+    await this.recordLedger(inbox);
+    return buildReport(this.ledger, this.settings.feeds, localDay(new Date()), this.settings.dismissAfterWeeks);
+  }
+
   /** Opens the citation-gaps tool in a tab (the one that is open, if any). */
   async openGaps(): Promise<void> {
     await this.updateLedgerNow();
@@ -622,8 +659,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       "open-graph": () => void this.openGraph(this.graph),
       "gaps": () => void this.openGaps(),
       "gaps-last": () => void this.openGaps(),
-      // Until the Improve tab exists (searches-merge plan, Phase 6) this is the search-effectiveness report.
-      "improve": () => void this.showEffectiveness(),
+      "improve": () => this.chooseImprove(evt),
       "find-dois": () => void this.openRefs(),
       "check-setup": () => void this.openSetup(),
     };

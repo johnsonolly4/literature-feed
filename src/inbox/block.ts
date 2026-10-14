@@ -23,6 +23,8 @@ export interface BlockHost {
   toggleTick(path: string, feedId: string, openalexId: string, ticked: boolean): Promise<void>;
   /** Dismisses one paper's line (and why), or takes the dismissal back with null. */
   setDismissed(path: string, feedId: string, openalexId: string, reason: DismissReason | null): Promise<void>;
+  /** Opens the Improve tab of one search. */
+  openImprove(feedId: string): Promise<void>;
   /** A search's seed collection in the local Zotero index, or why there is none. */
   seedTargetFor(feedId: string): { key: string; path: string } | { error: string };
   /** Puts a synced paper's Zotero item in the search's seed collection (or with `undo` takes it out). Throws a readable message. */
@@ -32,6 +34,7 @@ export interface BlockHost {
 }
 
 const VIEW_KEY = "literature-feed-view";
+const IMPROVE_HINT = "Open this search's Improve tab";
 const FILTERS: FilterKey[] = ["all", "in-zotero", "ticked", "new", "read", "processed", "dismissed"];
 const SORTABLE: { key: SortKey; label: string }[] = [
   { key: "status", label: "Status" }, { key: "paper", label: "Paper" }, { key: "tier", label: "Tier" }, { key: "year", label: "Year" },
@@ -193,6 +196,7 @@ class StatusBlock extends MarkdownRenderChild {
     if (card.description !== "") box.createDiv({ cls: "literature-feed-meta", text: card.description });
     if (card.funnel.listed === 0) {
       box.createDiv({ cls: "literature-feed-meta", text: "No papers in this note." });
+      this.improveButton(box.createDiv({ cls: "literature-feed-buttons" }), card.feedId);
       return;
     }
     const list = box.createDiv({ cls: "literature-feed-toread" });
@@ -215,6 +219,11 @@ class StatusBlock extends MarkdownRenderChild {
       this.saveView();
       void this.render();
     });
+    this.improveButton(buttons, card.feedId);
+  }
+
+  private improveButton(parent: HTMLElement, feedId: string): void {
+    parent.createEl("button", { text: "Improve", attr: { title: IMPROVE_HINT } }).addEventListener("click", () => { void this.host.openImprove(feedId); });
   }
 
   /** Papers whose literature note has its takeaway filled in ("feedId|openalexId"). */

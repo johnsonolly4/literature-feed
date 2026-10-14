@@ -93,7 +93,7 @@ Settled in the review: no remembered collection key (found by path only; Sync is
 - Done when: tests; in `test-vault` a synced paper is promoted and shows up in the search's known papers count and in Zotero's seed collection.
 - Depends on: Phase 2, 2b.
 
-### Phase 6 — Improve tab per search
+### Phase 6 — Improve tab per search (built 2026-10-14 without the library-candidates list and with the LLM prompts as buttons: `src/improve/model.ts`, `view.ts`; unit tests only, see BACKLOG)
 - A tab per search with four sections on the kit:
   - **How it is doing**: topic statistics and wanted/dismissed rates from the ledger, with the "weak until about 20 decided papers" note.
   - **Overlap**: shared papers and dropped ids against the other searches.

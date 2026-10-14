@@ -29,6 +29,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { id: "resume-review", group: "discover", title: "Resume the last literature review" },
   { id: "repeat-review", group: "discover", title: "Repeat the review in this note" },
   { id: "citation-gaps", group: "expand", title: "Citation gaps of one paper" },
+  { id: "improve-search", group: "improve", title: "Improve a search" },
   { id: "search-effectiveness", group: "improve", title: "Show search effectiveness" },
   { id: "llm-review", group: "improve", title: "Review a search with an LLM" },
   { id: "llm-topics", group: "improve", title: "Tweak search terms with an LLM" },
@@ -88,7 +89,6 @@ export function buildMenu(state: MenuState): MenuSection[] {
     ],
     discover: [{ action: "review-new", title: "New literature review", icon: "plus" }],
     expand: [{ action: "gaps", title: "Citation gaps of one paper", icon: "search-check" }],
-    // Until the Improve tab exists this opens the search-effectiveness report.
     improve: [{ action: "improve", title: "Improve a search", icon: "sliders-horizontal" }],
     tools: [
       { action: "find-dois", title: "Find DOIs for a reference list", icon: "list-checks" },

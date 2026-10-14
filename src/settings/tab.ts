@@ -247,6 +247,7 @@ export class LiteratureFeedSettingTab extends PluginSettingTab {
             feed.enabled = v;
             this.saveSoon();
           }))
+          .addExtraButton((b) => b.setIcon("sliders-horizontal").setTooltip("Improve this search").onClick(() => void this.host.openImprove(feed.id)))
           .addExtraButton((b) => b.setIcon("pencil").setTooltip("Edit").onClick(() => this.editFeed(feed)))
           .addExtraButton((b) => b.setIcon("copy").setTooltip("Duplicate").onClick(() => void this.duplicate(feed)))
           .addExtraButton((b) => b.setIcon("download").setTooltip("Export as a .json file").onClick(() => void this.exportFeed(feed)));

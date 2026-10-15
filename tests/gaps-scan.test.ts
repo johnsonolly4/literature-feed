@@ -5,6 +5,7 @@ import { Budget } from "../src/review/budget";
 import { emptyCache } from "../src/review/cache";
 import { emptyGapsSession, estimateGaps, normaliseGapsSession } from "../src/review/gaps-input";
 import { runGaps, type GapsClient, type ScanEstimate } from "../src/review/gaps-fetch";
+import { gapsRecordFromNote, gapsSnapshot, parseGapsSnapshot, renderGapsNote, sessionFromRecord } from "../src/review/gaps-note";
 import { WORK_CHIPS, WORK_COLUMNS, buildWorkRows, workSearchText } from "../src/review/gaps-rows";
 import { viewRows, type TableModel } from "../src/ui/table-model";
 
@@ -120,5 +121,44 @@ describe("the saved switch", () => {
     const withScan = estimateGaps({ kind: "work", doi: "10.1000/a", id: null }, false, 0, true);
     expect(base.scanLater).toBe(false);
     expect(withScan).toEqual({ ...base, scanLater: true });
+  });
+});
+
+describe("the gaps note with a scan", () => {
+  const none = { zotero: null, vault: null, listedBefore: [] };
+  const render = async (scan: Parameters<typeof runGaps>[5]) => {
+    const { deps } = mk();
+    const run = await runGaps(input, deps, 3, null, [], scan);
+    const text = renderGapsNote({ date: "2026-10-15", ranAt: "2026-10-15T10:00:00Z", input, minCount: 3, run, flags: run.gaps.map(() => none), similarFlags: (run.similar?.rows ?? []).map(() => none) });
+    return { run, text };
+  };
+
+  it("lists what the neighbours cite with the thresholds and the skipped references", async () => {
+    const { text } = await render({});
+    expect(text).toContain("## Cited by similar papers");
+    expect(text).toContain("at least 3 of them");
+    expect(text).toContain("Skipped (cited 2000 times or more): Invented work 6.");
+    const row = (name: string): string => text.split(/\r?\n/).find((l) => l.startsWith("|") && l.includes(name) && l.includes("of 3")) ?? "";
+    expect(row("Only the neighbours cite this")).toContain("| 3 of 3 |  |");
+    expect(row("Found on both routes")).toContain("| 3 of 3 | yes |");
+  });
+
+  it("keeps the scan in the record and the snapshot, and repeating the run switches it on", async () => {
+    const { run, text } = await render({});
+    const rec = gapsRecordFromNote(text)!;
+    expect(rec.similar).toMatchObject({ minShared: 5, neighbours: 3, minimum: 3 });
+    expect(rec.similar?.rows.map((r) => r.id)).toEqual(["W200", "W201"]);
+    expect(sessionFromRecord(rec, emptyGapsSession()).similar).toBe(true);
+    const snap = parseGapsSnapshot(JSON.parse(JSON.stringify(gapsSnapshot("t", input, 3, run))))!;
+    expect(snap.run.similar?.rows[0].paper?.abstract).toBeNull();
+    expect(snap.run.similar?.bothIds).toEqual(["W200"]);
+  });
+
+  it("has no scan section when the scan did not run, and the old record repeats without it", async () => {
+    const { text } = await render(null);
+    expect(text).not.toContain("Cited by similar papers");
+    const rec = gapsRecordFromNote(text)!;
+    expect(rec.similar ?? null).toBeNull();
+    expect(sessionFromRecord(rec, emptyGapsSession()).similar).toBe(false);
   });
 });

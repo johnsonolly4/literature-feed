@@ -14,7 +14,8 @@ import type { ReferenceSearcher } from "../refs/resolve";
 import { authorsShort } from "./authors-text";
 import { authorIdFor, authorShares, couldHaveBeenCited, worksBy, type AuthorRow, type WorkRef } from "./gaps-authors";
 import { googleUrl, scholarUrl, searchQuery } from "./search-links";
-import { findAuthorWork, runGaps, toWorkRef, type AuthorWorkResult, type GapsClient, type GapsRun } from "./gaps-fetch";
+import { findAuthorWork, runGaps, toWorkRef, type AuthorWorkResult, type GapsClient, type GapsRun, type ScanEstimate } from "./gaps-fetch";
+import { HEAVY_CITATIONS } from "./network-fetch";
 import { renderGapsNote } from "./gaps-note";
 import { buildAuditPrompt, checkAuditAnswer, verdictFor, type AuditAnswer } from "./authors-prompt";
 import { createPromptPanel } from "../ui/prompt-panel";
@@ -47,6 +48,9 @@ export interface GapsHost {
 /** Kept as constants: they hold capitalised words, which the sentence-case lint rule reads only in literals. */
 const EXTRA_NAME = "Add references by DOI";
 const EXTRA_DESC = "DOIs of works the paper cites that OpenAlex or the pasted list left out. They count as cited, and their own references are read too. Paste any text: the DOIs are picked out.";
+const SIMILAR_NAME = "Also find similar papers";
+const SIMILAR_DESC = "Reads the works that cite the references, finds the ones that share at least five of them, and lists what those similar papers cite and the paper does not. Costs more; the price is shown first.";
+const CAVEAT = "Pointers, not verdicts. In one test of the source tool, 13 of 30 held-out references came back. The similar papers are a modelling choice (how many, how many references they share), and the counts here depend on it.";
 const AUDIT_DESC = "A prompt for a chat that can search the web: it tests whether the flagged authors are really under- or over-represented, or an artefact (a merged namesake, a work out after the paper, another field).";
 const OLD_RUN = "This run was saved before author details were kept, so the authors table and the author view are empty. Press Find the gaps again: it is free from the cache.";
 const SEARCH_UNFOUND_NAME = "Also search the ones not found in OpenAlex";
@@ -162,6 +166,8 @@ export class GapsPanel {
           this.saveSoon();
         });
       });
+    new Setting(grid).setName(SIMILAR_NAME).setDesc(SIMILAR_DESC)
+      .addToggle((t) => t.setValue(this.s.similar).onChange((v) => { this.s.similar = v; this.estimate = null; this.saveSoon(); }));
     new Setting(body).addButton((b) => b.setButtonText("Estimate the cost").setCta().onClick(() => this.doEstimate()));
     this.out = el.createDiv();
     const last = this.s.last;
@@ -240,7 +246,7 @@ export class GapsPanel {
   private doEstimate(): void {
     const input = this.input();
     if (input === null) return;
-    const e = estimateGaps(input, this.s.deeper, input.kind === "references" ? 0 : parseDoiList(this.s.extraDois).length);
+    const e = estimateGaps(input, this.s.deeper, input.kind === "references" ? 0 : parseDoiList(this.s.extraDois).length, this.s.similar);
     const limit = this.host.settings.reviewBudgetUsd;
     const over = e.usd > limit + 1e-9;
     const parts = [e.free > 0 ? `${e.free} free record` : "", e.filtered > 0 ? `up to ${e.filtered} lookups` : "", e.searches > 0 ? `${e.searches} search${e.searches === 1 ? "" : "es"}` : ""].filter((p) => p !== "");
@@ -249,6 +255,7 @@ export class GapsPanel {
     this.out.empty();
     const box = createSection(this.out, { title: "Cost" }).body;
     box.createEl("p", { text });
+    if (e.scanLater) box.createEl("p", { cls: "literature-feed-meta", text: "The scan for similar papers is not in that figure: its price depends on how often the references are cited, so it is shown, with the references it will skip, after they are read, and you decide then." });
     if (over) box.createEl("p", { cls: "literature-feed-warning", text: "That is over your limit. Paste fewer references, or raise the limit in the settings." });
     new Setting(box).addButton((b) => { b.setButtonText(`Find the gaps (${usd(e.usd)})`).setCta().onClick(() => void this.run(input)); b.setDisabled(over); });
   }
@@ -259,7 +266,7 @@ export class GapsPanel {
     const budget = new Budget(this.host.settings.reviewBudgetUsd);
     let run: GapsRun;
     try {
-      run = await runGaps(input, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget }, this.s.minCount, this.s.deeper ? this.s.deeperMin : null, input.kind === "references" ? [] : parseDoiList(this.s.extraDois));
+      run = await runGaps(input, { client: this.host.newReviewClient(), cache: this.host.reviewCache, now: Date.now(), budget }, this.s.minCount, this.s.deeper ? this.s.deeperMin : null, input.kind === "references" ? [] : parseDoiList(this.s.extraDois), this.s.similar ? { confirm: (est) => this.confirmScan(est, budget) } : null);
     } catch (e) {
       this.out.empty();
       this.out.createEl("p", { cls: "literature-feed-warning", text: `The lookup failed: ${e instanceof Error ? e.message : "unknown error"}` });
@@ -272,6 +279,26 @@ export class GapsPanel {
     this.flush();
     this.inputs.setOpen(false);
     this.renderRun(run, input, ranAt);
+  }
+
+  /** Shows the real price of the scan and the references it will skip, and waits for the reader to go ahead or skip it. */
+  private confirmScan(est: ScanEstimate, budget: Budget): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.out.empty();
+      const box = createSection(this.out, { title: "Scan for similar papers" }).body;
+      const left = budget.remaining;
+      const over = est.costUsd > left + 1e-9;
+      box.createEl("p", { text: `Reads the works that cite ${est.scanned} of the references: up to ${est.requests} requests, about ${usd(est.costUsd)} at most (${est.works} citations in all; works that cite several references are read once).` });
+      if (est.heavy.length > 0) {
+        box.createEl("p", { cls: "literature-feed-meta", text: `${est.heavy.length} reference${est.heavy.length === 1 ? " is" : "s are"} cited ${HEAVY_CITATIONS} times or more and will be skipped (they still count everywhere else):` });
+        const ul = box.createEl("ul");
+        for (const h of est.heavy) ul.createEl("li", { text: `${h.title ?? h.id} (${h.citedBy} citations)` });
+      }
+      if (over) box.createEl("p", { cls: "literature-feed-warning", text: `That is more than the ${usd(left)} left of your limit, so the scan will stop when the limit is reached and say which references it did not read.` });
+      new Setting(box)
+        .addButton((b) => b.setButtonText(`Scan (up to ${usd(est.costUsd)})`).setCta().onClick(() => { this.out.empty(); this.out.createEl("p", { text: "Scanning…" }); resolve(true); }))
+        .addButton((b) => b.setButtonText("Skip the scan").onClick(() => { this.out.empty(); this.out.createEl("p", { text: "Finishing without the scan…" }); resolve(false); }));
+    });
   }
 
   private flagsOf(list: GapsRun["gaps"]): Flags[] {
@@ -303,18 +330,21 @@ export class GapsPanel {
     const out = this.out;
     const flags = this.flagsOf(run.gaps);
     const deeperFlags = run.deeper ? this.flagsOf(run.deeper.gaps) : [];
+    const similarFlags = run.similar && !run.similar.skipped ? this.flagsOf(run.similar.rows.map((r) => ({ gap: { id: r.gap.id, count: r.gap.count, share: r.gap.share }, paper: r.paper }))) : [];
     const title = run.subject ? `${run.subject.title}${run.subject.year ? ` (${run.subject.year})` : ""}` : "Pasted references";
     createReportBar(out, [title, `Read ${run.referencesRead} references (${run.referencesWithLists} with a reference list of their own). Spent about ${usd(run.spentUsd)}.`], [
-      { text: "Create gaps note", onClick: () => void this.createNote(run, input, ranAt, flags, deeperFlags) },
+      { text: "Create gaps note", onClick: () => void this.createNote(run, input, ranAt, flags, deeperFlags, similarFlags) },
       { text: "Change the settings", onClick: () => { this.inputs.setOpen(true); this.inputs.el.scrollIntoView({ behavior: "smooth", block: "start" }); } },
     ]);
     if (run.message) out.createEl("p", { cls: "literature-feed-warning", text: run.message });
     if (run.stopped) out.createEl("p", { cls: "literature-feed-warning", text: `The lookup ${run.stopped}.` });
     if (run.gaps.length === 0 && !run.message) out.createEl("p", { text: `No work is cited by ${this.s.minCount} or more of these references without also being cited by the paper.` });
+    if (run.similar) this.drawScanNotes(out, run.similar, run.referencesRead);
     const detailsKept = run.detailsKept !== false;
     if (!detailsKept) out.createEl("p", { cls: "literature-feed-warning", text: OLD_RUN });
 
-    const works = buildWorkRows(run, (list) => (list === run.gaps ? flags : deeperFlags));
+    const works = buildWorkRows(run, (list) => (list === run.gaps ? flags : list === run.deeper?.gaps ? deeperFlags : this.flagsOf(list)));
+    const scan = run.similar && !run.similar.skipped ? run.similar : null;
     const paperYear = run.subject?.year ?? null;
     let authorsTable: DataTable<AuthorRow> | null = null;
     let worksTable: DataTable<WorkRow> | null = null;
@@ -330,6 +360,7 @@ export class GapsPanel {
         const url = doiUrl(r.doi);
         box.createDiv().createEl("a", { cls: "external-link", text: url ? "Open the paper (DOI)" : "Search for it on Google", href: url ?? googleUrl(query), attr: { target: "_blank", rel: "noopener" } });
         box.createDiv({ cls: "literature-feed-meta", text: [r.year ? String(r.year) : "", r.citedBy !== null ? `${r.citedBy} citations` : "", `cited by ${r.count} of ${r.of} ${r.level === 1 ? "references" : "shared works"} (${Math.round(r.share * 100)}%)`].filter((t) => t !== "").join(" · ") });
+        if (r.similarCount !== null) box.createDiv({ cls: "literature-feed-meta", text: `Cited by ${r.similarCount} of the ${r.similarOf ?? ""} most similar papers${r.route === "both" ? ", and by the references too (both routes)" : ""}.` });
         if (r.timing !== "unknown") box.createDiv({ cls: "literature-feed-meta", text: r.timing === "before" ? "Out before the paper: it could have been cited." : "Out after the paper: it could not have been cited." });
         this.searchLinks(box, query);
         box.createEl("h5", { text: "Authors" });
@@ -364,8 +395,12 @@ export class GapsPanel {
         { ...WORK_COLUMNS[8], secondary: true, align: "end", render: (td, r) => {
           if (r.niche !== null) td.createSpan({ text: r.niche.toFixed(2), attr: { title: `Cited by ${r.count} of your list per ${r.citedBy} citations; ${Math.round(r.nichePct ?? 0)}th percentile in this table.` } });
         } },
+        ...(scan ? [
+          { ...WORK_COLUMNS[9], render: (td: HTMLElement, r: WorkRow) => { if (r.similarCount !== null) td.setText(`${r.similarCount} of ${r.similarOf ?? ""}`); } },
+          { ...WORK_COLUMNS[10], align: "end" as const, render: (td: HTMLElement, r: WorkRow) => { if (r.gap !== null) td.createSpan({ text: `${r.gap >= 0 ? "+" : "−"}${Math.abs(r.gap).toFixed(0)}`, attr: { title: "Share of the similar papers that cite it, minus the share of the references that cite it, in percentage points." } }); } },
+        ] : []),
       ],
-      chips: WORK_CHIPS(run.deeper !== null, paperYear !== null), searchText: workSearchText, rowKey: (r) => r.key,
+      chips: WORK_CHIPS(run.deeper !== null, paperYear !== null, scan !== null), searchText: workSearchText, rowKey: (r) => r.key,
       defaultView: { chip: "all", query: "", sort: { by: "count", desc: true } },
       onSelect: (r) => { if (r) workDetail(r); else split.close(); },
     });
@@ -478,6 +513,19 @@ export class GapsPanel {
     }
   }
 
+  /** What the scan did and how far to trust it: the caveat, each threshold beside the list length, and what was skipped. */
+  private drawScanNotes(out: HTMLElement, s: NonNullable<GapsRun["similar"]>, referencesRead: number): void {
+    if (s.skipped) {
+      out.createEl("p", { cls: "literature-feed-meta", text: s.message ?? "The scan for similar papers did not run." });
+      return;
+    }
+    out.createEl("p", { cls: "literature-feed-meta", text: CAVEAT });
+    out.createEl("p", { cls: "literature-feed-meta", text: `Read ${s.citersRead} works that cite the references (${s.requests} requests). ${s.similarFound} share at least ${s.minShared} of your ${s.referenceCount} references; the ${s.neighbours} most similar are the neighbours. A work is listed when at least ${s.minimum} of the ${s.neighbours} neighbours cite it.` });
+    if (s.warning) out.createEl("p", { cls: "literature-feed-warning", text: s.warning });
+    if (s.heavySkipped.length > 0) out.createEl("p", { cls: "literature-feed-meta", text: `Skipped ${s.heavySkipped.length} reference${s.heavySkipped.length === 1 ? "" : "s"} cited ${HEAVY_CITATIONS} times or more: ${s.heavySkipped.map((h) => h.title).join("; ")}.` });
+    if (s.unscanned > 0) out.createEl("p", { cls: "literature-feed-warning", text: `The scan stopped before it read the citing works of ${s.unscanned} of the ${referencesRead} references (the most cited ones).` });
+  }
+
   /** One author: their papers the paper cites, their papers it does not (among the gaps), and a look for their other work on the same ground. */
   private drawAuthorPanel(box: HTMLElement, row: AuthorRow, run: GapsRun, uncitedWorks: WorkRef[]): void {
     box.createDiv({ cls: "literature-feed-meta", text: `${row.cited} cited, ${row.uncited} uncited · ${pctText(row.citedPct)} of the cited works, ${pctText(row.uncitedPct)} of the uncited${row.label !== "" ? ` · ${row.label}` : ""}` });
@@ -535,8 +583,8 @@ export class GapsPanel {
     }
   }
 
-  private async createNote(run: GapsRun, input: GapInput, ranAt: string, flags: Flags[], deeperFlags: Flags[]): Promise<void> {
-    const text = renderGapsNote({ date: today(), ranAt, input, minCount: this.s.minCount, run, flags, deeperFlags, audit: this.s.audit?.result ?? null });
+  private async createNote(run: GapsRun, input: GapInput, ranAt: string, flags: Flags[], deeperFlags: Flags[], similarFlags: Flags[]): Promise<void> {
+    const text = renderGapsNote({ date: today(), ranAt, input, minCount: this.s.minCount, run, flags, deeperFlags, similarFlags, audit: this.s.audit?.result ?? null });
     const subject = (run.subject?.title ?? "pasted references").replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50);
     const folder = this.host.reviewFolder();
     const path = await this.host.createReviewNote(`${folder === "" ? "" : `${folder}/`}Citation gaps ${today()} ${subject}.md`, text);

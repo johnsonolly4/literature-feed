@@ -8,6 +8,7 @@ import { withRunDefaults, type GapInput, type GapsSession } from "./gaps-input";
 import type { GapsRun } from "./gaps-fetch";
 import { cell, flagText } from "./note";
 import type { Candidate } from "../openalex/client";
+import { HEAVY_CITATIONS } from "./network-fetch";
 import { reportBlock } from "../ui/report-block";
 import { checkAuditAnswer, type AuditAnswer } from "./authors-prompt";
 
@@ -34,7 +35,8 @@ function slim(c: Candidate | null): Candidate | null {
 export function gapsSnapshot(ranAt: string, input: GapInput, minCount: number, run: GapsRun, audit: AuditAnswer | null = null): GapsSnapshot {
   return {
     input, ranAt, minCount, ...(audit ? { audit } : {}),
-    run: { ...run, gaps: run.gaps.map((g) => ({ gap: g.gap, paper: slim(g.paper) })), deeper: run.deeper ? { ...run.deeper, gaps: run.deeper.gaps.map((g) => ({ gap: g.gap, paper: slim(g.paper) })) } : null },
+    run: { ...run, gaps: run.gaps.map((g) => ({ gap: g.gap, paper: slim(g.paper) })), deeper: run.deeper ? { ...run.deeper, gaps: run.deeper.gaps.map((g) => ({ gap: g.gap, paper: slim(g.paper) })) } : null,
+      ...(run.similar ? { similar: { ...run.similar, rows: run.similar.rows.map((r) => ({ gap: r.gap, paper: slim(r.paper) })) } } : {}) },
   };
 }
 
@@ -51,8 +53,8 @@ export function parseGapsSnapshot(data: unknown): GapsSnapshot | null {
  * The tool's inputs set from an older note's record (which holds no snapshot): the same paper or references, minimum and second level.
  * The run itself is made again (free from the cache for a day), so `last` is left empty.
  */
-export function sessionFromRecord(rec: Pick<GapsRecord, "input" | "minCount" | "addedDois" | "deeper">, base: GapsSession): GapsSession {
-  const s: GapsSession = { ...base, last: null, minCount: rec.minCount, extraDois: (rec.addedDois ?? []).join("\n"), deeper: rec.deeper != null, deeperMin: rec.deeper?.minCount ?? base.deeperMin };
+export function sessionFromRecord(rec: Pick<GapsRecord, "input" | "minCount" | "addedDois" | "deeper" | "similar">, base: GapsSession): GapsSession {
+  const s: GapsSession = { ...base, last: null, minCount: rec.minCount, extraDois: (rec.addedDois ?? []).join("\n"), deeper: rec.deeper != null, similar: rec.similar != null, deeperMin: rec.deeper?.minCount ?? base.deeperMin };
   const input = rec.input;
   if (input.kind === "work") return { ...s, mode: "paper", paperText: input.doi ?? input.id ?? "" };
   if (input.kind === "title") return { ...s, mode: "paper", paperText: input.title };
@@ -76,6 +78,8 @@ export interface GapsRecord {
   addedDois?: string[];
   /** The second level, when it was run (absent in older notes). */
   deeper?: { minCount: number; hubsRead: number; gaps: { id: string; count: number; share: number }[] } | null;
+  /** The similar-paper scan, when it ran (absent in older notes): what it needed and what it listed. */
+  similar?: { minShared: number; neighbours: number; similarFound: number; minimum: number; rows: { id: string; count: number; share: number }[] } | null;
 }
 
 export function buildGapsRecord(ranAt: string, input: GapInput, minCount: number, run: GapsRun): GapsRecord {
@@ -84,6 +88,7 @@ export function buildGapsRecord(ranAt: string, input: GapInput, minCount: number
     gaps: run.gaps.map((g) => ({ id: g.gap.id, count: g.gap.count, share: Math.round(g.gap.share * 1000) / 1000 })), unresolved: run.unresolved,
     searches: run.searches, stopped: run.stopped, spentUsd: run.spentUsd, addedDois: run.addedDois,
     deeper: run.deeper ? { minCount: run.deeper.minCount, hubsRead: run.deeper.hubsRead, gaps: run.deeper.gaps.map((g) => ({ id: g.gap.id, count: g.gap.count, share: Math.round(g.gap.share * 1000) / 1000 })) } : null,
+    similar: run.similar && !run.similar.skipped ? { minShared: run.similar.minShared, neighbours: run.similar.neighbours, similarFound: run.similar.similarFound, minimum: run.similar.minimum, rows: run.similar.rows.map((r) => ({ id: r.gap.id, count: r.gap.count, share: Math.round(r.gap.share * 1000) / 1000 })) } : null,
   };
 }
 
@@ -119,6 +124,8 @@ export interface GapsNoteInput {
   flags: readonly Flags[];
   /** Flags of the second level's works, in order. */
   deeperFlags?: readonly Flags[];
+  /** Flags of the works the similar papers cite, in order. */
+  similarFlags?: readonly Flags[];
   searchNames?: ReadonlyMap<string, string>;
   /** What an LLM answered when asked to check the authors table. */
   audit?: AuditAnswer | null;
@@ -145,6 +152,27 @@ export function renderGapsNote(n: GapsNoteInput): string {
     lines.push("");
   } else if (!run.message) {
     lines.push(`No work is cited by ${n.minCount} or more of these references without also being cited by the paper.`, "");
+  }
+  const sim = run.similar && !run.similar.skipped ? run.similar : null;
+  if (sim) {
+    lines.push("## Cited by similar papers", "", `Pointers, not verdicts. Read ${sim.citersRead} works that cite the references; ${sim.similarFound} share at least ${sim.minShared} of the ${sim.referenceCount} references, and the ${sim.neighbours} most similar are the neighbours. Listed: cited by at least ${sim.minimum} of them, and not among the references. The choice of neighbours is a modelling choice.`, "");
+    if (sim.warning) lines.push(`> [!warning] ${sim.warning}`, "");
+    if (sim.heavySkipped.length > 0) lines.push(`Skipped (cited ${HEAVY_CITATIONS} times or more): ${sim.heavySkipped.map((h) => escapeMd(h.title)).join("; ")}.`, "");
+    if (sim.unscanned > 0) lines.push(`> [!warning] The scan stopped before it read the citing works of ${sim.unscanned} references (the most cited ones).`, "");
+    if (sim.rows.length > 0) {
+      const both = new Set(sim.bothIds);
+      lines.push("| Paper | Authors | Year | Cited | Cited by these similar papers | Both routes | Already have |", "| --- | --- | --- | --- | --- | --- | --- |");
+      sim.rows.forEach((r, i) => {
+        const p = r.paper;
+        const url = doiUrl(p?.doi ?? null);
+        const title = p ? (url ? `[${escapeMd(p.title)}](${url})` : escapeMd(p.title)) : r.gap.id;
+        const f = n.similarFlags?.[i];
+        lines.push(`| ${cell(title)} | ${cell(escapeMd(authorsShort(p?.authors ?? [])))} | ${p?.year ?? ""} | ${p?.citedByCount ?? ""} | ${r.gap.count} of ${sim.neighbours} | ${both.has(r.gap.id) ? "yes" : ""} | ${cell(f ? flagText(f, n.searchNames ?? new Map()) : "")} |`);
+      });
+      lines.push("");
+    } else {
+      lines.push("Nothing is cited by that many of the neighbours.", "");
+    }
   }
   const deeper = run.deeper;
   if (deeper) {
@@ -185,6 +213,7 @@ export function renderGapsNote(n: GapsNoteInput): string {
   }
   lines.push("## How this was made", "", ...describeInput(n.input), `- **Run:** ${n.ranAt}. Minimum: cited by ${n.minCount} of the references.`);
   lines.push(`- **OpenAlex requests:** ${run.searches} title search${run.searches === 1 ? "" : "es"}, the rest lookups by id or DOI; about $${run.spentUsd.toFixed(4)}.`);
+  if (sim) lines.push(`- **Similar papers:** scanned ${sim.requests} requests; similar = shares at least ${sim.minShared} references; ${sim.neighbours} neighbours; listed when ${sim.minimum} cite it.`);
   if (run.addedDois.length > 0) lines.push(`- **Added by hand:** ${run.addedDois.map((d) => `[${d}](https://doi.org/${d})`).join(", ")}`);
   if (run.unresolved.length > 0) lines.push("- **Not found in OpenAlex:**", ...run.unresolved.map((u) => `  - ${escapeMd(u)}`));
   lines.push("", "```" + GAPS_RECORD_BLOCK, JSON.stringify(buildGapsRecord(n.ranAt, n.input, n.minCount, run)), "```", "");

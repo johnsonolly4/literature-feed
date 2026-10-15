@@ -65,6 +65,7 @@ describe("the similar-paper scan", () => {
     expect(s.heavySkipped).toEqual([{ id: "W6", title: "Invented work 6", citedBy: 2500 }]);
     expect(s.rows.map((r) => [r.gap.id, r.gap.count])).toEqual([["W200", 3], ["W201", 3]]);
     expect(s.bothIds).toEqual(["W200"]);
+    expect(s.neighbourList?.map((n) => [n.id, n.shared])).toEqual([["W13", 6], ["W11", 5], ["W12", 5]]);
     expect(s.warning).toMatch(/Only 3 similar/);
   });
 

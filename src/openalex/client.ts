@@ -94,6 +94,17 @@ export function buildCitingUrl(ids: readonly string[], page = 1, perPage = 100):
   return `${API_URL}?filter=${encodeURIComponent(`cites:${list.join("|")}`)}&per_page=${perPage}&page=${page}&select=${SELECT_EXTRA}`;
 }
 
+/** What the citer scan reads of each citing work: only its year and its reference list (no titles, abstracts or authors). */
+export const CITER_SELECT = "id,publication_year,referenced_works";
+/** References per filter in the citer scan (refcheck's batch size). */
+export const CITER_BATCH = 25;
+
+/** One page of the works that cite any of the given works, by cursor (basic paging stops at 10,000). Start with `cursor` `*`. Slim fields. */
+export function buildCitersUrl(ids: readonly string[], cursor = "*", perPage = 100): string {
+  const list = ids.filter((id) => /^W\d+$/.test(id)).slice(0, CITER_BATCH);
+  return `${API_URL}?filter=${encodeURIComponent(`cites:${list.join("|")}`)}&per_page=${perPage}&cursor=${encodeURIComponent(cursor)}&select=${CITER_SELECT}`;
+}
+
 /** OpenAlex sends an abstract as `{ word: [positions] }`; this puts the words back in order. */
 export function rebuildAbstract(index?: Record<string, number[]> | null): string | null {
   if (!index) return null;
@@ -146,6 +157,13 @@ export function pageCount(biblio: OpenAlexWork["biblio"]): number | undefined {
   const first = /^\d+$/.test(biblio?.first_page ?? "") ? Number(biblio?.first_page) : NaN;
   const last = /^\d+$/.test(biblio?.last_page ?? "") ? Number(biblio?.last_page) : NaN;
   return last >= first ? last - first + 1 : undefined;
+}
+
+/** A citing work as the citer scan reads it. */
+export interface Citer {
+  id: string;
+  year: number | null;
+  referencedWorks: string[];
 }
 
 /** `https://openalex.org/W123` to `W123`; null when it is not a work address. */
@@ -309,6 +327,18 @@ export class OpenAlexClient {
       if (candidate) papers.push(candidate);
     }
     return { papers, fetched: results.length, count: meta.count ?? 0, costUsd: meta.cost_usd ?? 0 };
+  }
+
+  /** One cursor page of the works that cite any of up to 25 given works, slim. `nextCursor` is null on the last page. */
+  async citersPage(ids: readonly string[], cursor = "*"): Promise<{ citers: Citer[]; nextCursor: string | null; count: number; costUsd: number }> {
+    const body = await this.get(buildCitersUrl(ids, cursor));
+    const meta = (body.meta ?? {}) as { count?: number; cost_usd?: number; next_cursor?: string | null };
+    const citers: Citer[] = [];
+    for (const work of Array.isArray(body.results) ? (body.results as OpenAlexWork[]) : []) {
+      const id = shortWorkId(work.id ?? "");
+      if (id !== null) citers.push({ id, year: work.publication_year ?? null, referencedWorks: (work.referenced_works ?? []).map((w) => shortWorkId(w)).filter((w): w is string => w !== null) });
+    }
+    return { citers, nextCursor: typeof meta.next_cursor === "string" && meta.next_cursor !== "" ? meta.next_cursor : null, count: meta.count ?? 0, costUsd: meta.cost_usd ?? 0 };
   }
 
   /** An author's works that cite at least one of `citedIds` (at most 50 of them), most cited first; one filtered list. */

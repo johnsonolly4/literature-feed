@@ -1,7 +1,7 @@
 // The OpenAlex requests the citation network and the citation gaps need, each inside the review's budget and using the work cache
 // so a repeat costs nothing. The client is passed in (a fake in tests); nothing here touches Obsidian.
 import { shortOpenAlexId } from "../inbox/write";
-import type { Candidate } from "../openalex/client";
+import { CITER_BATCH, type Candidate, type Citer } from "../openalex/client";
 import { COST_FILTER, type Budget } from "./budget";
 import { getWork, putWorks, type ReviewCache } from "./cache";
 import type { ReviewPaper } from "./collect";
@@ -146,4 +146,77 @@ export async function fetchCitationGaps(paper: { id: string; referencedWorks: re
     referencePapers: read.papers,
     stopped: read.stopped ?? details.stopped,
   };
+}
+
+// ---- the citer scan (signals 2a and 2b) -------------------------------------------------------------------------------
+
+/** The scan reads the works that cite the paper's references, a hundred to a request. */
+export interface CiterClient {
+  citersPage(ids: readonly string[], cursor: string): Promise<{ citers: Citer[]; nextCursor: string | null; count: number; costUsd: number }>;
+}
+
+export interface CiterDeps {
+  client: CiterClient;
+  budget: Budget;
+}
+
+/** A reference of the paper, for the scan: how often it is cited decides the order and whether it is skipped. */
+export interface CiterRef {
+  id: string;
+  citedBy: number;
+  title?: string;
+}
+
+/** References cited this often have huge citer lists, so the scan skips them by default (they still count everywhere else). */
+export const HEAVY_CITATIONS = 2000;
+/** The scan stops after reading this many citing works. */
+export const MAX_CITER_WORKS = 20_000;
+
+/** The references the scan will read and the heavy ones it skips (listed so the reader can see and change that). */
+export function splitHeavy(refs: readonly CiterRef[], limit = HEAVY_CITATIONS): { scan: CiterRef[]; heavy: CiterRef[] } {
+  return { scan: refs.filter((r) => r.citedBy < limit), heavy: refs.filter((r) => r.citedBy >= limit) };
+}
+
+/** The price of the scan before it runs: at most one request per hundred citations of the references (an upper bound; shared citers count once). */
+export function estimateCiterScan(refs: readonly CiterRef[]): { requests: number; costUsd: number; works: number } {
+  const works = refs.reduce((sum, r) => sum + r.citedBy, 0);
+  const requests = refs.reduce((sum, r) => sum + Math.max(1, Math.ceil(r.citedBy / 100)), 0);
+  return { requests, costUsd: requests * COST_FILTER, works };
+}
+
+export interface CiterScan {
+  citers: Citer[];
+  /** References not read in full because the scan stopped; the least-cited were read first, so these are the most-cited. */
+  unscanned: string[];
+  requests: number;
+  stopped: string | null;
+}
+
+/** Reads the works citing the references, rarest reference first, 25 references per filter, by cursor. Every request is paid from the budget first. */
+export async function fetchCiters(refs: readonly CiterRef[], deps: CiterDeps, maxWorks = MAX_CITER_WORKS): Promise<CiterScan> {
+  const ordered = [...refs].sort((a, b) => a.citedBy - b.citedBy || a.id.localeCompare(b.id));
+  const byId = new Map<string, Citer>();
+  let requests = 0;
+  let stopped: string | null = null;
+  let done = 0;
+  for (let i = 0; i < ordered.length && stopped === null; i += CITER_BATCH) {
+    const ids = ordered.slice(i, i + CITER_BATCH).map((r) => r.id);
+    let cursor: string | null = "*";
+    while (cursor !== null) {
+      if (!deps.budget.canAfford(COST_FILTER)) { stopped = `stopped at $${deps.budget.spent.toFixed(4)} before the scan was finished`; break; }
+      if (byId.size >= maxWorks) { stopped = `stopped after ${byId.size} citing works (the limit)`; break; }
+      try {
+        const res: Awaited<ReturnType<CiterClient["citersPage"]>> = await deps.client.citersPage(ids, cursor);
+        requests++;
+        deps.budget.add(res.costUsd > 0 ? res.costUsd : COST_FILTER);
+        for (const c of res.citers) byId.set(c.id, c);
+        cursor = res.citers.length === 0 ? null : res.nextCursor;
+      } catch (e) {
+        stopped = `stopped while reading the citing works: ${e instanceof Error ? e.message : "unknown error"}`;
+        break;
+      }
+    }
+    if (stopped === null) done = i + ids.length;
+  }
+  return { citers: [...byId.values()], unscanned: ordered.slice(done).map((r) => r.id), requests, stopped };
 }

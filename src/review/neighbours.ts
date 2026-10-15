@@ -67,14 +67,16 @@ export interface NeighbourRow {
   share: number;
 }
 
-/** What the neighbours cite that is not among the paper's references (or the paper, or a neighbour), each work once per neighbour. */
+/**
+ * What the neighbours cite that is not among the paper's references (or the paper), each work once per neighbour. A neighbour may itself be
+ * listed when other neighbours cite it (as in the owner's refcheck tool); only a neighbour citing itself is skipped.
+ */
 export function neighbourCounts(neighbours: readonly SimilarPaper[], focalIds: ReadonlySet<string>, paperId?: string): NeighbourRow[] {
-  const nbIds = new Set(neighbours.map((n) => n.id));
   const min = neighbourMinimum(neighbours.length);
   const counts = new Map<string, number>();
   for (const n of neighbours) {
     for (const w of new Set(n.referencedWorks)) {
-      if (focalIds.has(w) || nbIds.has(w) || w === paperId || w === n.id) continue;
+      if (focalIds.has(w) || w === paperId || w === n.id) continue;
       counts.set(w, (counts.get(w) ?? 0) + 1);
     }
   }

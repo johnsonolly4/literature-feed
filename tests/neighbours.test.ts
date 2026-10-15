@@ -45,6 +45,12 @@ describe("signal 2b", () => {
     expect(rows).toEqual([{ id: "X1", count: 3, share: 1 }]);
   });
 
+  it("keeps a neighbour as a candidate when three other neighbours cite it, but never counts a neighbour citing itself", () => {
+    const cs: Citer[] = ["W1", "W2", "W3", "W4"].map((id, i) => cite(id, all.slice(0, 5), i === 0 ? ["W2", "W1"] : ["W1"]));
+    const rows = neighbourCounts(similarPapers(cs, focal), new Set(all));
+    expect(rows).toEqual([{ id: "W1", count: 3, share: 0.75 }]);
+  });
+
   it("finds works on both routes and gives the gap in points", () => {
     const n = neighbourhood(citers, focal);
     expect([...bothRoutes([{ id: "X1" }, { id: "X9" }], n.rows)]).toEqual(["X1"]);

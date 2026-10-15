@@ -38,6 +38,11 @@ export interface ResolveOptions {
   isCancelled?: () => boolean;
   /** At most this many references are looked up in one run (default 200). */
   max?: number;
+  /**
+   * The rows of an earlier look-up. A reference whose text is unchanged keeps its row as it was (what Crossref said and what the user did:
+   * a typed DOI, Confirm, Skip) and is not looked up again. A row that failed (ERROR) is looked up again. A changed line is a new reference.
+   */
+  previous?: readonly ResolvedRow[];
 }
 
 export interface Resolution {
@@ -46,7 +51,12 @@ export interface Resolution {
   skipped: number;
   /** The run was stopped before the end. */
   cancelled: boolean;
+  /** The rows kept from `previous`: the new row number and the number it had before. */
+  reused: { n: number; from: number }[];
 }
+
+/** A reference line as compared between look-ups: spacing and case do not make it a different reference. */
+export const referenceKey = (text: string): string => text.replace(/\s+/g, " ").trim().toLowerCase();
 
 export const MAX_REFERENCES = 200;
 
@@ -74,11 +84,21 @@ export async function resolveReferences(refs: readonly RawReference[], client: R
   const max = opts.max ?? MAX_REFERENCES;
   const list = refs.slice(0, max);
   const rows: ResolvedRow[] = [];
+  const reused: Resolution["reused"] = [];
+  const before = new Map<string, ResolvedRow>();
+  for (const p of opts.previous ?? []) if (p.status !== "ERROR" && !before.has(referenceKey(p.text))) before.set(referenceKey(p.text), p);
   let cancelled = false;
   for (const ref of list) {
     if (opts.isCancelled?.()) {
       cancelled = true;
       break;
+    }
+    const kept = before.get(referenceKey(ref.text));
+    if (kept) {
+      rows.push({ ...kept, n: ref.n, text: ref.text, reasons: [...kept.reasons] });
+      reused.push({ n: ref.n, from: kept.n });
+      opts.onProgress?.(rows.length, list.length);
+      continue;
     }
     const row = blank(ref);
     const info = parseReference(ref.text);
@@ -110,7 +130,7 @@ export async function resolveReferences(refs: readonly RawReference[], client: R
     rows.push(row);
     opts.onProgress?.(rows.length, list.length);
   }
-  return { rows, skipped: Math.max(0, refs.length - list.length), cancelled };
+  return { rows, skipped: Math.max(0, refs.length - list.length), cancelled, reused };
 }
 
 /** The status as shown: what the user did (skipped, confirmed) comes before what Crossref said. */

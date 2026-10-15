@@ -50,6 +50,41 @@ describe("resolveReferences", () => {
     expect(countStatuses(rows)).toEqual({ OK: 2, CHECK: 1, "NOT FOUND": 1, MANUAL: 1, ERROR: 0 });
   });
 
+  it("keeps the rows and the user's corrections of lines that did not change, and looks up only the new or failed ones", async () => {
+    const first = fakeSearch();
+    const before = (await resolveReferences(splitReferences(TEXT), first.searcher)).rows;
+    // The user types a DOI for 3 (Crossref knew nothing), confirms 2 and skips 4.
+    before[2].doi = "10.1000/typed.3";
+    before[1].confirmed = true;
+    before[3].skipped = true;
+    // The list is pasted again with a new line first (so every number moves), one line edited, and spacing and case changed on another.
+    const lines = TEXT.split("\n").map((l) => l.replace(/^\d+\. /, ""));
+    lines[1] = lines[1].toUpperCase().replace(/ /g, "  ");
+    lines[4] = lines[4].replace("paper with its DOI", "paper that has its DOI");
+    const text = ["Newcomer, N. A brand new reference about lipoic acid chemistry. J. Test 2024, 1, 1-2.", ...lines].map((l, i) => `${i + 1}. ${l}`).join("\n");
+    const second = fakeSearch();
+    const r = await resolveReferences(splitReferences(text), second.searcher, { previous: before });
+    expect(r.reused.map((x) => [x.n, x.from])).toEqual([[2, 1], [3, 2], [4, 3], [5, 4]]);
+    expect(second.calls).toHaveLength(1); // only the new line went to Crossref (the edited one has a DOI in the text)
+    expect(r.rows[2]).toMatchObject({ n: 3, status: "CHECK", doi: "10.1000/smith.2", confirmed: true }); // case and spacing do not make a new reference
+    expect(r.rows[3]).toMatchObject({ n: 4, doi: "10.1000/typed.3" });
+    expect(r.rows[4]).toMatchObject({ n: 5, skipped: true });
+    expect(r.rows[5]).toMatchObject({ n: 6, fromText: true }); // the edited line is read again
+    expect(r.rows[0].n).toBe(1);
+  });
+
+  it("looks a failed row up again instead of keeping the failure", async () => {
+    const failing: ReferenceSearcher = { search: () => Promise.reject(new CrossrefError("HTTP 429", 429)) };
+    const one = TEXT.split("\n").slice(0, 1).join("\n");
+    const before = (await resolveReferences(splitReferences(one), failing)).rows;
+    expect(before[0].status).toBe("ERROR");
+    const { searcher, calls } = fakeSearch();
+    const r = await resolveReferences(splitReferences(one), searcher, { previous: before });
+    expect(r.reused).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(r.rows[0].status).toBe("OK");
+  });
+
   it("marks a failed lookup ERROR and goes on", async () => {
     let n = 0;
     const searcher: ReferenceSearcher = { search: () => (n++ === 0 ? Promise.reject(new CrossrefError("Crossref asked for fewer requests (HTTP 429) after 3 tries", 429)) : Promise.resolve([])) };

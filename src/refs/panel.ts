@@ -172,11 +172,16 @@ export class RefsPanel {
     try {
       const result = await resolveReferences(refs, this.host.newCrossrefClient(), {
         max: MAX_REFERENCES,
+        previous: this.rows,
         isCancelled: () => this.stop,
         onProgress: (done, total) => status.setText(`Looked up ${done} of ${total}…`),
       });
+      // A line that was looked up before keeps its row and the user's choices (typed DOI, Confirm, Skip, tick); the others start fresh.
+      const was = new Map(result.reused.map((x) => [x.n, x.from] as const));
+      const wasIncluded = this.included;
       this.rows = result.rows;
-      this.included = new Set(result.rows.filter(includedByDefault).map((r) => r.n));
+      this.included = new Set(result.rows.filter((r) => (was.has(r.n) ? wasIncluded.has(was.get(r.n) ?? -1) : includedByDefault(r))).map((r) => r.n));
+      if (result.reused.length > 0) new Notice(`${result.reused.length} reference${result.reused.length === 1 ? "" : "s"} kept from the earlier look-up, with your corrections.`);
       if (result.cancelled) new Notice(`Stopped after ${result.rows.length} references.`);
       if (result.skipped > 0) new Notice(`${result.skipped} references beyond the first ${MAX_REFERENCES} were left out.`);
     } finally {

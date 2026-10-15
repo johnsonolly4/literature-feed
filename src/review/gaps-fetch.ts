@@ -59,7 +59,7 @@ export interface SimilarRun {
   /** The neighbours, most similar first: their ids, how many of the references they share and the weighted share (absent in runs saved before 2026-10-15 evening). */
   neighbourList?: { id: string; shared: number; weighted: number }[];
   /** Signal 2b: works the neighbours cite (not among the references), with their records. */
-  rows: { gap: NeighbourRow; paper: Candidate | null }[];
+  rows: { gap: NeighbourRow; paper: Candidate | null; refCount?: number }[];
   /** The ids of the works found on both routes (signal 1 and signal 2b). */
   bothIds: string[];
   stopped: string | null;
@@ -217,12 +217,15 @@ async function scanSimilar(
   const focal = refs.map((r) => ({ id: r.id, citedBy: r.citedBy }));
   const hood = neighbourhood(read.citers, focal, { paperId: paper.id, maxYear: paper.year });
   const top = hood.rows.slice(0, MAX_GAPS);
+  // How many of the references cite each listed work (0 when none), so the chart's x axis is the true share and not just those above the signal-1 limit.
+  const refLists = references.map((c) => new Set(c.referencedWorks ?? []));
+  const refCountOf = (id: string): number => refLists.filter((l) => l.has(id)).length;
   const details = await worksById(top.map((r) => r.id), deps);
   const byId = new Map(details.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [[id, p] as const] : []; }));
   return {
     skipped: false, message: null, referenceCount: refs.length, similarFound: hood.similar.length, neighbours: hood.neighbours.length,
     minShared: hood.minShared, minimum: hood.minimum, warning: hood.warning, heavySkipped, unscanned: read.unscanned.length,
-    citersRead: read.citers.length, requests: read.requests, neighbourList: hood.neighbours.map((n) => ({ id: n.id, shared: n.shared.length, weighted: Math.round(n.weighted * 1000) / 1000 })), rows: top.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })),
+    citersRead: read.citers.length, requests: read.requests, neighbourList: hood.neighbours.map((n) => ({ id: n.id, shared: n.shared.length, weighted: Math.round(n.weighted * 1000) / 1000 })), rows: top.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null, refCount: refCountOf(gap.id) })),
     bothIds: [...bothRoutes(signal1, hood.rows)], stopped: read.stopped ?? details.stopped,
   };
 }

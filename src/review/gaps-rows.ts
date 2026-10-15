@@ -74,17 +74,19 @@ export function buildWorkRows(run: GapsRun, flagsOf: (list: GapsRun["gaps"]) => 
       if (hit) Object.assign(row, { route: "both", similarCount: hit.count, similarOf: sim.neighbours, gap: gapPoints(hit.share, row.share) });
     }
     const have = new Set(rows.filter((r) => r.level === 1).map((r) => r.key.slice(2)));
-    const extra = sim.rows.filter((r) => !have.has(r.gap.id)).map((r) => ({ gap: { id: r.gap.id, count: 0, share: 0 }, paper: r.paper, via: r.gap }));
+    // A neighbours-only work: the references that cite it (below the signal-1 limit) are counted when the scan saved them, else it shows 0.
+    const withLists = run.referencesWithLists;
+    const extra = sim.rows.filter((r) => !have.has(r.gap.id)).map((r) => ({ gap: { id: r.gap.id, count: r.refCount ?? 0, share: withLists > 0 ? (r.refCount ?? 0) / withLists : 0 }, paper: r.paper, via: r.gap, known: r.refCount !== undefined }));
     const flags = flagsOf(extra);
     extra.forEach((x, i) => {
       const p = x.paper;
       const year = p?.year ?? null;
       rows.push({
         key: `s:${p ? (shortOpenAlexId(p.openalexId) ?? x.gap.id) : x.gap.id}`, title: p ? p.title : x.gap.id, doi: p?.doi ?? null, authors: p?.authors ?? [], year,
-        citedBy: p?.citedByCount ?? null, level: 1, count: 0, of: run.referencesWithLists, share: 0,
+        citedBy: p?.citedByCount ?? null, level: 1, count: x.gap.count, of: run.referencesWithLists, share: x.gap.share,
         flags: flags[i] ?? { zotero: null, vault: null, listedBefore: [] }, timing: couldHaveBeenCited(year, paperYear),
         review: reviewFlag({ type: p?.workType, venue: p?.venue, title: p?.title, referenceCount: p?.referencedWorks?.length ?? null, pages: p?.pages }),
-        niche: null, nichePct: null, route: "similar", similarCount: x.via.count, similarOf: sim.neighbours, gap: gapPoints(x.via.share, 0),
+        niche: null, nichePct: null, route: "similar", similarCount: x.via.count, similarOf: sim.neighbours, gap: x.known ? gapPoints(x.via.share, x.gap.share) : null,
       });
     });
   }

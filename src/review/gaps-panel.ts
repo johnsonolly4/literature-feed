@@ -24,6 +24,8 @@ import { DataTable } from "../ui/data-table";
 import { createReportBar } from "../ui/report-bar";
 import { createSection, formGrid, type Section } from "../ui/section";
 import { createSplitPane } from "../ui/split-pane";
+import { drawScatter } from "../ui/scatter";
+import { diagonalPoints } from "./gaps-chart";
 import {
   MAX_TITLE_SEARCHES, emptyGapsSession, estimateGaps, parseDoiList, parseReferenceList, parseWorkInput, searchZoteroIndex, type GapInput, type GapsMode, type GapsSession,
 } from "./gaps-input";
@@ -358,6 +360,8 @@ export class GapsPanel {
     const switcher = split.main.createDiv({ cls: "literature-feed-chip-row" });
     const worksHolder = split.main.createDiv();
     const authorsHolder = split.main.createDiv();
+    const chartHolder = split.main.createDiv();
+    const diagonal = scan ? diagonalPoints(works) : null;
 
     // ---- the works table ----
     const workDetail = (r: WorkRow): void => {
@@ -481,15 +485,17 @@ export class GapsPanel {
 
     // ---- the switch between the two tables ----
     const chips = new Map<string, HTMLElement>();
-    const show = (v: "works" | "authors"): void => {
+    const show = (v: "works" | "authors" | "chart"): void => {
       split.close();
       worksTable?.select(null);
       authorsTable?.select(null);
       worksHolder.toggleClass("literature-feed-hidden", v !== "works");
       authorsHolder.toggleClass("literature-feed-hidden", v !== "authors");
+      chartHolder.toggleClass("literature-feed-hidden", v !== "chart");
       for (const [k, c] of chips) c.toggleClass("is-active", k === v);
     };
-    for (const [key, label] of [["works", `Works (${works.length})`], ["authors", "Authors"]] as const) {
+    const switches: (readonly ["works" | "authors" | "chart", string])[] = [["works", `Works (${works.length})`], ["authors", "Authors"], ...(diagonal && diagonal.points.length > 0 ? [["chart", "Chart"] as const] : [])];
+    for (const [key, label] of switches) {
       const chip = switcher.createEl("button", { cls: "literature-feed-chip", text: label });
       chips.set(key, chip);
       chip.addEventListener("click", () => show(key));
@@ -507,6 +513,23 @@ export class GapsPanel {
       authorsTable?.select(row.key);
       authorDetail(row);
     };
+    if (diagonal && diagonal.points.length > 0) {
+      drawScatter(chartHolder, {
+        title: "Who cites each work: your references or the similar papers",
+        points: diagonal.points.map((p) => ({ key: p.key, x: p.x, y: p.y, ring: p.both, label: p.label, tip: p.tip })),
+        max: diagonal.max, diagonal: true,
+        xNote: "share of your references that cite it", yNote: "share of the similar papers that cite it",
+        legend: [{ ring: true, text: "found on both routes" }, { ring: false, text: "cited by the similar papers" }],
+        onPick: (key) => {
+          const row = works.find((w) => w.key === key);
+          if (!row) return;
+          show("works");
+          worksTable?.select(key);
+          workDetail(row);
+        },
+      });
+      chartHolder.createEl("p", { cls: "literature-feed-meta", text: `${diagonal.above} of ${diagonal.points.length} works are above the line: the similar papers cite them more than your references do (${diagonal.aboveBoth} of those are on both routes). ${diagonal.on} are on the line and ${diagonal.below} below it. The five largest gaps are labelled; click a point for details.${diagonal.left > 0 ? ` ${diagonal.left} works are left out because this run did not save how many of your references cite them: run it again.` : ""}` });
+    }
     refresh();
     show("works");
 

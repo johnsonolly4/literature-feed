@@ -101,6 +101,20 @@ describe("rows with a scan", () => {
     expect(WORK_COLUMNS.find((c) => c.key === "similar")?.csv?.(rows[0])).toBe("3 of 3");
   });
 
+  it("gives a neighbours-only work the real count of references that cite it, so the chart has a true x", async () => {
+    const f = fake();
+    // W201 is cited by two of the references (W2 and W3), below the signal-1 minimum of 3.
+    const works = WORKS.map((w) => (w.openalexId.endsWith("/W2") || w.openalexId.endsWith("/W3") ? { ...w, referencedWorks: [...(w.referencedWorks ?? []), "W201"] } : w));
+    const byId = new Map(works.map((w) => [w.openalexId.replace("https://openalex.org/", ""), w]));
+    const client: GapsClient = { ...f.client, getWorks: (ids) => Promise.resolve({ papers: ids.flatMap((i) => byId.get(i) ?? []), costUsd: 0.0001 }), getFullWork: (r) => Promise.resolve((r.id ? byId.get(r.id) : undefined) ?? null) };
+    const run = await runGaps(input, { client, cache: emptyCache(), now: 1000, budget: new Budget(0.05) }, 3, null, [], {});
+    expect(run.similar?.rows.find((r) => r.gap.id === "W201")?.refCount).toBe(2);
+    const none = { zotero: null, vault: null, listedBefore: [] };
+    const row = buildWorkRows(run, (l) => l.map(() => none)).find((r) => r.key === "s:W201")!;
+    expect([row.count, row.of, row.route]).toEqual([2, 6, "similar"]);
+    expect(row.gap).toBeCloseTo(100 - (2 / 6) * 100);
+  });
+
   it("builds the same rows as before for a run without a scan", async () => {
     const { deps } = mk();
     const run = await runGaps(input, deps, 3);

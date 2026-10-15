@@ -8,6 +8,7 @@ One look and one set of mechanisms for every search report. Built with `createEl
 | `DataTable` | `data-table.ts` | the table: chips, search box, sortable headers, show more, Copy as CSV, row selection, remembered view (`app.saveLocalStorage`). Columns marked `secondary` hide when narrow. |
 | `Section` / `formGrid` | `section.ts` | titled, foldable card (remembers open/closed); a grid for short options. The gaps form puts settings and references in two tiles (`.literature-feed-gaps-form`, container query at 900px). |
 | `SplitPane` | `split-pane.ts` | table left, detail right (sticky, own scroll); stacks in a narrow tab (container query in `styles.css`). |
+| `drawScatter` | `scatter.ts` | a scatter as SVG: axes with plain-language notes, optional dashed y = x line, ringed points (shape, not only colour), labels, tooltips, click. Data in `review/gaps-chart.ts`. |
 | `ReportBar` | `report-bar.ts` | status lines and buttons above a report. |
 | `PromptPanel` | `prompt-panel.ts` | show / copy / save the prompt, paste the answer, check it. |
 | Report block | `report-block.ts`, `report-view.ts` | a note holds a `literature-feed-report` snapshot `{kind, version, data, summary}`; a button, the command **Open this note's report view** and the ribbon menu reopen the view. Kinds are registered in `main.ts` (`reportKinds`). |

@@ -908,6 +908,25 @@ table.literature-feed-authors tr.is-selected td { background: rgba(var(--vt-doin
   .literature-feed-gaps-refs { max-height: 40em; overflow: auto; }
 }
 
+/* Scatter chart (src/ui/scatter.ts): grid and axes in muted tones; ringed dots amber (the "waiting" meaning), plain dots neutral. */
+.literature-feed-scatter { margin: var(--size-4-3) 0; }
+.literature-feed-scatter svg { display: block; max-width: 760px; }
+.literature-feed-scatter-grid { stroke: var(--background-modifier-border); stroke-width: 1; }
+.literature-feed-scatter-axis { stroke: var(--text-faint); stroke-width: 1.5; }
+.literature-feed-scatter-diagonal { stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.literature-feed-scatter-tick, .literature-feed-scatter-note, .literature-feed-scatter-label { fill: var(--text-muted); font-size: 11px; }
+.literature-feed-scatter-label { fill: var(--text-normal); }
+.literature-feed-scatter-point { cursor: pointer; }
+.literature-feed-scatter-dot { fill: var(--text-muted); fill-opacity: 0.55; stroke: var(--background-primary); stroke-width: 1; }
+.literature-feed-scatter-point.is-ring .literature-feed-scatter-dot { fill: rgb(var(--vt-waiting, 245, 158, 11)); fill-opacity: 0.9; }
+.literature-feed-scatter-ring { fill: none; stroke: rgb(var(--vt-waiting, 245, 158, 11)); stroke-width: 2; }
+.literature-feed-scatter-point:hover .literature-feed-scatter-dot, .literature-feed-scatter-point:focus .literature-feed-scatter-dot { stroke: var(--text-normal); stroke-width: 2; }
+.literature-feed-scatter-legend { display: flex; flex-wrap: wrap; gap: var(--size-4-3); margin-top: var(--size-4-2); color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.literature-feed-scatter-legenditem { display: inline-flex; align-items: center; gap: var(--size-4-1); }
+.literature-feed-scatter-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); opacity: 0.6; }
+.literature-feed-scatter-swatch.is-ring { background: rgb(var(--vt-waiting, 245, 158, 11)); opacity: 1; box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 4px rgb(var(--vt-waiting, 245, 158, 11)); margin-inline: 4px; }
+.literature-feed-scatter-swatch.is-line { width: 18px; height: 0; border-radius: 0; background: none; border-top: 2px dashed var(--text-muted); opacity: 1; }
+
 .literature-feed-reportbar { margin: var(--size-4-2) 0; }
 
 .literature-feed-tablebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--size-4-2); margin-bottom: var(--size-4-2); }

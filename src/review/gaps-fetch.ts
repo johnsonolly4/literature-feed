@@ -10,9 +10,13 @@ import { getTitle, getWork, putTitle, putWorks } from "./cache";
 import { MAX_TITLE_SEARCHES, titleInReference, titleOverlap, type GapInput } from "./gaps-input";
 import { type WorkRef } from "./gaps-authors";
 import { citationGaps, sharedHubs, type Gap } from "./network";
-import { MAX_DEEPER, MAX_GAPS, MAX_HUBS, fetchCitationGaps, worksById, type NetworkClient, type NetworkDeps } from "./network-fetch";
+import { bothRoutes, neighbourhood, type NeighbourRow } from "./neighbours";
+import {
+  MAX_DEEPER, MAX_GAPS, MAX_HUBS, estimateCiterScan, fetchCitationGaps, fetchCiters, splitHeavy, worksById,
+  type CiterClient, type CiterRef, type NetworkClient, type NetworkDeps,
+} from "./network-fetch";
 
-export interface GapsClient extends NetworkClient {
+export interface GapsClient extends NetworkClient, CiterClient {
   getFullWork(ref: { doi?: string | null; id?: string | null }): Promise<Candidate | null>;
   authorWorks(authorId: string, citedIds: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }>;
   getWorksByDoi(dois: readonly string[]): Promise<{ papers: Candidate[]; costUsd: number }>;
@@ -33,6 +37,46 @@ export interface DeeperRun {
   minCount: number;
 }
 
+/** What the similar-paper scan found (signals 2a and 2b): kept with the run, absent when the scan was not asked for. */
+export interface SimilarRun {
+  /** The scan did not run: the user declined after seeing the price, or there was nothing to scan. `message` says why. */
+  skipped: boolean;
+  message: string | null;
+  /** The references used as the paper's list, how many similar papers were found, how many of them are the neighbours. */
+  referenceCount: number;
+  similarFound: number;
+  neighbours: number;
+  /** What a work needed: `minShared` references shared to count as similar, `minimum` neighbours citing it for signal 2b. */
+  minShared: number;
+  minimum: number;
+  /** Set when too few similar papers were found for the counts to mean much. */
+  warning: string | null;
+  /** References cited too often to scan (their citing works are not read), and how many references were not read before a stop. */
+  heavySkipped: { id: string; title: string; citedBy: number }[];
+  unscanned: number;
+  citersRead: number;
+  requests: number;
+  /** Signal 2b: works the neighbours cite (not among the references), with their records. */
+  rows: { gap: NeighbourRow; paper: Candidate | null }[];
+  /** The ids of the works found on both routes (signal 1 and signal 2b). */
+  bothIds: string[];
+  stopped: string | null;
+}
+
+/** What the user is shown before the scan runs. */
+export interface ScanEstimate {
+  requests: number;
+  costUsd: number;
+  works: number;
+  scanned: number;
+  heavy: CiterRef[];
+}
+
+export interface ScanOptions {
+  /** Asked once, with the real price and the skipped heavy references, before any citing work is read. False skips the scan. */
+  confirm?: (estimate: ScanEstimate) => Promise<boolean>;
+}
+
 export interface GapsRun {
   /** The paper asked about (not for a pasted list). */
   subject: { title: string; doi: string | null; id: string | null; year: number | null; authors: string[] } | null;
@@ -46,6 +90,8 @@ export interface GapsRun {
   stopped: string | null;
   /** The second level, when it was asked for. */
   deeper: DeeperRun | null;
+  /** The similar-paper scan, when it was asked for (absent in runs saved before it existed). */
+  similar?: SimilarRun | null;
   /** The author names of each reference that was read (the cited side of the authors table). */
   citedAuthors: string[][];
   /** DOIs added by hand that OpenAlex knew. */
@@ -145,12 +191,46 @@ async function goDeeper(paper: { id: string; referencedWorks: readonly string[] 
   };
 }
 
+const emptySimilar = (over: Partial<SimilarRun>): SimilarRun => ({
+  skipped: true, message: null, referenceCount: 0, similarFound: 0, neighbours: 0, minShared: 0, minimum: 0, warning: null, heavySkipped: [], unscanned: 0, citersRead: 0, requests: 0, rows: [], bothIds: [], stopped: null, ...over,
+});
+
+/**
+ * The similar-paper scan. The works that cite the references are read (the rarest reference first; references cited `HEAVY_CITATIONS` times
+ * or more are left out and listed), the citing works sharing enough references are the similar papers, the most similar are the neighbours,
+ * and what many neighbours cite and the paper does not is signal 2b. The reader sees the price first through `opts.confirm`.
+ */
+async function scanSimilar(
+  paper: { id: string; year: number | null }, references: readonly Candidate[], signal1: readonly Gap[], deps: GapsDeps, opts: ScanOptions,
+): Promise<SimilarRun> {
+  const refs: CiterRef[] = references.flatMap((c) => { const id = shortOpenAlexId(c.openalexId); return id ? [{ id, citedBy: c.citedByCount ?? 0, title: c.title }] : []; });
+  if (refs.length === 0) return emptySimilar({ message: "No reference could be read, so there is nothing to scan." });
+  const { scan, heavy } = splitHeavy(refs);
+  const heavySkipped = heavy.map((h) => ({ id: h.id, title: h.title ?? h.id, citedBy: h.citedBy }));
+  const est = estimateCiterScan(scan);
+  if (opts.confirm && !(await opts.confirm({ ...est, scanned: scan.length, heavy }))) {
+    return emptySimilar({ message: "The scan for similar papers was skipped.", referenceCount: refs.length, heavySkipped });
+  }
+  const read = await fetchCiters(scan, { client: deps.client, budget: deps.budget });
+  const focal = refs.map((r) => ({ id: r.id, citedBy: r.citedBy }));
+  const hood = neighbourhood(read.citers, focal, { paperId: paper.id, maxYear: paper.year });
+  const top = hood.rows.slice(0, MAX_GAPS);
+  const details = await worksById(top.map((r) => r.id), deps);
+  const byId = new Map(details.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [[id, p] as const] : []; }));
+  return {
+    skipped: false, message: null, referenceCount: refs.length, similarFound: hood.similar.length, neighbours: hood.neighbours.length,
+    minShared: hood.minShared, minimum: hood.minimum, warning: hood.warning, heavySkipped, unscanned: read.unscanned.length,
+    citersRead: read.citers.length, requests: read.requests, rows: top.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })),
+    bothIds: [...bothRoutes(signal1, hood.rows)], stopped: read.stopped ?? details.stopped,
+  };
+}
+
 /**
  * Runs the tool for one input. `deeperMin` (null = off) adds the second level. Errors from the client propagate (the window shows
  * them); a budget stop is reported in the result.
  */
-export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3, deeperMin: number | null = null, extraDois: readonly string[] = []): Promise<GapsRun> {
-  if (input.kind === "references") return runReferenceList(input, deps, minCount, deeperMin);
+export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3, deeperMin: number | null = null, extraDois: readonly string[] = [], scan: ScanOptions | null = null): Promise<GapsRun> {
+  if (input.kind === "references") return runReferenceList(input, deps, minCount, deeperMin, scan);
 
   let record: Candidate | null;
   if (input.kind === "work") {
@@ -172,14 +252,15 @@ export async function runGaps(input: GapInput, deps: GapsDeps, minCount = 3, dee
   const paper = { id, referencedWorks: refs };
   const g = await fetchCitationGaps(paper, deps, minCount, MAX_GAPS);
   const deep = deeperMin === null ? null : await goDeeper(paper, g.records, deps, deeperMin);
+  const similar = scan === null ? null : await scanSimilar({ id, year: subject.year }, g.referencePapers, g.gaps.map((x) => x.gap), deps, scan);
   return empty(deps.budget.spent, {
-    subject, referencesRead: g.referencesRead, referencesWithLists: g.referencesWithLists, gaps: g.gaps, stopped: g.stopped ?? deep?.stopped ?? added.stopped,
-    deeper: deep?.deeper ?? null, citedAuthors: g.referenceAuthors, addedDois: added.found, unresolved: notFound,
+    subject, referencesRead: g.referencesRead, referencesWithLists: g.referencesWithLists, gaps: g.gaps, stopped: g.stopped ?? deep?.stopped ?? similar?.stopped ?? added.stopped,
+    deeper: deep?.deeper ?? null, similar, citedAuthors: g.referenceAuthors, addedDois: added.found, unresolved: notFound,
     citedWorks: g.referencePapers.map(toWorkRef), referenceIds: g.records.map((r) => r.id),
   });
 }
 
-async function runReferenceList(input: Extract<GapInput, { kind: "references" }>, deps: GapsDeps, minCount: number, deeperMin: number | null): Promise<GapsRun> {
+async function runReferenceList(input: Extract<GapInput, { kind: "references" }>, deps: GapsDeps, minCount: number, deeperMin: number | null, scan: ScanOptions | null): Promise<GapsRun> {
   const resolved: Candidate[] = [];
   const unresolved: string[] = [];
   let stopped: string | null = null;
@@ -220,9 +301,11 @@ async function runReferenceList(input: Extract<GapInput, { kind: "references" }>
   const details = await worksById(gaps.map((g) => g.id), deps);
   const byId = new Map(details.papers.flatMap((p) => { const id = shortOpenAlexId(p.openalexId); return id ? [[id, p] as const] : []; }));
   const deep = deeperMin === null ? null : await goDeeper(pasted, unique, deps, deeperMin);
+  const uniqueResolved = resolved.filter((cand, i, all) => { const id = shortOpenAlexId(cand.openalexId); return id !== null && all.findIndex((o) => shortOpenAlexId(o.openalexId) === id) === i; });
+  const similar = scan === null ? null : await scanSimilar({ id: "pasted", year: null }, uniqueResolved, gaps, deps, scan);
   return empty(deps.budget.spent, {
     referencesRead: unique.length, referencesWithLists: unique.filter((r) => r.referencedWorks.length > 0).length,
-    gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })), unresolved, searches, stopped: stopped ?? details.stopped ?? deep?.stopped ?? null, deeper: deep?.deeper ?? null,
+    gaps: gaps.map((gap) => ({ gap, paper: byId.get(gap.id) ?? null })), unresolved, searches, stopped: stopped ?? details.stopped ?? deep?.stopped ?? similar?.stopped ?? null, deeper: deep?.deeper ?? null, similar,
     citedAuthors: unique.map((r) => authorsOf.get(r.id) ?? []),
     citedWorks: resolved.filter((cand, i, all) => { const id = shortOpenAlexId(cand.openalexId); return id !== null && all.findIndex((o) => shortOpenAlexId(o.openalexId) === id) === i; }).map(toWorkRef),
     referenceIds: unique.map((r) => r.id),

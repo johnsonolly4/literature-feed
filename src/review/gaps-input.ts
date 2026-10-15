@@ -119,6 +119,8 @@ export interface GapEstimate {
   usd: number;
   /** References without a DOI that will not be searched, because of the cap. */
   skippedLines: number;
+  /** True when the similar-paper scan is switched on: its price is only known after the references are read, so it is not in `usd`. */
+  scanLater: boolean;
 }
 
 function round(usd: number): number {
@@ -129,7 +131,7 @@ function round(usd: number): number {
  * What a gaps run costs at most. A work's own references are read in lists of 50 (at most 100), then the details of the gaps (up to 100) in
  * lists of 50. The second level adds the shared works (up to 300, six lists) and the details of what they cite (up to 50, one list).
  */
-export function estimateGaps(input: GapInput, deeper = false, extraDois = 0): GapEstimate {
+export function estimateGaps(input: GapInput, deeper = false, extraDois = 0, similar = false): GapEstimate {
   const refLists = Math.ceil(MAX_GAP_REFERENCES / 50);
   const detailLists = Math.ceil(MAX_GAPS / 50);
   const deeperLists = deeper ? Math.ceil(MAX_HUBS / 50) + Math.ceil(MAX_DEEPER / 50) : 0;
@@ -148,7 +150,7 @@ export function estimateGaps(input: GapInput, deeper = false, extraDois = 0): Ga
     searches = Math.min(input.lines.length, MAX_TITLE_SEARCHES);
     skippedLines = Math.max(0, input.lines.length - MAX_TITLE_SEARCHES);
   }
-  return { free, filtered, searches, usd: round(filtered * COST_FILTER + searches * COST_SEARCH), skippedLines };
+  return { free, filtered, searches, usd: round(filtered * COST_FILTER + searches * COST_SEARCH), skippedLines, scanLater: similar };
 }
 
 // ---- the saved state of the tool -------------------------------------------------------------------------------------------
@@ -175,6 +177,8 @@ export interface GapsSession {
   deeper: boolean;
   /** A deeper gap is cited by at least this many of those shared works (2 to 20). */
   deeperMin: number;
+  /** Also read the works that cite the references and find the similar papers (signals 2a and 2b). Costs more, so off by default. */
+  similar: boolean;
   /** What was pasted back from the LLM that checked the authors of the last run (the text, and what it was read as). */
   audit: { answer: string; result: AuditAnswer | null } | null;
   /** The last run and the input it was made from, with when. */
@@ -182,7 +186,7 @@ export interface GapsSession {
 }
 
 export function emptyGapsSession(): GapsSession {
-  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, extraDois: "", deeper: false, deeperMin: 5, audit: null, last: null };
+  return { version: 1, mode: "paper", paperText: "", zoteroQuery: "", zoteroPick: null, pasted: "", refs: null, searchUnfound: false, minCount: 3, extraDois: "", deeper: false, deeperMin: 5, similar: false, audit: null, last: null };
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -203,6 +207,7 @@ export function normaliseGapsSession(raw: unknown): GapsSession | null {
   if (typeof raw.minCount === "number" && Number.isFinite(raw.minCount)) out.minCount = Math.min(10, Math.max(2, Math.floor(raw.minCount)));
   if (typeof raw.extraDois === "string") out.extraDois = raw.extraDois;
   out.deeper = raw.deeper === true;
+  out.similar = raw.similar === true;
   if (typeof raw.deeperMin === "number" && Number.isFinite(raw.deeperMin)) out.deeperMin = Math.min(20, Math.max(2, Math.floor(raw.deeperMin)));
   if (isObj(raw.audit) && typeof raw.audit.answer === "string") {
     const read = raw.audit.result == null ? null : checkAuditAnswer(JSON.stringify(raw.audit.result));

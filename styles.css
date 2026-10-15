@@ -917,7 +917,7 @@ table.literature-feed-authors tr.is-selected td { background: rgba(var(--vt-doin
 .literature-feed-figside h4 { margin: 0 0 var(--size-4-1); font-size: var(--font-smallest); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); font-weight: var(--font-semibold); }
 .literature-feed-figside p { margin: 0 0 var(--size-4-3); }
 .literature-feed-figside b, .literature-feed-inrun { color: var(--text-normal); }
-.literature-feed-scatter { position: relative; }
+.literature-feed-scatter { position: relative; max-width: 640px; }
 .literature-feed-scatter svg { display: block; width: 100%; height: auto; }
 .literature-feed-scatter-grid { stroke: var(--background-modifier-border); stroke-width: 1; }
 .literature-feed-scatter-baseline { stroke: var(--text-faint); stroke-width: 1; }

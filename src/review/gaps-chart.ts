@@ -60,7 +60,11 @@ const sign = (n: number): string => (n > 0 ? "+" : "");
 export function diagonalPoints(rows: readonly WorkRow[]): Diagonal {
   const listed = rows.filter((r) => r.similarCount !== null && r.similarOf !== null && r.similarOf > 0);
   const left = listed.filter((r) => r.gap === null).length;
-  const usable = listed.filter((r) => r.gap !== null).slice(0, CHART_ROWS);
+  // The dashboard's order: the works the most neighbours cite first (the rows of the table come with the signal-1 works first).
+  const idOf = (r: WorkRow): string => r.key.slice(r.key.indexOf(":") + 1);
+  const usable = listed.filter((r) => r.gap !== null)
+    .sort((a, b) => (b.similarCount ?? 0) - (a.similarCount ?? 0) || idOf(a).localeCompare(idOf(b)))
+    .slice(0, CHART_ROWS);
   const gapOf = (r: WorkRow): number => Math.round(r.gap ?? 0);
   const points: DiagonalPoint[] = usable.map((r) => {
     const x = r.share * 100;

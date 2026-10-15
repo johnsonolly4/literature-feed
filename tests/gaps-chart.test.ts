@@ -31,6 +31,17 @@ describe("diagonalPoints", () => {
     expect(d.points[39].key).toBe("r39");
   });
 
+  it("takes the 40 works the most neighbours cite, not the first 40 rows (the table lists the signal-1 works first)", () => {
+    const rows = [
+      ...Array.from({ length: 40 }, (_, i) => row(`b${i}`, { share: 0.2, similarCount: 3, similarOf: 30, gap: -10, route: "both" })), // signal-1 rows first, 3 of 30
+      row("s1", { share: 0.02, similarCount: 9, similarOf: 30, gap: 28 }), // neighbours-only rows last, but cited by more neighbours
+      row("s2", { share: 0.02, similarCount: 8, similarOf: 30, gap: 24 }),
+    ];
+    const keys = diagonalPoints(rows).points.map((p) => p.key);
+    expect(keys.slice(0, 2)).toEqual(["s1", "s2"]);
+    expect(keys).toHaveLength(40);
+  });
+
   it("counts the points above the line and gives the median shares and the three biggest gaps", () => {
     const rows = [
       row("up", { share: 0.1, similarCount: 15, similarOf: 30, gap: 40, title: "A".repeat(70) }), // x 10, y 50

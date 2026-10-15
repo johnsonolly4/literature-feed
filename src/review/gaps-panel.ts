@@ -358,6 +358,12 @@ export class GapsPanel {
           if (r.flags.zotero) td.createSpan({ cls: "literature-feed-status status-ok", text: "Zotero" });
           if (r.flags.vault) td.createSpan({ cls: "literature-feed-status status-ok", text: "Vault" });
         } },
+        { ...WORK_COLUMNS[7], render: (td, r) => {
+          if (r.review.level !== "") td.createSpan({ cls: "literature-feed-status status-check", text: r.review.level === "sure" ? "Review" : "Possible review", attr: { title: r.review.reason } });
+        } },
+        { ...WORK_COLUMNS[8], secondary: true, align: "end", render: (td, r) => {
+          if (r.niche !== null) td.createSpan({ text: r.niche.toFixed(2), attr: { title: `Cited by ${r.count} of your list per ${r.citedBy} citations; ${Math.round(r.nichePct ?? 0)}th percentile in this table.` } });
+        } },
       ],
       chips: WORK_CHIPS(run.deeper !== null, paperYear !== null), searchText: workSearchText, rowKey: (r) => r.key,
       defaultView: { chip: "all", query: "", sort: { by: "count", desc: true } },

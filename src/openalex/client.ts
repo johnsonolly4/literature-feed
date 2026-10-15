@@ -9,7 +9,7 @@ const SELECT = [
   "abstract_inverted_index", "primary_location", "authorships",
 ].join(",");
 /** What a literature review also needs: how often a work is cited, and what it cites (a long list, so only review requests ask for it). */
-const SELECT_EXTRA = `${SELECT},cited_by_count,referenced_works`;
+const SELECT_EXTRA = `${SELECT},cited_by_count,referenced_works,biblio`;
 /** OpenAlex basic paging stops at page * per_page = 10,000. */
 const PAGING_CAP = 10_000;
 
@@ -122,6 +122,7 @@ export interface OpenAlexWork {
   authorships?: { author?: { id?: string | null; display_name?: string | null } | null }[] | null;
   cited_by_count?: number | null;
   referenced_works?: string[] | null;
+  biblio?: { first_page?: string | null; last_page?: string | null } | null;
 }
 
 /** A paper as the scan hands it on: what the engine reads plus what the inbox note shows. */
@@ -135,6 +136,16 @@ export interface Candidate extends Paper {
   /** Only in review requests: times the work is cited, and the short ids (`W123`) of the works it cites. */
   citedByCount?: number;
   referencedWorks?: string[];
+  /** Only in review requests: OpenAlex's work type (`review`, `article`…) and the page count when both page numbers are plain numbers. */
+  workType?: string;
+  pages?: number;
+}
+
+/** Pages from `first_page` and `last_page` when both are plain numbers (not `e123`), else undefined. */
+export function pageCount(biblio: OpenAlexWork["biblio"]): number | undefined {
+  const first = /^\d+$/.test(biblio?.first_page ?? "") ? Number(biblio?.first_page) : NaN;
+  const last = /^\d+$/.test(biblio?.last_page ?? "") ? Number(biblio?.last_page) : NaN;
+  return last >= first ? last - first + 1 : undefined;
 }
 
 /** `https://openalex.org/W123` to `W123`; null when it is not a work address. */
@@ -162,6 +173,8 @@ export function toCandidate(work: OpenAlexWork): Candidate | null {
     ...(Array.isArray(work.referenced_works)
       ? { referencedWorks: work.referenced_works.map((w) => shortWorkId(w)).filter((w): w is string => w !== null) }
       : {}),
+    ...(Array.isArray(work.referenced_works) && work.type ? { workType: work.type } : {}),
+    ...(pageCount(work.biblio) !== undefined ? { pages: pageCount(work.biblio) } : {}),
   };
 }
 

@@ -44,7 +44,28 @@ describe("works rows", () => {
   });
 
   it("hides the chips that do not apply", () => {
-    expect(WORK_CHIPS(false, false).filter((c) => !c.when || c.when()).map((c) => c.key)).toEqual(["all", "first", "have", "missing"]);
+    expect(WORK_CHIPS(false, false).filter((c) => !c.when || c.when()).map((c) => c.key)).toEqual(["all", "first", "have", "missing", "reviews"]);
+  });
+
+  it("flags reviews and gives niche with its percentile", () => {
+    const r = run();
+    r.gaps[0].paper = { ...cand(11, 2019, ["Ann Lee"]), workType: "review", citedByCount: 50 };
+    r.gaps[1].paper = { ...cand(12, 2024, ["Bob Roe"]), citedByCount: 6 };
+    const out = buildWorkRows(r, () => [none, none]);
+    expect(out[0].review).toEqual({ level: "sure", reason: "OpenAlex type: review" });
+    expect(out[1].review.level).toBe("");
+    expect(out[0].niche).toBeCloseTo(0.1);
+    expect(out[1].niche).toBeCloseTo(0.5);
+    expect(out.map((x) => x.nichePct)).toEqual([0, 100, 50]);
+    const model: TableModel<(typeof out)[number]> = { columns: WORK_COLUMNS, chips: WORK_CHIPS(true, true), searchText: workSearchText };
+    expect(viewRows(out, model, { chip: "reviews", query: "", sort: { by: "", desc: false } }).map((x) => x.key)).toEqual(["1:W11"]);
+  });
+
+  it("has no niche without citations", () => {
+    const r = run();
+    r.gaps[0].paper = { ...cand(11, 2019, []), citedByCount: 0 };
+    r.gaps[1].paper = null;
+    expect(buildWorkRows(r, () => [none, none]).slice(0, 2).map((x) => x.niche)).toEqual([null, null]);
   });
 });
 

@@ -908,25 +908,33 @@ table.literature-feed-authors tr.is-selected td { background: rgba(var(--vt-doin
   .literature-feed-gaps-refs { max-height: 40em; overflow: auto; }
 }
 
-/* Scatter chart (src/ui/scatter.ts): grid and axes in muted tones; ringed dots amber (the "waiting" meaning), plain dots neutral. */
-.literature-feed-scatter { margin: var(--size-4-3) 0; }
-.literature-feed-scatter svg { display: block; max-width: 760px; }
+/* Scatter chart (src/ui/scatter.ts) and its figure, after the owner's refcheck dashboard. Amber is the "waiting" meaning colour. */
+.literature-feed-fig { margin: var(--size-4-2) 0; padding: var(--size-4-3) var(--size-4-4); border: 1px solid var(--vt-card-border, var(--background-modifier-border)); border-radius: var(--vt-card-radius, var(--radius-m)); background: var(--background-primary); }
+.literature-feed-figtitle { font-weight: var(--font-semibold); margin-bottom: var(--size-4-2); }
+.literature-feed-figgrid { display: grid; grid-template-columns: minmax(0, 640px) minmax(15em, 1fr); gap: var(--size-4-5); align-items: start; }
+@container (max-width: 960px) { .literature-feed-figgrid { grid-template-columns: minmax(0, 1fr); } }
+.literature-feed-figside { font-size: var(--font-ui-smaller); line-height: 1.5; color: var(--text-muted); padding-left: var(--size-4-4); border-left: 1px solid var(--background-modifier-border); }
+.literature-feed-figside h4 { margin: 0 0 var(--size-4-1); font-size: var(--font-smallest); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); font-weight: var(--font-semibold); }
+.literature-feed-figside p { margin: 0 0 var(--size-4-3); }
+.literature-feed-figside b, .literature-feed-inrun { color: var(--text-normal); }
+.literature-feed-scatter { position: relative; }
+.literature-feed-scatter svg { display: block; width: 100%; height: auto; }
 .literature-feed-scatter-grid { stroke: var(--background-modifier-border); stroke-width: 1; }
-.literature-feed-scatter-axis { stroke: var(--text-faint); stroke-width: 1.5; }
-.literature-feed-scatter-diagonal { stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 6 5; }
-.literature-feed-scatter-tick, .literature-feed-scatter-note, .literature-feed-scatter-label { fill: var(--text-muted); font-size: 11px; }
-.literature-feed-scatter-label { fill: var(--text-normal); }
-.literature-feed-scatter-point { cursor: pointer; }
-.literature-feed-scatter-dot { fill: var(--text-muted); fill-opacity: 0.55; stroke: var(--background-primary); stroke-width: 1; }
-.literature-feed-scatter-dot-ring { fill: rgb(var(--vt-waiting, 245, 158, 11)); fill-opacity: 0.9; stroke: var(--background-primary); stroke-width: 1; }
-.literature-feed-scatter-ring { fill: none; stroke: rgb(var(--vt-waiting, 245, 158, 11)); stroke-width: 2; }
-.literature-feed-scatter-point:hover .literature-feed-scatter-dot, .literature-feed-scatter-point:focus .literature-feed-scatter-dot,
-.literature-feed-scatter-point:hover .literature-feed-scatter-dot-ring, .literature-feed-scatter-point:focus .literature-feed-scatter-dot-ring { stroke: var(--text-normal); stroke-width: 2; }
-.literature-feed-scatter-legend { display: flex; flex-wrap: wrap; gap: var(--size-4-3); margin-top: var(--size-4-2); color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.literature-feed-scatter-legenditem { display: inline-flex; align-items: center; gap: var(--size-4-1); }
-.literature-feed-scatter-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); opacity: 0.6; }
-.literature-feed-scatter-swatch.is-ring { background: rgb(var(--vt-waiting, 245, 158, 11)); opacity: 1; box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 4px rgb(var(--vt-waiting, 245, 158, 11)); margin-inline: 4px; }
-.literature-feed-scatter-swatch.is-line { width: 18px; height: 0; border-radius: 0; background: none; border-top: 2px dashed var(--text-muted); opacity: 1; }
+.literature-feed-scatter-baseline { stroke: var(--text-faint); stroke-width: 1; }
+.literature-feed-scatter-arrow { stroke: var(--text-muted); stroke-width: 1; }
+.literature-feed-scatter-arrowhead { fill: var(--text-muted); }
+.literature-feed-scatter-diagonal { stroke: var(--text-muted); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.literature-feed-scatter-tick, .literature-feed-scatter-note { fill: var(--text-muted); font-size: 11px; }
+.literature-feed-scatter-label { fill: var(--text-normal); font-size: 11px; }
+.literature-feed-scatter-dot { fill: rgb(var(--vt-waiting, 245, 158, 11)); fill-opacity: 0.38; stroke: var(--background-primary); stroke-width: 1; cursor: pointer; }
+.literature-feed-scatter-dot-both { fill: rgb(var(--vt-waiting, 245, 158, 11)); fill-opacity: 0.82; stroke: var(--text-normal); stroke-width: 1.6; cursor: pointer; }
+.literature-feed-scatter-dot:hover, .literature-feed-scatter-dot-both:hover { stroke: var(--text-normal); stroke-width: 2; }
+.literature-feed-scatter-tip { position: absolute; z-index: 5; max-width: 22em; padding: var(--size-4-1) var(--size-4-2); background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); font-size: var(--font-ui-smaller); pointer-events: none; }
+.literature-feed-scatter-tip-head { font-weight: var(--font-semibold); }
+.literature-feed-scatter-legend { display: flex; flex-wrap: wrap; gap: var(--size-4-1) var(--size-4-4); margin-top: var(--size-4-2); padding-top: var(--size-4-2); border-top: 1px solid var(--background-modifier-border); font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.literature-feed-scatter-legend > span { display: inline-flex; align-items: center; gap: var(--size-4-1); }
+.literature-feed-scatter-legend svg { flex: none; }
+.literature-feed-scatter-legendline { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 4 3; }
 
 .literature-feed-reportbar { margin: var(--size-4-2) 0; }
 

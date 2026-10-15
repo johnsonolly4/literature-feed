@@ -53,6 +53,11 @@ const EXTRA_DESC = "DOIs of works the paper cites that OpenAlex or the pasted li
 const SIMILAR_NAME = "Also find similar papers";
 const SIMILAR_DESC = "Reads the works that cite the references, finds the ones that share at least five of them, and lists what those similar papers cite and the paper does not. Costs more; the price is shown first.";
 const CAVEAT = "Pointers, not verdicts. In one test of the source tool, 13 of 30 held-out references came back. The similar papers are a modelling choice (how many, how many references they share), and the counts here depend on it.";
+const PAPER_NOTE = "The paper's own references are read from OpenAlex. To use a pasted list instead, pick that under Start from.";
+/** Part of a sentence in the figure text, so it is kept as a constant (the sentence-case rule reads only literals). */
+const DASHED = "dashed line";
+const FIG_HEAD = "2b · Cited by your most similar papers";
+const DASH_LEGEND = "Dashed line: cited equally often by the field and by your list. Above it: the field cites it more than you do (the gap)";
 const AUDIT_DESC = "A prompt for a chat that can search the web: it tests whether the flagged authors are really under- or over-represented, or an artefact (a merged namesake, a work out after the paper, another field).";
 const OLD_RUN = "This run was saved before author details were kept, so the authors table and the author view are empty. Press Find the gaps again: it is free from the cache.";
 const SEARCH_UNFOUND_NAME = "Also search the ones not found in OpenAlex";
@@ -134,7 +139,7 @@ export class GapsPanel {
     if (this.s.mode === "paper") {
       new Setting(left).setName("Paper identifier").setDesc("A DOI, a doi.org link, an OpenAlex id (W…) or an openalex.org link. A title also works, and costs one search ($0.001).")
         .addText((t) => t.setPlaceholder("10.1021/jacs.3c08248").setValue(this.s.paperText).onChange((v) => { this.s.paperText = v; this.estimate = null; this.saveSoon(); }));
-      right.createEl("p", { cls: "setting-item-description", text: "The paper's own references are read from OpenAlex. To use a pasted list instead, pick that under Start from." });
+      right.createEl("p", { cls: "setting-item-description", text: PAPER_NOTE });
     } else if (this.s.mode === "zotero") {
       this.renderZotero(right);
     } else {
@@ -485,6 +490,7 @@ export class GapsPanel {
 
     // ---- the switch between the two tables ----
     const chips = new Map<string, HTMLElement>();
+    let drawChartTab: (() => void) | null = null;
     const show = (v: "works" | "authors" | "chart"): void => {
       split.close();
       worksTable?.select(null);
@@ -492,6 +498,7 @@ export class GapsPanel {
       worksHolder.toggleClass("literature-feed-hidden", v !== "works");
       authorsHolder.toggleClass("literature-feed-hidden", v !== "authors");
       chartHolder.toggleClass("literature-feed-hidden", v !== "chart");
+      if (v === "chart") drawChartTab?.();
       for (const [k, c] of chips) c.toggleClass("is-active", k === v);
     };
     const switches: (readonly ["works" | "authors" | "chart", string])[] = [["works", `Works (${works.length})`], ["authors", "Authors"], ...(diagonal && diagonal.points.length > 0 ? [["chart", "Chart"] as const] : [])];
@@ -514,21 +521,49 @@ export class GapsPanel {
       authorDetail(row);
     };
     if (diagonal && diagonal.points.length > 0) {
-      drawScatter(chartHolder, {
-        title: "Who cites each work: your references or the similar papers",
-        points: diagonal.points.map((p) => ({ key: p.key, x: p.x, y: p.y, ring: p.both, label: p.label, labelLeft: p.labelLeft, tip: p.tip })),
-        max: diagonal.max, diagonal: true,
-        xNote: "share of your references that cite it", yNote: "share of the similar papers that cite it",
-        legend: [{ ring: true, text: "found on both routes" }, { ring: false, text: "cited by the similar papers" }],
-        onPick: (key) => {
-          const row = works.find((w) => w.key === key);
-          if (!row) return;
-          show("works");
-          worksTable?.select(key);
-          workDetail(row);
-        },
-      });
-      chartHolder.createEl("p", { cls: "literature-feed-meta", text: `${diagonal.above} of ${diagonal.points.length} works are above the line: the similar papers cite them more than your references do (${diagonal.aboveBoth} of those are on both routes). ${diagonal.on} are on the line and ${diagonal.below} below it. The works with the largest gaps are labelled (the ones found on both routes first); click a point for details.${diagonal.left > 0 ? ` ${diagonal.left} works are left out because this run did not save how many of your references cite them: run it again.` : ""}` });
+      // Drawn each time the tab is shown, so the chart is as wide as the tab is. The texts are the owner's dashboard's.
+      drawChartTab = (): void => {
+        chartHolder.empty();
+        chartHolder.createEl("h4", { text: FIG_HEAD });
+        const fig = chartHolder.createDiv({ cls: "literature-feed-fig" });
+        fig.createDiv({ cls: "literature-feed-figtitle", text: "The gap: how much of the field cites a paper against how much of your list does" });
+        const grid = fig.createDiv({ cls: "literature-feed-figgrid" });
+        const cell = grid.createDiv({ cls: "literature-feed-figchart" });
+        drawScatter(cell, {
+          points: diagonal.points.map((p) => ({ key: p.key, x: p.x, y: p.y, ring: p.both, label: p.label, tip: p.tip })),
+          max: diagonal.max, diagonal: true,
+          aria: "Papers by share of your references citing them and share of similar papers citing them",
+          xNote: "Further right: more of your own references cite it", yNote: "Higher: more similar papers cite it",
+          legend: [
+            { mark: "ring", text: "Also found by signal 1 (both routes)" },
+            { mark: "dot", text: "Signal 2b only" },
+            { mark: "line", text: DASH_LEGEND },
+          ],
+          onPick: (key) => {
+            const row = works.find((w) => w.key === key);
+            if (!row) return;
+            show("works");
+            worksTable?.select(key);
+            workDetail(row);
+          },
+        });
+        const side = grid.createEl("aside", { cls: "literature-feed-figside" });
+        side.createEl("h4", { text: "How to read it" });
+        const p1 = side.createEl("p");
+        p1.appendText("Each dot is a paper your closest neighbours cite and your list does not. The ");
+        p1.createEl("b", { text: DASHED });
+        p1.appendText(" marks papers cited equally often by the field (up) and by your own references (right).");
+        const p2 = side.createEl("p");
+        p2.createEl("b", { text: "Above the line" });
+        p2.appendText(": the field cites it more than your list does. That gap is what signal 2b measures. ");
+        p2.createEl("b", { text: "Below the line" });
+        p2.appendText(": your references lean on it more than your neighbours do, so it is probably specific to how you work. The further above the line, the stronger the case that something is missing.");
+        side.createEl("h4", { text: "In this run" });
+        const run = side.createEl("p", { cls: "literature-feed-inrun" });
+        run.createEl("b", { text: `${diagonal.above} of ${diagonal.points.length}` });
+        run.appendText(` papers lie above the line.${diagonal.big.length > 0 ? ` The biggest gaps: ${diagonal.big.map((r) => `${r.title} (${r.gap > 0 ? "+" : ""}${r.gap} points)`).join("; ")}.` : ""} The median paper is cited by ${diagonal.medianX}% of your references against ${diagonal.medianY}% of the neighbours.`);
+        chartHolder.createEl("p", { cls: "literature-feed-meta", text: `Papers that several of your closest neighbours cite but your list does not. Gap says how much more the neighbours lean on a paper than your own references do. The chart shows the first ${diagonal.points.length} of the works listed in the table, the most cited by the neighbours first.${diagonal.left > 0 ? ` ${diagonal.left} works are left out because this run did not save how many of your references cite them: run it again.` : ""}` });
+      };
     }
     refresh();
     show("works");

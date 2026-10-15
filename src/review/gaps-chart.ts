@@ -1,7 +1,13 @@
-// The data behind the signal-2b diagonal chart (from the owner's refcheck dashboard): each work the similar papers cite, placed by the share
-// of the paper's references that cite it (x) and the share of the neighbours that cite it (y), both in percent on the same scale, so a point
-// above the y = x line is cited more by the neighbours than by the references. Pure: `src/ui/scatter.ts` draws it.
+// The data behind the signal-2b chart, as the owner's refcheck dashboard draws it (replication spec 11.4, `tab === 'signal2b'` in its
+// script): the top 40 works the similar papers cite, placed by the share of the paper's references that cite each (x) and the share of the
+// neighbours that cite it (y), both in percent on one scale from 0, so a point above the y = x line is cited more by the neighbours than by
+// the references (the gap). Pure: `src/ui/scatter.ts` draws it.
 import type { WorkRow } from "./gaps-rows";
+
+/** The dashboard lists and plots the top 40 works of signal 2b. */
+export const CHART_ROWS = 40;
+/** The dashboard labels the 5 largest gaps. */
+export const CHART_LABELS = 5;
 
 export interface DiagonalPoint {
   key: string;
@@ -10,83 +16,73 @@ export interface DiagonalPoint {
   y: number;
   /** Found on both routes (signal 1 and signal 2b). */
   both: boolean;
-  /** First author's family name and year, for the few labelled points; empty otherwise. */
+  /** Surname of the first author and the year, for the five largest gaps; empty otherwise. */
   label: string;
-  /** Draw the label to the left of the dot (the dot is near the right edge). */
-  labelLeft?: boolean;
-  tip: string;
+  /** Hover lines, the first in bold: title, authors and year, the two shares, the gap. */
+  tip: string[];
 }
 
 export interface Diagonal {
   points: DiagonalPoint[];
-  /** The scale of both axes: at least 10, rounded up to a multiple of 5. */
+  /** Both axes run from 0 to this: at least 10, otherwise the largest value plus a tenth, rounded up. */
   max: number;
+  /** Points above the line, of all `points`. */
   above: number;
-  on: number;
-  below: number;
-  aboveBoth: number;
+  /** The three biggest gaps with the title cut to 55 characters, for the "In this run" text. */
+  big: { title: string; gap: number }[];
+  /** The median share of references and of neighbours, rounded. */
+  medianX: number;
+  medianY: number;
   /** Rows left out because this run did not save how many references cite them (a run from before the chart). */
   left: number;
 }
 
-/** The family name and year of a work's first author, e.g. "Roe 2019". */
-export function shortLabel(authors: readonly string[], year: number | null): string {
-  const first = authors[0]?.trim() ?? "";
-  const family = first === "" ? "" : first.includes(",") ? first.split(",")[0].trim() : (first.split(/\s+/).pop() ?? "");
-  return [family, year === null ? "" : String(year)].filter((t) => t !== "").join(" ");
+/** The surname as the dashboard takes it: the last word of the first author's name. */
+export function surname(authors: readonly string[]): string {
+  return (authors[0]?.split(",")[0] ?? "").trim().split(" ").pop() ?? "";
 }
 
-// The size of the plot in the drawing (src/ui/scatter.ts) and of a label, to keep labels from covering each other. Approximate on purpose.
-const PLOT_W = 570;
-const PLOT_H = 398;
-const CHAR_W = 6.2;
-const LABEL_H = 14;
-const DOT_GAP = 11;
+/** The label of a work in the chart: surname and year. */
+export function shortLabel(authors: readonly string[], year: number | null): string {
+  return [surname(authors), year === null ? "" : String(year)].filter((t) => t !== "").join(" ");
+}
 
-/**
- * Points for the rows the scan listed. At most `labels` points above the line carry a label: the works found on both routes first, then the
- * others, each by largest gap. A label that would cover one already placed (or that sits on the same spot) is skipped, and one that would run
- * past the right edge goes to the left of its dot.
- */
-export function diagonalPoints(rows: readonly WorkRow[], labels = 5): Diagonal {
-  const usable = rows.filter((r) => r.similarCount !== null && r.similarOf !== null && r.similarOf > 0 && r.gap !== null);
-  const left = rows.filter((r) => r.similarCount !== null && r.gap === null).length;
-  const points: DiagonalPoint[] = usable.map((r) => ({
-    key: r.key, x: r.share * 100, y: ((r.similarCount ?? 0) / (r.similarOf ?? 1)) * 100, both: r.route === "both", label: "",
-    tip: `${r.title}\n${r.similarCount} of ${r.similarOf} similar papers cite it; ${r.count} of ${r.of} of your references (${(r.gap ?? 0) >= 0 ? "+" : "−"}${Math.abs(r.gap ?? 0).toFixed(0)} points)`,
-  }));
-  const biggest = Math.max(10, ...points.map((p) => Math.max(p.x, p.y)));
-  const max = Math.ceil(biggest / 5) * 5;
+function median(values: readonly number[]): number {
+  const v = [...values].sort((a, b) => a - b);
+  if (v.length === 0) return 0;
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 === 1 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+const sign = (n: number): string => (n > 0 ? "+" : "");
+
+/** The chart's points for the rows the scan listed (the first `CHART_ROWS`, most cited by the neighbours first). */
+export function diagonalPoints(rows: readonly WorkRow[]): Diagonal {
+  const listed = rows.filter((r) => r.similarCount !== null && r.similarOf !== null && r.similarOf > 0);
+  const left = listed.filter((r) => r.gap === null).length;
+  const usable = listed.filter((r) => r.gap !== null).slice(0, CHART_ROWS);
+  const gapOf = (r: WorkRow): number => Math.round(r.gap ?? 0);
+  const points: DiagonalPoint[] = usable.map((r) => {
+    const x = r.share * 100;
+    const y = ((r.similarCount ?? 0) / (r.similarOf ?? 1)) * 100;
+    return {
+      key: r.key, x, y, both: r.route === "both", label: "",
+      tip: [r.title, `${r.authors.join(", ")}${r.year === null ? "" : ` · ${r.year}`}`, `Cited by ${Math.round(x)}% of your references and ${Math.round(y)}% of similar papers`, `Gap ${sign(gapOf(r))}${gapOf(r)} points`],
+    };
+  });
+  const byGap = [...usable].sort((a, b) => gapOf(b) - gapOf(a));
   const byKey = new Map(points.map((p) => [p.key, p]));
-  const ranked = [...usable].filter((r) => (r.gap ?? 0) > 0)
-    .sort((a, b) => Number(b.route === "both") - Number(a.route === "both") || (b.gap ?? 0) - (a.gap ?? 0) || a.key.localeCompare(b.key));
-  // Boxes in pixels of the plot (x to the right, y downwards), one per placed label.
-  const placed: { l: number; r: number; t: number; b: number }[] = [];
-  let count = 0;
-  for (const r of ranked) {
-    if (count >= labels) break;
+  for (const r of byGap.slice(0, CHART_LABELS)) {
     const p = byKey.get(r.key);
-    const text = shortLabel(r.authors, r.year);
-    if (!p || text === "") continue;
-    const width = text.length * CHAR_W;
-    const cx = (p.x / max) * PLOT_W;
-    const cy = PLOT_H - (p.y / max) * PLOT_H;
-    const left = cx + DOT_GAP + width > PLOT_W;
-    const box = left ? { l: cx - DOT_GAP - width, r: cx - DOT_GAP, t: cy - LABEL_H / 2, b: cy + LABEL_H / 2 } : { l: cx + DOT_GAP, r: cx + DOT_GAP + width, t: cy - LABEL_H / 2, b: cy + LABEL_H / 2 };
-    if (placed.some((o) => box.l < o.r && o.l < box.r && box.t < o.b && o.t < box.b)) continue;
-    // Not over another labelled dot either.
-    if (points.some((q) => q.label !== "" && Math.abs((q.x / max) * PLOT_W - cx) < width && Math.abs(PLOT_H - (q.y / max) * PLOT_H - cy) < LABEL_H)) continue;
-    placed.push(box);
-    p.label = text;
-    if (left) p.labelLeft = true;
-    count++;
+    if (p) p.label = shortLabel(r.authors, r.year);
   }
-  const eps = 1e-9;
+  const biggest = points.length === 0 ? 10 : Math.max(...points.map((p) => Math.max(p.x, p.y)));
   return {
-    points, max, left,
-    above: points.filter((p) => p.y > p.x + eps).length,
-    on: points.filter((p) => Math.abs(p.y - p.x) <= eps).length,
-    below: points.filter((p) => p.y < p.x - eps).length,
-    aboveBoth: points.filter((p) => p.both && p.y > p.x + eps).length,
+    points, left,
+    max: Math.max(10, Math.ceil(biggest * 1.1)),
+    above: points.filter((p) => p.y > p.x).length,
+    big: byGap.slice(0, 3).map((r) => ({ title: r.title.slice(0, 55), gap: gapOf(r) })),
+    medianX: Math.round(median(points.map((p) => p.x))),
+    medianY: Math.round(median(points.map((p) => p.y))),
   };
 }

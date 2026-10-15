@@ -1,7 +1,8 @@
-// The data behind the 2b diagonal chart, on invented rows.
+// The data behind the 2b chart, as the owner's refcheck dashboard draws it (replication spec 11.4), on invented rows.
 import { describe, expect, it } from "vitest";
-import { diagonalPoints, shortLabel } from "../src/review/gaps-chart";
+import { CHART_ROWS, diagonalPoints, shortLabel, surname } from "../src/review/gaps-chart";
 import type { WorkRow } from "../src/review/gaps-rows";
+import { niceTicks } from "../src/ui/scatter";
 
 const none = { zotero: null, vault: null, listedBefore: [] };
 function row(key: string, o: Partial<WorkRow>): WorkRow {
@@ -12,54 +13,65 @@ function row(key: string, o: Partial<WorkRow>): WorkRow {
 }
 
 describe("diagonalPoints", () => {
-  it("places a work by the share of references (x) and of neighbours (y), on one scale of at least 10", () => {
-    const d = diagonalPoints([row("a", { count: 5, share: 0.1, similarCount: 3, similarOf: 30, gap: 0 })]);
+  it("places a work by the share of references (x) and of neighbours (y), on one scale from 0", () => {
+    const d = diagonalPoints([row("a", { share: 0.1, similarCount: 3, similarOf: 30, gap: 0 })]);
     expect(d.points[0]).toMatchObject({ key: "a", x: 10, y: 10 });
-    expect(d.max).toBe(10);
-    expect(diagonalPoints([row("b", { similarCount: 14, similarOf: 30, gap: 47 })]).max).toBe(50); // 46.7 rounds up to the next multiple of 5
+    expect(d.points[0].tip).toEqual(["Work a", "Ann Lee · 2019", "Cited by 10% of your references and 10% of similar papers", "Gap 0 points"]);
   });
 
-  it("counts points above, on and below the line, and the both-route ones above", () => {
+  it("sets the axis maximum as the dashboard does: at least 10, else the largest value plus a tenth, rounded up", () => {
+    expect(diagonalPoints([row("s", { share: 0.02, similarCount: 1, similarOf: 30, gap: 0 })]).max).toBe(10);
+    expect(diagonalPoints([row("b", { share: 0.26, similarCount: 14, similarOf: 30, gap: 21 })]).max).toBe(52); // 46.67 x 1.1 = 51.3, rounded up
+  });
+
+  it("plots only the first 40 works, most cited by the neighbours first", () => {
+    const rows = Array.from({ length: 45 }, (_, i) => row(`r${i}`, { share: 0.05, similarCount: 20 - Math.floor(i / 3), similarOf: 30, gap: 30 - i }));
+    const d = diagonalPoints(rows);
+    expect(d.points).toHaveLength(CHART_ROWS);
+    expect(d.points[39].key).toBe("r39");
+  });
+
+  it("counts the points above the line and gives the median shares and the three biggest gaps", () => {
     const rows = [
-      row("up", { share: 0.1, similarCount: 15, similarOf: 30, route: "both" }),
-      row("up2", { share: 0, similarCount: 6, similarOf: 30 }),
-      row("on", { share: 0.2, similarCount: 6, similarOf: 30, gap: 0 }),
-      row("down", { share: 0.4, similarCount: 3, similarOf: 30, gap: -30, route: "both" }),
+      row("up", { share: 0.1, similarCount: 15, similarOf: 30, gap: 40, title: "A".repeat(70) }), // x 10, y 50
+      row("up2", { share: 0, similarCount: 6, similarOf: 30, gap: 20 }), // x 0, y 20
+      row("on", { share: 0.2, similarCount: 6, similarOf: 30, gap: 0 }), // x 20, y 20
+      row("down", { share: 0.4, similarCount: 3, similarOf: 30, gap: -30 }), // x 40, y 10
     ];
     const d = diagonalPoints(rows);
-    expect([d.above, d.on, d.below, d.aboveBoth]).toEqual([2, 1, 1, 1]);
-    expect(d.points.find((p) => p.key === "down")?.both).toBe(true);
+    expect(d.above).toBe(2);
+    expect(d.medianX).toBe(15); // median of 10, 0, 20, 40
+    expect(d.medianY).toBe(20); // median of 50, 20, 20, 10
+    expect(d.big.map((b) => b.gap)).toEqual([40, 20, 0]);
+    expect(d.big[0].title).toHaveLength(55);
   });
 
-  it("labels at most five points, the largest gaps above the line, with family name and year", () => {
-    const rows = Array.from({ length: 8 }, (_, i) => row(`r${i}`, { share: 0, similarCount: 3 + i, similarOf: 30, gap: 10 + i, authors: [`Ann Fam${i}`], year: 2020 }));
-    const d = diagonalPoints(rows);
-    expect(d.points.filter((p) => p.label !== "").map((p) => p.label).sort()).toEqual(["Fam3 2020", "Fam4 2020", "Fam5 2020", "Fam6 2020", "Fam7 2020"]);
-    expect(shortLabel(["Lee, Ann"], null)).toBe("Lee");
+  it("labels the five largest gaps with surname and year, as the dashboard does (both routes or not)", () => {
+    const rows = Array.from({ length: 8 }, (_, i) => row(`r${i}`, { share: 0, similarCount: 3 + i, similarOf: 30, gap: 10 + i, authors: [`Ann Fam${i}`], year: 2020, route: i === 0 ? "both" : "similar" }));
+    const labelled = diagonalPoints(rows).points.filter((p) => p.label !== "").map((p) => p.label).sort();
+    expect(labelled).toEqual(["Fam3 2020", "Fam4 2020", "Fam5 2020", "Fam6 2020", "Fam7 2020"]);
+    expect(surname(["Ann Lee, Bo Roe"])).toBe("Lee");
+    expect(surname(["Lee"])).toBe("Lee");
     expect(shortLabel([], 2019)).toBe("2019");
   });
 
-  it("labels the works found on both routes first, and skips a label that would cover another", () => {
-    const rows = [
-      // Five neighbours-only works on one spot with big gaps, and one both-route work with a smaller gap.
-      ...Array.from({ length: 5 }, (_, i) => row(`s${i}`, { share: 0.02, similarCount: 9, similarOf: 30, gap: 28, authors: [`Ann Same${i}`], year: 2020 })),
-      row("b", { share: 0.2, similarCount: 14, similarOf: 30, gap: 27, route: "both", authors: ["Bo Both"], year: 2018 }),
-    ];
-    const labelled = diagonalPoints(rows).points.filter((p) => p.label !== "").map((p) => p.label);
-    expect(labelled).toContain("Both 2018");
-    expect(labelled.filter((l) => l.startsWith("Same"))).toHaveLength(1); // the five on one spot would cover each other
-  });
-
-  it("puts a label to the left of a dot near the right edge", () => {
-    const d = diagonalPoints([row("edge", { share: 0.46, similarCount: 15, similarOf: 30, gap: 4, route: "both", authors: ["Ann Verylongfamilyname"], year: 2019 })]);
-    expect(d.points[0].labelLeft).toBe(true);
-    const mid = diagonalPoints([row("mid", { share: 0.05, similarCount: 15, similarOf: 30, gap: 45, route: "both" })]);
-    expect(mid.points[0].labelLeft).toBeUndefined();
+  it("marks the works found on both routes", () => {
+    const d = diagonalPoints([row("b", { route: "both" }), row("s", { route: "similar" })]);
+    expect(d.points.map((p) => p.both)).toEqual([true, false]);
   });
 
   it("leaves out rows from a run that did not save the reference count, and says how many", () => {
     const d = diagonalPoints([row("old", { gap: null }), row("new", { share: 0.1 }), row("noscan", { similarCount: null, similarOf: null, gap: null })]);
     expect(d.points.map((p) => p.key)).toEqual(["new"]);
     expect(d.left).toBe(1);
+  });
+});
+
+describe("niceTicks", () => {
+  it("gives about six round ticks from 0, as d3 does", () => {
+    expect(niceTicks(10)).toEqual([0, 2, 4, 6, 8, 10]);
+    expect(niceTicks(12)).toEqual([0, 2, 4, 6, 8, 10, 12]);
+    expect(niceTicks(25)).toEqual([0, 5, 10, 15, 20, 25]);
+    expect(niceTicks(52)).toEqual([0, 10, 20, 30, 40, 50]);
   });
 });

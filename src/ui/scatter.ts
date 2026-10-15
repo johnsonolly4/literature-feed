@@ -1,90 +1,142 @@
-// A small scatter chart as SVG (no library, no inline styles: colours and type come from classes in styles.css). Shape carries meaning as well
-// as colour: a ring marks the highlighted points, and an optional dashed y = x line shows which side a point is on. Used by the citation-gaps
-// chart; the other scatters of the report can use it too.
-const WIDTH = 640;
-const MARGIN = { left: 52, right: 18, top: 22, bottom: 40 };
+// A scatter chart as SVG, following the owner's refcheck dashboard (its `scatter` helper): square plot, gridlines and tick labels, axis arrows with
+// plain-language notes, an optional dashed y = x line, round dots (the highlighted kind ringed), labels tried in four places so they do not
+// cover each other, a floating tooltip, and a legend row. No library and no inline styles: colours and type come from classes in styles.css.
+// Every `cls` below holds one class (SVG elements do not take several).
+const FALLBACK_WIDTH = 640;
+const CHAR_W = 6.2;
 
 export interface ScatterPoint {
   key: string;
   x: number;
   y: number;
-  /** Ringed: the highlighted kind (for example found on both routes). */
+  /** The highlighted kind: drawn solid and ringed, on top. */
   ring?: boolean;
+  /** Tried on the right, the left, then below, until it fits without covering another label. */
   label?: string;
-  /** The label goes to the left of the dot (near the right edge). */
-  labelLeft?: boolean;
-  /** Shown on hover (the SVG title). */
-  tip: string;
+  /** The hover lines; the first is bold. */
+  tip: string[];
 }
 
 export interface ScatterSpec {
-  title: string;
   points: readonly ScatterPoint[];
   /** Both axes run from 0 to this. */
   max: number;
-  /** Plain-language notes on the axes, for example "more of your references cite it". */
   xNote: string;
   yNote: string;
-  /** Draw the dashed y = x line. */
+  aria: string;
   diagonal?: boolean;
-  /** One legend row: ringed and plain dots. */
-  legend: { ring: boolean; text: string }[];
-  /** Click on a point. */
+  /** One legend row: a ringed dot, a plain dot or the dashed line, each with its text. */
+  legend: { mark: "ring" | "dot" | "line"; text: string }[];
   onPick?: (key: string) => void;
 }
 
-function svgText(parent: SVGElement, cls: string, text: string, attr: Record<string, string>): void {
-  parent.createSvg("text", { cls, attr }).setText(text);
+// d3's tick rule (ticks of a linear scale from 0): a step of 1, 2, 5 or 10 times a power of ten, about `count` ticks.
+const E10 = Math.sqrt(50);
+const E5 = Math.sqrt(10);
+const E2 = Math.sqrt(2);
+export function niceTicks(max: number, count = 6): number[] {
+  const step = max / count;
+  const power = Math.floor(Math.log10(step));
+  const error = step / 10 ** power;
+  const unit = (error >= E10 ? 10 : error >= E5 ? 5 : error >= E2 ? 2 : 1) * 10 ** power;
+  const out: number[] = [];
+  for (let v = 0; v <= max + 1e-9; v += unit) out.push(Math.round(v * 1e6) / 1e6);
+  return out;
 }
 
-/** Draws the chart into `parent`. */
+let arrowCount = 0;
+
+function text(parent: SVGElement, cls: string, value: string, attr: Record<string, string>): SVGElement {
+  const t = parent.createSvg("text", { cls, attr });
+  t.setText(value);
+  return t;
+}
+
+/** A small mark for the legend. */
+function legendMark(parent: HTMLElement, mark: "ring" | "dot" | "line"): void {
+  const svg = parent.createSvg("svg", { attr: { width: mark === "line" ? "22" : "16", height: "16", viewBox: mark === "line" ? "0 0 22 16" : "0 0 16 16", "aria-hidden": "true" } });
+  if (mark === "line") svg.createSvg("line", { cls: "literature-feed-scatter-legendline", attr: { x1: "1", y1: "14", x2: "21", y2: "2" } });
+  else svg.createSvg("circle", { cls: mark === "ring" ? "literature-feed-scatter-dot-both" : "literature-feed-scatter-dot", attr: { cx: "8", cy: "8", r: "5" } });
+}
+
+/** Draws the chart, and under it the legend, into `parent`. `parent` must be visible: the chart is as wide as it is. */
 export function drawScatter(parent: HTMLElement, spec: ScatterSpec): void {
   const box = parent.createDiv({ cls: "literature-feed-scatter" });
-  box.createDiv({ cls: "literature-feed-chart-title", text: spec.title });
-  const height = Math.min(Math.round(WIDTH * 0.8), 460);
-  const svg = box.createSvg("svg", { attr: { viewBox: `0 0 ${WIDTH} ${height}`, width: "100%", role: "img", "aria-label": spec.title } });
-  const plotW = WIDTH - MARGIN.left - MARGIN.right;
-  const plotH = height - MARGIN.top - MARGIN.bottom;
-  const px = (v: number): number => MARGIN.left + (v / spec.max) * plotW;
-  const py = (v: number): number => MARGIN.top + plotH - (v / spec.max) * plotH;
+  const w = Math.max(260, box.clientWidth || FALLBACK_WIDTH);
+  const h = Math.round(Math.min(w * 0.8, 460));
+  const svg = box.createSvg("svg", { attr: { viewBox: `0 0 ${w} ${h}`, role: "img", "aria-label": spec.aria } });
+  const ticks = niceTicks(spec.max);
+  const tickWidth = Math.ceil(Math.max(...ticks.map((v) => `${v}%`.length)) * CHAR_W);
+  const labelled = spec.points.some((p) => (p.label ?? "") !== "");
+  const m = { t: labelled ? 24 : 12, r: 16, b: 30 + 34, l: tickWidth + 14 + 38 };
+  const x = (v: number): number => m.l + (v / spec.max) * (w - m.r - m.l);
+  const y = (v: number): number => h - m.b - (v / spec.max) * (h - m.b - m.t);
 
-  const steps = 5;
-  for (let i = 0; i <= steps; i++) {
-    const v = (spec.max / steps) * i;
-    const label = String(Math.round(v * 10) / 10);
-    svg.createSvg("line", { cls: "literature-feed-scatter-grid", attr: { x1: String(MARGIN.left), x2: String(WIDTH - MARGIN.right), y1: String(py(v)), y2: String(py(v)) } });
-    svgText(svg, "literature-feed-scatter-tick", `${label}%`, { x: String(MARGIN.left - 6), y: String(py(v) + 4), "text-anchor": "end" });
-    svgText(svg, "literature-feed-scatter-tick", `${label}%`, { x: String(px(v)), y: String(height - MARGIN.bottom + 16), "text-anchor": "middle" });
+  const arrow = `literature-feed-arrow-${++arrowCount}`;
+  const marker = svg.createSvg("defs").createSvg("marker", { attr: { id: arrow, viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto" } });
+  marker.createSvg("path", { cls: "literature-feed-scatter-arrowhead", attr: { d: "M0,0 L8,4 L0,8 z" } });
+
+  for (const v of ticks) {
+    svg.createSvg("line", { cls: "literature-feed-scatter-grid", attr: { x1: String(m.l), x2: String(w - m.r), y1: String(y(v)), y2: String(y(v)) } });
+    text(svg, "literature-feed-scatter-tick", `${v}%`, { x: String(m.l - 6), y: String(y(v)), "text-anchor": "end", "dominant-baseline": "middle" });
+    text(svg, "literature-feed-scatter-tick", `${v}%`, { x: String(x(v)), y: String(h - m.b + 16), "text-anchor": "middle" });
   }
-  svg.createSvg("line", { cls: "literature-feed-scatter-axis", attr: { x1: String(MARGIN.left), x2: String(WIDTH - MARGIN.right), y1: String(py(0)), y2: String(py(0)) } });
-  svg.createSvg("line", { cls: "literature-feed-scatter-axis", attr: { x1: String(MARGIN.left), x2: String(MARGIN.left), y1: String(py(0)), y2: String(MARGIN.top) } });
-  svgText(svg, "literature-feed-scatter-note", `${spec.xNote} →`, { x: String(WIDTH - MARGIN.right), y: String(height - 6), "text-anchor": "end" });
-  svgText(svg, "literature-feed-scatter-note", `↑ ${spec.yNote}`, { x: String(MARGIN.left), y: "12", "text-anchor": "start" });
-  if (spec.diagonal) svg.createSvg("line", { cls: "literature-feed-scatter-diagonal", attr: { x1: String(px(0)), y1: String(py(0)), x2: String(px(spec.max)), y2: String(py(spec.max)) } });
+  svg.createSvg("line", { cls: "literature-feed-scatter-baseline", attr: { x1: String(m.l), x2: String(w - m.r), y1: String(h - m.b), y2: String(h - m.b) } });
+  // The axis arrows, each with its plain-language note.
+  svg.createSvg("line", { cls: "literature-feed-scatter-arrow", attr: { x1: String(m.l), x2: String(w - m.r), y1: String(h - m.b + 29), y2: String(h - m.b + 29), "marker-end": `url(#${arrow})` } });
+  text(svg, "literature-feed-scatter-note", spec.xNote, { x: String((m.l + w - m.r) / 2), y: String(h - 5), "text-anchor": "middle" });
+  const ax = m.l - tickWidth - 20;
+  svg.createSvg("line", { cls: "literature-feed-scatter-arrow", attr: { x1: String(ax), x2: String(ax), y1: String(h - m.b), y2: String(m.t), "marker-end": `url(#${arrow})` } });
+  text(svg, "literature-feed-scatter-note", spec.yNote, { transform: `translate(${ax - 9},${(m.t + h - m.b) / 2}) rotate(-90)`, "text-anchor": "middle" });
+  if (spec.diagonal) svg.createSvg("line", { cls: "literature-feed-scatter-diagonal", attr: { x1: String(x(0)), y1: String(y(0)), x2: String(x(spec.max)), y2: String(y(spec.max)) } });
 
-  // Plain dots first so the ringed ones are on top.
+  // The tooltip: one floating element, kept inside the box.
+  const tip = box.createDiv({ cls: "literature-feed-scatter-tip" });
+  tip.hide();
+  const showTip = (ev: PointerEvent, p: ScatterPoint): void => {
+    tip.empty();
+    p.tip.forEach((line, i) => tip.createDiv({ cls: i === 0 ? "literature-feed-scatter-tip-head" : "literature-feed-scatter-tip-line", text: line }));
+    tip.show();
+    const b = box.getBoundingClientRect();
+    let tx = ev.clientX - b.left + 12;
+    if (tx + tip.offsetWidth > b.width) tx = Math.max(0, ev.clientX - b.left - tip.offsetWidth - 12);
+    tip.setCssProps({ left: `${tx}px`, top: `${ev.clientY - b.top + 12}px` });
+  };
+
+  // The highlighted kind is drawn last, so it is on top.
   for (const p of [...spec.points].sort((a, b) => Number(a.ring === true) - Number(b.ring === true))) {
-    // One class in `cls` everywhere: createSvg does not take several (see graph-view.ts), so a ringed dot has a class of its own.
-    const g = svg.createSvg("g", { cls: "literature-feed-scatter-point", attr: { tabindex: spec.onPick ? "0" : "-1" } });
-    g.createSvg("title").setText(p.tip);
-    if (p.ring) g.createSvg("circle", { cls: "literature-feed-scatter-ring", attr: { cx: String(px(p.x)), cy: String(py(p.y)), r: "9" } });
-    g.createSvg("circle", { cls: p.ring ? "literature-feed-scatter-dot-ring" : "literature-feed-scatter-dot", attr: { cx: String(px(p.x)), cy: String(py(p.y)), r: "5.5" } });
-    if (p.label) svgText(g, "literature-feed-scatter-label", p.label, p.labelLeft ? { x: String(px(p.x) - 11), y: String(py(p.y) + 4), "text-anchor": "end" } : { x: String(px(p.x) + 11), y: String(py(p.y) + 4) });
+    const dot = svg.createSvg("circle", { cls: p.ring ? "literature-feed-scatter-dot-both" : "literature-feed-scatter-dot", attr: { cx: String(x(p.x)), cy: String(y(p.y)), r: "5.5" } });
+    dot.addEventListener("pointerenter", (ev) => showTip(ev, p));
+    dot.addEventListener("pointermove", (ev) => showTip(ev, p));
+    dot.addEventListener("pointerleave", () => tip.hide());
     if (spec.onPick) {
       const pick = spec.onPick;
-      g.addEventListener("click", () => pick(p.key));
-      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(p.key); } });
+      dot.addEventListener("click", () => pick(p.key));
     }
   }
-  const legend = box.createDiv({ cls: "literature-feed-scatter-legend" });
-  for (const item of spec.legend) {
-    const li = legend.createSpan({ cls: "literature-feed-scatter-legenditem" });
-    li.createSpan({ cls: `literature-feed-scatter-swatch${item.ring ? " is-ring" : ""}` });
-    li.createSpan({ text: item.text });
+
+  // Labels: on the right above the dot, on the left above it, then below on each side; the first place that fits is used, else none.
+  const placed: DOMRect[] = [];
+  for (const p of spec.points.filter((q) => (q.label ?? "") !== "")) {
+    const cx = x(p.x);
+    const cy = y(p.y);
+    for (const [side, below] of [[1, 0], [-1, 0], [1, 1], [-1, 1]] as const) {
+      const t = text(svg, "literature-feed-scatter-label", p.label ?? "", { x: String(cx + side * 9), y: String(below ? cy + 15 : cy - 7), "text-anchor": side > 0 ? "start" : "end" });
+      const bb = (t as unknown as SVGGraphicsElement).getBBox();
+      const clash = bb.x < 2 || bb.x + bb.width > w - 2 || bb.y < 2 || bb.y + bb.height > h - m.b + 2
+        || placed.some((o) => bb.x < o.x + o.width && bb.x + bb.width > o.x && bb.y < o.y + o.height && bb.y + bb.height > o.y);
+      if (!clash) {
+        placed.push(bb);
+        break;
+      }
+      t.remove();
+    }
   }
-  if (spec.diagonal) {
-    const li = legend.createSpan({ cls: "literature-feed-scatter-legenditem" });
-    li.createSpan({ cls: "literature-feed-scatter-swatch is-line" });
-    li.createSpan({ text: "equal share" });
+
+  const legend = parent.createDiv({ cls: "literature-feed-scatter-legend" });
+  for (const item of spec.legend) {
+    const span = legend.createSpan();
+    legendMark(span, item.mark);
+    span.appendText(item.text);
   }
 }

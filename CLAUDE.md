@@ -25,6 +25,7 @@ If the user asks for another task without clearing, remind them to `/clear` firs
 ## Hard rules
 - Never read or write the user's real vault. Only `test-vault/`.
 - Never push, merge to `main`, tag, release or delete without asking.
+- Commit locally on the feature branch after each change (one coherent step, tests passing) so any step can be rolled back; never push.
 - Plugin code follows `.claude/rules/obsidian-plugin.md` (loads automatically for `src/`); it must work on desktop (Windows, macOS, Linux) and mobile.
 - Matching, API-client and sync changes need a test against fixtures with a known answer.
 - API keys live only in Obsidian's secret storage (`app.secretStorage`; `data.json` holds just the secret's id), never in code, tests, fixtures or docs, and I never read or print their values. Recorded API responses in tests must have keys and personal data removed.

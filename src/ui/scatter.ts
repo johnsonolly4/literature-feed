@@ -62,12 +62,11 @@ export function drawScatter(parent: HTMLElement, spec: ScatterSpec): void {
 
   // Plain dots first so the ringed ones are on top.
   for (const p of [...spec.points].sort((a, b) => Number(a.ring === true) - Number(b.ring === true))) {
-    // One class in `cls`: createSvg does not take several (see graph-view.ts); the second is added afterwards.
+    // One class in `cls` everywhere: createSvg does not take several (see graph-view.ts), so a ringed dot has a class of its own.
     const g = svg.createSvg("g", { cls: "literature-feed-scatter-point", attr: { tabindex: spec.onPick ? "0" : "-1" } });
-    if (p.ring) g.classList.add("is-ring");
     g.createSvg("title").setText(p.tip);
     if (p.ring) g.createSvg("circle", { cls: "literature-feed-scatter-ring", attr: { cx: String(px(p.x)), cy: String(py(p.y)), r: "9" } });
-    g.createSvg("circle", { cls: "literature-feed-scatter-dot", attr: { cx: String(px(p.x)), cy: String(py(p.y)), r: "5.5" } });
+    g.createSvg("circle", { cls: p.ring ? "literature-feed-scatter-dot-ring" : "literature-feed-scatter-dot", attr: { cx: String(px(p.x)), cy: String(py(p.y)), r: "5.5" } });
     if (p.label) svgText(g, "literature-feed-scatter-label", p.label, { x: String(px(p.x) + 11), y: String(py(p.y) + 4) });
     if (spec.onPick) {
       const pick = spec.onPick;

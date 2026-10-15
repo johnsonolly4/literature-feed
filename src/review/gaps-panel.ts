@@ -516,7 +516,7 @@ export class GapsPanel {
     if (diagonal && diagonal.points.length > 0) {
       drawScatter(chartHolder, {
         title: "Who cites each work: your references or the similar papers",
-        points: diagonal.points.map((p) => ({ key: p.key, x: p.x, y: p.y, ring: p.both, label: p.label, tip: p.tip })),
+        points: diagonal.points.map((p) => ({ key: p.key, x: p.x, y: p.y, ring: p.both, label: p.label, labelLeft: p.labelLeft, tip: p.tip })),
         max: diagonal.max, diagonal: true,
         xNote: "share of your references that cite it", yNote: "share of the similar papers that cite it",
         legend: [{ ring: true, text: "found on both routes" }, { ring: false, text: "cited by the similar papers" }],
@@ -528,7 +528,7 @@ export class GapsPanel {
           workDetail(row);
         },
       });
-      chartHolder.createEl("p", { cls: "literature-feed-meta", text: `${diagonal.above} of ${diagonal.points.length} works are above the line: the similar papers cite them more than your references do (${diagonal.aboveBoth} of those are on both routes). ${diagonal.on} are on the line and ${diagonal.below} below it. The five largest gaps are labelled; click a point for details.${diagonal.left > 0 ? ` ${diagonal.left} works are left out because this run did not save how many of your references cite them: run it again.` : ""}` });
+      chartHolder.createEl("p", { cls: "literature-feed-meta", text: `${diagonal.above} of ${diagonal.points.length} works are above the line: the similar papers cite them more than your references do (${diagonal.aboveBoth} of those are on both routes). ${diagonal.on} are on the line and ${diagonal.below} below it. The works with the largest gaps are labelled (the ones found on both routes first); click a point for details.${diagonal.left > 0 ? ` ${diagonal.left} works are left out because this run did not save how many of your references cite them: run it again.` : ""}` });
     }
     refresh();
     show("works");

@@ -11,6 +11,8 @@ export interface ScatterPoint {
   /** Ringed: the highlighted kind (for example found on both routes). */
   ring?: boolean;
   label?: string;
+  /** The label goes to the left of the dot (near the right edge). */
+  labelLeft?: boolean;
   /** Shown on hover (the SVG title). */
   tip: string;
 }
@@ -67,7 +69,7 @@ export function drawScatter(parent: HTMLElement, spec: ScatterSpec): void {
     g.createSvg("title").setText(p.tip);
     if (p.ring) g.createSvg("circle", { cls: "literature-feed-scatter-ring", attr: { cx: String(px(p.x)), cy: String(py(p.y)), r: "9" } });
     g.createSvg("circle", { cls: p.ring ? "literature-feed-scatter-dot-ring" : "literature-feed-scatter-dot", attr: { cx: String(px(p.x)), cy: String(py(p.y)), r: "5.5" } });
-    if (p.label) svgText(g, "literature-feed-scatter-label", p.label, { x: String(px(p.x) + 11), y: String(py(p.y) + 4) });
+    if (p.label) svgText(g, "literature-feed-scatter-label", p.label, p.labelLeft ? { x: String(px(p.x) - 11), y: String(py(p.y) + 4), "text-anchor": "end" } : { x: String(px(p.x) + 11), y: String(py(p.y) + 4) });
     if (spec.onPick) {
       const pick = spec.onPick;
       g.addEventListener("click", () => pick(p.key));

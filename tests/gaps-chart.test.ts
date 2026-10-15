@@ -39,6 +39,24 @@ describe("diagonalPoints", () => {
     expect(shortLabel([], 2019)).toBe("2019");
   });
 
+  it("labels the works found on both routes first, and skips a label that would cover another", () => {
+    const rows = [
+      // Five neighbours-only works on one spot with big gaps, and one both-route work with a smaller gap.
+      ...Array.from({ length: 5 }, (_, i) => row(`s${i}`, { share: 0.02, similarCount: 9, similarOf: 30, gap: 28, authors: [`Ann Same${i}`], year: 2020 })),
+      row("b", { share: 0.2, similarCount: 14, similarOf: 30, gap: 27, route: "both", authors: ["Bo Both"], year: 2018 }),
+    ];
+    const labelled = diagonalPoints(rows).points.filter((p) => p.label !== "").map((p) => p.label);
+    expect(labelled).toContain("Both 2018");
+    expect(labelled.filter((l) => l.startsWith("Same"))).toHaveLength(1); // the five on one spot would cover each other
+  });
+
+  it("puts a label to the left of a dot near the right edge", () => {
+    const d = diagonalPoints([row("edge", { share: 0.46, similarCount: 15, similarOf: 30, gap: 4, route: "both", authors: ["Ann Verylongfamilyname"], year: 2019 })]);
+    expect(d.points[0].labelLeft).toBe(true);
+    const mid = diagonalPoints([row("mid", { share: 0.05, similarCount: 15, similarOf: 30, gap: 45, route: "both" })]);
+    expect(mid.points[0].labelLeft).toBeUndefined();
+  });
+
   it("leaves out rows from a run that did not save the reference count, and says how many", () => {
     const d = diagonalPoints([row("old", { gap: null }), row("new", { share: 0.1 }), row("noscan", { similarCount: null, similarOf: null, gap: null })]);
     expect(d.points.map((p) => p.key)).toEqual(["new"]);

@@ -18,3 +18,5 @@ run*.json
 .env
 *.key
 Thumbs.db
+# the owner's separate Python tool docs: they name real people, the repo is public
+replication_docs/

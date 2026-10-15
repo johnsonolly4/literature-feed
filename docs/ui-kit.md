@@ -6,7 +6,7 @@ One look and one set of mechanisms for every search report. Built with `createEl
 | --- | --- | --- |
 | Table model | `table-model.ts` | chips with counts, search (all words), sort, CSV, stored-view repair. Pure; tests in `tests/ui-table-model.test.ts`. |
 | `DataTable` | `data-table.ts` | the table: chips, search box, sortable headers, show more, Copy as CSV, row selection, remembered view (`app.saveLocalStorage`). Columns marked `secondary` hide when narrow. |
-| `Section` / `formGrid` | `section.ts` | titled, foldable card (remembers open/closed); a grid for short options. |
+| `Section` / `formGrid` | `section.ts` | titled, foldable card (remembers open/closed); a grid for short options. The gaps form puts settings and references in two tiles (`.literature-feed-gaps-form`, container query at 900px). |
 | `SplitPane` | `split-pane.ts` | table left, detail right (sticky, own scroll); stacks in a narrow tab (container query in `styles.css`). |
 | `ReportBar` | `report-bar.ts` | status lines and buttons above a report. |
 | `PromptPanel` | `prompt-panel.ts` | show / copy / save the prompt, paste the answer, check it. |

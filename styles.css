@@ -893,6 +893,20 @@ table.literature-feed-authors tr.is-selected td { background: rgba(var(--vt-doin
 .literature-feed-formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14em, 1fr)); gap: var(--size-4-2) var(--size-4-4); }
 .literature-feed-formgrid .setting-item { flex-direction: column; align-items: stretch; border-top: none; }
 .literature-feed-formgrid .setting-item-control { justify-content: flex-start; }
+/* The citation-gaps form: settings and references as two tiles when the tab is wide, one column when it is narrow. */
+.literature-feed-gaps-formhost { container-type: inline-size; }
+.literature-feed-gaps-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--size-4-3); }
+.literature-feed-gaps-main, .literature-feed-gaps-refs { min-width: 0; }
+@container (min-width: 900px) {
+  .literature-feed-gaps-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .literature-feed-gaps-main, .literature-feed-gaps-refs {
+    padding: var(--size-4-2) var(--size-4-3);
+    border: 1px solid var(--vt-card-border, var(--background-modifier-border));
+    border-radius: var(--vt-card-radius, var(--radius-m));
+    background: var(--background-primary);
+  }
+  .literature-feed-gaps-refs { max-height: 40em; overflow: auto; }
+}
 
 .literature-feed-reportbar { margin: var(--size-4-2) 0; }
 

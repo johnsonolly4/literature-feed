@@ -120,32 +120,38 @@ export class GapsPanel {
     });
     this.inputs = createSection(el, { title: "What to look up", collapsible: true, open: this.s.last === null });
     const body = this.inputs.body;
-    new Setting(body).setName("Start from").addDropdown((d) => {
+    body.addClass("literature-feed-gaps-formhost");
+    // Two tiles side by side in a wide tab (settings left, references right); one column in a narrow one (styles.css).
+    const form = body.createDiv({ cls: "literature-feed-gaps-form" });
+    const left = form.createDiv({ cls: "literature-feed-gaps-main" });
+    const right = form.createDiv({ cls: "literature-feed-gaps-refs" });
+    new Setting(left).setName("Start from").addDropdown((d) => {
       for (const [k, label] of Object.entries(MODES)) d.addOption(k, label);
       d.setValue(this.s.mode).onChange((v) => { this.s.mode = v as GapsMode; this.estimate = null; this.render(); this.saveSoon(); });
     });
     if (this.s.mode === "paper") {
-      new Setting(body).setName("Paper identifier").setDesc("A DOI, a doi.org link, an OpenAlex id (W…) or an openalex.org link. A title also works, and costs one search ($0.001).")
+      new Setting(left).setName("Paper identifier").setDesc("A DOI, a doi.org link, an OpenAlex id (W…) or an openalex.org link. A title also works, and costs one search ($0.001).")
         .addText((t) => t.setPlaceholder("10.1021/jacs.3c08248").setValue(this.s.paperText).onChange((v) => { this.s.paperText = v; this.estimate = null; this.saveSoon(); }));
+      right.createEl("p", { cls: "setting-item-description", text: "The paper's own references are read from OpenAlex. To use a pasted list instead, pick that under Start from." });
     } else if (this.s.mode === "zotero") {
-      this.renderZotero(body);
+      this.renderZotero(right);
     } else {
-      body.createEl("p", { cls: "setting-item-description", text: "Paste the references of a paper as they came out of the PDF. Press the button to split them and find their DOIs for free; then only the ticked ones are looked up in OpenAlex, about $0.0001 for 50." });
+      right.createEl("p", { cls: "setting-item-description", text: "Paste the references of a paper as they came out of the PDF. Press the button to split them and find their DOIs for free; then only the ticked ones are looked up in OpenAlex, about $0.0001 for 50." });
       this.refsPanel = new RefsPanel(
-        this.host, body.createDiv(), normaliseRefsSession(this.s.refs),
+        this.host, right.createDiv(), normaliseRefsSession(this.s.refs),
         (s: RefsSession) => { this.s.refs = s as unknown as Record<string, unknown>; this.saveSoon(); },
         () => { this.estimate = null; },
       );
       this.refsPanel.mount();
-      new Setting(body).setName(SEARCH_UNFOUND_NAME).setDesc(`References no DOI was found for are searched in OpenAlex by their text: about $0.001 each, at most ${MAX_TITLE_SEARCHES}. Off by default.`)
+      new Setting(left).setName(SEARCH_UNFOUND_NAME).setDesc(`References no DOI was found for are searched in OpenAlex by their text: about $0.001 each, at most ${MAX_TITLE_SEARCHES}. Off by default.`)
         .addToggle((t) => t.setValue(this.s.searchUnfound).onChange((v) => { this.s.searchUnfound = v; this.estimate = null; this.saveSoon(); }));
     }
-    new Setting(body).setName(EXTRA_NAME).setDesc(EXTRA_DESC)
+    new Setting(left).setName(EXTRA_NAME).setDesc(EXTRA_DESC)
       .addTextArea((t) => {
         t.inputEl.rows = 2;
         t.setPlaceholder("10.1021/…").setValue(this.s.extraDois).onChange((v) => { this.s.extraDois = v; this.estimate = null; this.saveSoon(); });
       });
-    const grid = formGrid(body);
+    const grid = formGrid(left);
     new Setting(grid).setName("Gap when cited by at least").setDesc("How many of the references must cite a work (3 is a good start; 2 finds more, with more noise).")
       .addText((t) => {
         t.inputEl.type = "number";
@@ -168,7 +174,7 @@ export class GapsPanel {
       });
     new Setting(grid).setName(SIMILAR_NAME).setDesc(SIMILAR_DESC)
       .addToggle((t) => t.setValue(this.s.similar).onChange((v) => { this.s.similar = v; this.estimate = null; this.saveSoon(); }));
-    new Setting(body).addButton((b) => b.setButtonText("Estimate the cost").setCta().onClick(() => this.doEstimate()));
+    new Setting(left).addButton((b) => b.setButtonText("Estimate the cost").setCta().onClick(() => this.doEstimate()));
     this.out = el.createDiv();
     const last = this.s.last;
     if (last) this.renderRun(last.run, last.input, last.ranAt);
@@ -520,10 +526,12 @@ export class GapsPanel {
       return;
     }
     out.createEl("p", { cls: "literature-feed-meta", text: CAVEAT });
-    out.createEl("p", { cls: "literature-feed-meta", text: `Read ${s.citersRead} works that cite the references (${s.requests} requests). ${s.similarFound} share at least ${s.minShared} of your ${s.referenceCount} references; the ${s.neighbours} most similar are the neighbours. A work is listed when at least ${s.minimum} of the ${s.neighbours} neighbours cite it.` });
     if (s.warning) out.createEl("p", { cls: "literature-feed-warning", text: s.warning });
-    if (s.heavySkipped.length > 0) out.createEl("p", { cls: "literature-feed-meta", text: `Skipped ${s.heavySkipped.length} reference${s.heavySkipped.length === 1 ? "" : "s"} cited ${HEAVY_CITATIONS} times or more: ${s.heavySkipped.map((h) => h.title).join("; ")}.` });
     if (s.unscanned > 0) out.createEl("p", { cls: "literature-feed-warning", text: `The scan stopped before it read the citing works of ${s.unscanned} of the ${referencesRead} references (the most cited ones).` });
+    // The detail is folded away so the table comes first.
+    const how = createSection(out, { title: "How the scan was made", collapsible: true, open: false, app: this.host.app, storageKey: "gaps-scan-notes" }).body;
+    how.createEl("p", { cls: "literature-feed-meta", text: `Read ${s.citersRead} works that cite the references (${s.requests} requests). ${s.similarFound} share at least ${s.minShared} of your ${s.referenceCount} references; the ${s.neighbours} most similar are the neighbours. A work is listed when at least ${s.minimum} of the ${s.neighbours} neighbours cite it.` });
+    if (s.heavySkipped.length > 0) how.createEl("p", { cls: "literature-feed-meta", text: `Skipped ${s.heavySkipped.length} reference${s.heavySkipped.length === 1 ? "" : "s"} cited ${HEAVY_CITATIONS} times or more: ${s.heavySkipped.map((h) => h.title).join("; ")}.` });
   }
 
   /** One author: their papers the paper cites, their papers it does not (among the gaps), and a look for their other work on the same ground. */

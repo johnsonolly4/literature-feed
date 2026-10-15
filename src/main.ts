@@ -22,6 +22,7 @@ import { prefillSession } from "./refs/prefill";
 import { REFS_VIEW, RefsView } from "./refs/view";
 import { GAPS_VIEW, GapsView } from "./review/gaps-view";
 import { IMPROVE_VIEW, ImproveView } from "./improve/view";
+import { LIBRARY_MAP_VIEW, LibraryMapView } from "./improve/library-map-view";
 import { emptyGapsSession, normaliseGapsSession, type GapsSession } from "./review/gaps-input";
 import { GAPS_KIND, gapsRecordFromNote, parseGapsSnapshot, sessionFromRecord } from "./review/gaps-note";
 import { REPORT_BLOCK, reportsInNote, type ReportKind } from "./ui/report-block";
@@ -110,6 +111,8 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     this.registerView(GAPS_VIEW, (leaf) => new GapsView(leaf, this));
     this.registerView(IMPROVE_VIEW, (leaf) => new ImproveView(leaf, this));
     this.addCommand({ id: "improve-search", name: nameOf("improve-search"), callback: () => this.chooseImprove() });
+    this.registerView(LIBRARY_MAP_VIEW, (leaf) => new LibraryMapView(leaf, this));
+    this.addCommand({ id: "library-map", name: nameOf("library-map"), callback: () => void this.openLibraryMap() });
     this.addCommand({ id: "citation-gaps", name: nameOf("citation-gaps"), callback: () => void this.openGaps() });
     this.registerView(REVIEW_VIEW, (leaf) => {
       const view = new ReviewView(leaf, this);
@@ -527,6 +530,14 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  /** Opens the Library map tab (the one that is open, if any). */
+  async openLibraryMap(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(LIBRARY_MAP_VIEW)[0];
+    const leaf = existing ?? this.app.workspace.getLeaf("tab");
+    if (!existing) await leaf.setViewState({ type: LIBRARY_MAP_VIEW, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
   /** Improve for the only search, or a menu of the searches to choose from. */
   private chooseImprove(evt?: MouseEvent): void {
     const feeds = this.settings.feeds;
@@ -660,6 +671,7 @@ export default class LiteratureFeedPlugin extends Plugin implements SettingsHost
       "gaps": () => void this.openGaps(),
       "gaps-last": () => void this.openGaps(),
       "improve": () => this.chooseImprove(evt),
+      "library-map": () => void this.openLibraryMap(),
       "find-dois": () => void this.openRefs(),
       "check-setup": () => void this.openSetup(),
     };

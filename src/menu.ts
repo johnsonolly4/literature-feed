@@ -30,6 +30,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { id: "repeat-review", group: "discover", title: "Repeat the review in this note" },
   { id: "citation-gaps", group: "expand", title: "Citation gaps of one paper" },
   { id: "improve-search", group: "improve", title: "Improve a search" },
+  { id: "library-map", group: "improve", title: "Library map" },
   { id: "search-effectiveness", group: "improve", title: "Show search effectiveness" },
   { id: "llm-review", group: "improve", title: "Review a search with an LLM" },
   { id: "llm-topics", group: "improve", title: "Tweak search terms with an LLM" },
@@ -58,7 +59,7 @@ export type MenuAction =
   | "open-inbox" | "scan-now"
   | "review-new" | "review-resume" | "open-graph"
   | "gaps" | "gaps-last"
-  | "improve"
+  | "improve" | "library-map"
   | "find-dois" | "check-setup";
 
 export interface MenuEntry {
@@ -89,7 +90,10 @@ export function buildMenu(state: MenuState): MenuSection[] {
     ],
     discover: [{ action: "review-new", title: "New literature review", icon: "plus" }],
     expand: [{ action: "gaps", title: "Citation gaps of one paper", icon: "search-check" }],
-    improve: [{ action: "improve", title: "Improve a search", icon: "sliders-horizontal" }],
+    improve: [
+      { action: "improve", title: "Improve a search", icon: "sliders-horizontal" },
+      { action: "library-map", title: "Library map", icon: "map" },
+    ],
     tools: [
       { action: "find-dois", title: "Find DOIs for a reference list", icon: "list-checks" },
       { action: "check-setup", title: "Check setup", icon: "circle-check" },

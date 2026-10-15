@@ -34,6 +34,8 @@ export interface ImproveHost {
   addTopicToFeed(feedId: string, topic: string): Promise<string>;
   /** Opens one of the LLM prompt windows. */
   openPrompt(kind: "review" | "topics" | "new" | "compare"): Promise<void>;
+  /** Opens the Library map tab. */
+  openLibraryMap(): Promise<void>;
   /** Adds an OpenAlex request's cost to the monthly tally. */
   recordSpend(usd: number): void;
 }
@@ -108,6 +110,7 @@ export class ImproveView extends ItemView {
 
     createReportBar(el, [`Improve: ${m.name}`, `${known.dois.length} known papers`], [
       { text: "Refresh", onClick: () => void this.reload() },
+      { text: "Library map", onClick: () => void this.host.openLibraryMap() },
     ]);
     this.drawDoing(el, m);
     this.drawOverlap(el, m);

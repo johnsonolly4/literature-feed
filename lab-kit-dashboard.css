@@ -1,0 +1,130 @@
+/* Lab Kit look for a standalone dashboard (Python-generated HTML, Streamlit, Dash, NiceGUI ...).
+   Mirrors the vault: kits/planning/.obsidian/snippets/vault-colours.css + vault-theme.css and styles.css.
+   Spec: docs/reference/dashboard/SPEC.md. Link this file, or paste it into the page <style>. */
+
+/* ---- Base surface and text: Obsidian's default theme. Replace with the values of YOUR theme (SPEC.md section 1) ---- */
+:root, :root[data-theme="dark"] {
+  --background-primary: #1e1e1e;
+  --background-secondary: #262626;
+  --background-modifier-border: #363636;
+  --background-modifier-hover: rgba(255, 255, 255, 0.07);
+  --text-normal: #dadada;
+  --text-muted: #b3b3b3;
+  --interactive-accent: #7b6cd9;
+  --text-accent: #a99cf2;
+  /* meaning colours, text shades for dark */
+  --vt-blue-text: 147, 197, 253;  --vt-purple-text: 196, 181, 253; --vt-amber-text: 252, 211, 77;
+  --vt-green-text: 110, 231, 183; --vt-slate-text: 203, 213, 225;  --vt-red-text: 252, 165, 165;
+}
+:root[data-theme="light"] {
+  --background-primary: #ffffff;
+  --background-secondary: #f6f6f6;
+  --background-modifier-border: #e0e0e0;
+  --background-modifier-hover: rgba(0, 0, 0, 0.06);
+  --text-normal: #222222;
+  --text-muted: #5c5c5c;
+  --interactive-accent: #705dcf;
+  --text-accent: #5a46c0;
+  --vt-blue-text: 29, 78, 216;  --vt-purple-text: 109, 40, 217; --vt-amber-text: 146, 64, 14;
+  --vt-green-text: 6, 95, 70;   --vt-slate-text: 51, 65, 85;    --vt-red-text: 153, 27, 27;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --background-primary: #ffffff; --background-secondary: #f6f6f6; --background-modifier-border: #e0e0e0;
+    --background-modifier-hover: rgba(0, 0, 0, 0.06); --text-normal: #222222; --text-muted: #5c5c5c;
+    --interactive-accent: #705dcf; --text-accent: #5a46c0;
+    --vt-blue-text: 29, 78, 216;  --vt-purple-text: 109, 40, 217; --vt-amber-text: 146, 64, 14;
+    --vt-green-text: 6, 95, 70;   --vt-slate-text: 51, 65, 85;    --vt-red-text: 153, 27, 27;
+  }
+}
+
+/* ---- Palette and meanings (identical to vault-colours.css) ---- */
+:root {
+  --vt-blue: 59, 130, 246; --vt-purple: 139, 92, 246; --vt-amber: 245, 158, 11;
+  --vt-green: 16, 185, 129; --vt-slate: 100, 116, 139; --vt-red: 239, 68, 68;
+
+  --vt-doing:   var(--vt-blue);   --vt-doing-text:   var(--vt-blue-text);     /* focus, Started, today */
+  --vt-project: var(--vt-purple); --vt-project-text: var(--vt-purple-text);   /* projects */
+  --vt-waiting: var(--vt-amber);  --vt-waiting-text: var(--vt-amber-text);    /* planning, processing, carried over */
+  --vt-done:    var(--vt-green);  --vt-done-text:    var(--vt-green-text);    /* lab, closed, done, active */
+  --vt-neutral: var(--vt-slate);  --vt-neutral-text: var(--vt-slate-text);    /* planned, backlog, navigation */
+  --vt-overdue: var(--vt-red);    --vt-overdue-text: var(--vt-red-text);      /* overdue ONLY */
+
+  --vt-card-fill: 5%; --vt-card-border-strength: 22%; --vt-divider-strength: 14%; --vt-tint: 0.22;
+  --vt-card-bg: color-mix(in srgb, var(--text-normal) var(--vt-card-fill), var(--background-primary));
+  --vt-card-border: color-mix(in srgb, var(--text-normal) var(--vt-card-border-strength), var(--background-primary));
+  --vt-divider: color-mix(in srgb, var(--text-normal) var(--vt-divider-strength), var(--background-primary));
+  --vt-hint: var(--text-muted);
+
+  /* the four shape sizes (docs/design-standard.md) */
+  --lk-radius-card: 14px; --lk-radius-control: 10px; --lk-radius-row: 6px; --lk-radius-pill: 999px;
+
+  /* Obsidian's type scale */
+  --font-ui-smaller: 12px; --font-ui-small: 13px; --font-ui-medium: 15px; --font-ui-large: 20px;
+  --font-text: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ---- Page ---- */
+body.lk { margin: 0; background: var(--background-primary); color: var(--text-normal); font: 16px/1.5 var(--font-text); }
+.lk-page { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+.lk h1 { font-size: 1.8em; font-weight: 700; margin: 0 0 12px; }
+.lk h2 { font-size: 1.4em; font-weight: 600; margin: 24px 0 8px; color: rgb(var(--vt-amber-text)); }
+.lk h3 { font-size: 1.15em; font-weight: 600; margin: 16px 0 6px; color: rgb(var(--vt-blue-text)); }
+.lk h4 { font-size: 1em; font-weight: 600; margin: 12px 0 4px; color: rgb(var(--vt-green-text)); }
+.lk a { color: rgb(var(--vt-blue-text)); text-decoration: none; }
+.lk a:hover { color: rgb(var(--vt-amber-text)); text-decoration: underline; }
+.lk-muted { color: var(--vt-hint); font-size: 0.9em; }
+.lk-label { display: block; color: var(--text-muted); font-size: 0.85em; margin: 10px 0 2px; }
+
+/* ---- Cards (home / hub cards, tiles): 14 px ---- */
+.lk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.lk-card { background: var(--vt-card-bg); border: 1px solid var(--vt-card-border); border-radius: var(--lk-radius-card); padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+.lk-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.lk-card-title { font-weight: 600; font-size: 1.05em; color: var(--text-normal); }
+.lk-card-goal { color: var(--text-muted); font-size: 0.92em; }
+.lk-card ul { list-style: none; padding: 0; margin: 0; }
+.lk-card li { padding: 5px 0; border-bottom: 1px solid var(--vt-divider); }
+.lk-card li:last-child { border-bottom: 0; }
+.lk-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 4px; }
+
+/* ---- Badges (pill, tinted): <span class="lk-badge lk-done">Active</span> ---- */
+.lk-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--lk-radius-pill); font-size: 0.78em; font-weight: 500; white-space: nowrap;
+  --b: var(--vt-neutral); --bt: var(--vt-neutral-text); color: rgb(var(--bt)); background: rgba(var(--b), var(--vt-tint)); }
+.lk-badge:is(.lk-active, .lk-closed, .lk-done)                { --b: var(--vt-done);    --bt: var(--vt-done-text); }
+.lk-badge:is(.lk-paused, .lk-processing, .lk-rolled)           { --b: var(--vt-waiting); --bt: var(--vt-waiting-text); }
+.lk-badge:is(.lk-started, .lk-today)                           { --b: var(--vt-doing);   --bt: var(--vt-doing-text); }
+.lk-badge:is(.lk-planned, .lk-backlog)                         { --b: var(--vt-neutral); --bt: var(--vt-neutral-text); }
+.lk-badge.lk-project                                           { --b: var(--vt-project); --bt: var(--vt-project-text); }
+.lk-badge.lk-overdue                                           { --b: var(--vt-overdue); --bt: var(--vt-overdue-text); }
+
+/* ---- Buttons and boxes: 10 px ---- */
+.lk-btn, .lk button { font: inherit; font-size: var(--font-ui-small); padding: 6px 14px; border-radius: var(--lk-radius-control); border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-normal); cursor: pointer; }
+.lk-btn:hover, .lk button:hover { background: var(--background-modifier-hover); }
+.lk-btn.lk-primary { background: var(--interactive-accent); border-color: var(--interactive-accent); color: #fff; }
+.lk input[type="text"], .lk input[type="search"], .lk input[type="date"], .lk select, .lk textarea { font: inherit; font-size: var(--font-ui-small); padding: 6px 10px; border-radius: var(--lk-radius-control); border: 1px solid var(--background-modifier-border); background: var(--background-primary); color: var(--text-normal); }
+.lk input:focus, .lk select:focus, .lk textarea:focus { outline: none; border-color: var(--interactive-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 30%, transparent); }
+
+/* ---- Chips (pill; empty = dashed grey, set = accent border) ---- */
+.lk-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lk-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--lk-radius-pill); font-size: var(--font-ui-small); line-height: 1.4; background: transparent; color: var(--text-normal); border: 1px solid var(--background-modifier-border); cursor: pointer; }
+.lk-chip:hover { background: var(--background-modifier-hover); }
+.lk-chip.is-empty { border-style: dashed; color: var(--text-muted); }
+.lk-chip.is-set { border-color: var(--interactive-accent); color: var(--text-accent); }
+
+/* ---- Menu / dropdown (10 px; rows 6 px) ---- */
+.lk-menu { background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--lk-radius-control); padding: 4px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); }
+.lk-menu-row { padding: 5px 10px; border-radius: var(--lk-radius-row); cursor: pointer; font-size: var(--font-ui-small); }
+.lk-menu-row:hover, .lk-menu-row.is-active { background: var(--background-modifier-hover); }
+
+/* ---- Tables ---- */
+.lk table { border-collapse: collapse; width: 100%; font-size: 0.95em; }
+.lk th { text-align: left; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--vt-card-border); padding: 6px 10px; }
+.lk td { border-bottom: 1px solid var(--vt-divider); padding: 6px 10px; }
+.lk tr:hover td { background: var(--background-modifier-hover); }
+
+/* ---- Meaning-coloured column (board) ---- */
+.lk-col { border-radius: var(--lk-radius-card); padding: 10px; background: rgba(var(--c, var(--vt-neutral)), 0.14); }
+.lk-col.lk-doing { --c: var(--vt-doing); } .lk-col.lk-done { --c: var(--vt-done); } .lk-col.lk-waiting { --c: var(--vt-waiting); }
+
+@media (max-width: 640px) { .lk-page { padding: 16px 12px; } .lk-grid { grid-template-columns: 1fr; } }
